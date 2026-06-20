@@ -1,0 +1,21 @@
+[tools]
+node = "24.14.0"
+bun = "1.3.14"
+go = "1.24.2"
+
+[tasks.install]
+description = "Install Node dependencies and Playwright Chromium"
+run = "npm install && npx playwright install chromium"
+
+[tasks.doctor]
+description = "Validate the local career-ops setup"
+run = "npm run doctor"
+
+[tasks.test]
+description = "Run the quick career-ops test suite"
+run = "node test-all.mjs --quick"
+
+[tasks.dashboard]
+description = "Build the optional dashboard TUI"
+dir = "dashboard"
+run = "go build -o career-dashboard ."

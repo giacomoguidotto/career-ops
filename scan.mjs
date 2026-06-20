@@ -72,14 +72,14 @@ const CONCURRENCY = 10;
 
 // ── Title filter ────────────────────────────────────────────────────
 
-// Compile a lowercased keyword into a matcher. Short all-letter acronyms
-// (2-3 chars: cfo, coo, sdr, bdr, gsi…) match on WORD BOUNDARIES so "COO" no
-// longer matches "Coordinator", "SDR" no longer matches anything mid-word, etc.
-// Multi-word phrases and keywords containing non-letters (".NET", "SAP ",
-// "L&D") keep fast, permissive substring matching.
+// Compile a lowercased keyword into a matcher. Short all-letter tokens
+// (1-3 chars: ai, go, cfo, coo, sdr, bdr, gsi...) match on word-ish
+// boundaries so "COO" no longer matches "Coordinator", "AI" no longer
+// matches "Maintenance", etc. Multi-word phrases and keywords containing
+// non-alphanumerics (".NET", "SAP ", "L&D") keep fast substring matching.
 export function compileKeyword(kw) {
-  if (/^[a-z]{2,3}$/.test(kw)) {
-    const re = new RegExp(`\\b${kw}\\b`);
+  if (/^[a-z0-9]{1,3}$/.test(kw)) {
+    const re = new RegExp(`(^|[^a-z0-9])${escapeRegex(kw)}([^a-z0-9]|$)`, 'i');
     return (lower) => re.test(lower);
   }
   return (lower) => lower.includes(kw);
@@ -128,6 +128,10 @@ export function matchedTitleKeywords(title, titleFilter) {
   return compiledPositiveMatchers(raw)
     .filter(({ match }) => match(lower))
     .map(({ raw: kw }) => kw);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ── Location filter ─────────────────────────────────────────────────
