@@ -28,6 +28,7 @@
  *   node scan.mjs --verify --headed-fallback  # retry anti-bot-blocked URLs in a headed browser (needs a display)
  *   node scan.mjs --verify --throttle          # jittered ~5-10s gap between checks (stay under rate limits)
  *   node scan.mjs --verify --throttle=8000     # custom base gap in ms (waits base..2*base)
+ *   node scan.mjs --max-new=30 --max-per-company=3  # process a first-run backlog in chunks
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
@@ -134,6 +135,58 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// ── Scan batch caps ────────────────────────────────────────────────
+// First runs over broad startup boards can produce hundreds or thousands of
+// relevant postings. Caps keep liveness verification and downstream evaluation
+// bounded without marking the deferred postings as seen; future scans continue
+// chewing through the backlog after earlier chunks enter scan-history.tsv.
+
+function parsePositiveIntFlag(args, name) {
+  const flag = `--${name}`;
+  const inline = args.find((a) => a.startsWith(`${flag}=`));
+  const raw = inline ? inline.slice(flag.length + 1) : (() => {
+    const idx = args.indexOf(flag);
+    return idx === -1 ? null : args[idx + 1];
+  })();
+  if (raw == null) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return value;
+}
+
+/**
+ * @param {Array<{company?: string}>} offers
+ * @param {{maxNew?: number|null, maxPerCompany?: number|null}} caps
+ */
+export function capNewOffers(offers, { maxNew = null, maxPerCompany = null } = {}) {
+  const capped = [];
+  const perCompany = new Map();
+  let deferredByRunCap = 0;
+  let deferredByCompanyCap = 0;
+
+  for (const offer of offers) {
+    if (maxNew != null && capped.length >= maxNew) {
+      deferredByRunCap++;
+      continue;
+    }
+
+    if (maxPerCompany != null) {
+      const company = String(offer?.company || '').trim().toLowerCase() || '__unknown__';
+      const count = perCompany.get(company) || 0;
+      if (count >= maxPerCompany) {
+        deferredByCompanyCap++;
+        continue;
+      }
+      perCompany.set(company, count + 1);
+    }
+
+    capped.push(offer);
+  }
+
+  return { offers: capped, deferredByRunCap, deferredByCompanyCap };
+}
 // ── Location filter ─────────────────────────────────────────────────
 // Optional. If `location_filter` is absent from portals.yml, all locations pass.
 // Semantics (case-insensitive substring, in this order):
@@ -939,6 +992,8 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const verify = args.includes('--verify');
+  const maxNew = parsePositiveIntFlag(args, 'max-new');
+  const maxPerCompany = parsePositiveIntFlag(args, 'max-per-company');
   // Opt-in: on an anti-bot challenge (e.g. pracuj.pl Cloudflare wall), retry the
   // URL in a headed browser. Off by default — headed Chromium needs a display, so
   // scheduled/unattended scans should not rely on it.
@@ -1075,6 +1130,8 @@ async function main() {
   let totalFilteredSalary = 0;
   let totalFilteredContent = 0;
   let totalDupes = 0;
+  let totalDeferredByRunCap = 0;
+  let totalDeferredByCompanyCap = 0;
   const newOffers = [];
   const errors = [...resolveErrors];
   const emptyTargets = [];
@@ -1177,15 +1234,23 @@ async function main() {
 
   await parallelFetch(tasks, CONCURRENCY);
 
+  let offersToVerify = newOffers;
+  if (maxNew != null || maxPerCompany != null) {
+    const capped = capNewOffers(newOffers, { maxNew, maxPerCompany });
+    offersToVerify = capped.offers;
+    totalDeferredByRunCap = capped.deferredByRunCap;
+    totalDeferredByCompanyCap = capped.deferredByCompanyCap;
+  }
+
   // 5.5. Optional liveness verification — drop expired and guard-rejected postings
-  let verifiedOffers = newOffers;
+  let verifiedOffers = offersToVerify;
   let expiredOffers = [];
   let droppedOffers = [];
   let invalidOffers = [];
   let migratedOffers = [];
-  if (verify && newOffers.length > 0) {
-    console.log(`\nVerifying liveness of ${newOffers.length} new offer(s) with Playwright (sequential)...`);
-    const result = await verifyOffers(newOffers, { headedFallback, throttleBaseMs, rediscover });
+  if (verify && offersToVerify.length > 0) {
+    console.log(`\nVerifying liveness of ${offersToVerify.length} new offer(s) with Playwright (sequential)...`);
+    const result = await verifyOffers(offersToVerify, { headedFallback, throttleBaseMs, rediscover });
     verifiedOffers = result.verified;
     expiredOffers = result.expired;
     droppedOffers = result.dropped;
@@ -1274,6 +1339,12 @@ async function main() {
     console.log(`Filtered by cooldown:  ${totalFilteredCooldown} removed`);
   }
   console.log(`Duplicates:            ${totalDupes} skipped`);
+  if (maxPerCompany != null) {
+    console.log(`Deferred by company cap: ${totalDeferredByCompanyCap} deferred (max ${maxPerCompany}/company)`);
+  }
+  if (maxNew != null) {
+    console.log(`Deferred by run cap:  ${totalDeferredByRunCap} deferred (max ${maxNew}/run)`);
+  }
   if (crossListings.length > 0) {
     console.log(`\n⚠️  Possible cross-listings (same JD text, different company) — warn only, nothing was dropped:`);
     for (const { offer, row, score } of crossListings) {

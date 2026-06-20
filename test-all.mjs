@@ -2710,8 +2710,10 @@ console.log('\n13. Location filter — always_allow tier');
 
 try {
   const {
+    buildTitleFilter,
     buildLocationFilter,
     buildContentFilter,
+    capNewOffers,
     shouldDedupScanHistoryRow,
     formatPipelineOffer,
     formatScanHistoryRow,
@@ -2812,6 +2814,51 @@ try {
   // Case 13: whitespace-only location is treated as missing (pass-all-tiers)
   if (filter('   \t  ') === true) pass('whitespace-only location passes (treated as missing)');
   else fail('whitespace-only location should pass');
+
+  const titleFilter = buildTitleFilter({
+    positive: ['AI', 'ML', 'Go', 'Forward Deployed', 'Backend'],
+    negative: ['Java '],
+  });
+  if (
+    titleFilter('Senior AI Engineer') === true &&
+    titleFilter('AI-first Product Engineer') === true &&
+    titleFilter('Forward Deployed Engineer') === true &&
+    titleFilter('Go Platform Engineer') === true
+  ) {
+    pass('title_filter matches standalone short tokens and longer phrases');
+  } else {
+    fail('title_filter should match standalone AI/Go tokens and longer phrases');
+  }
+
+  if (
+    titleFilter('Test Maintenance Lead') === false &&
+    titleFilter('Head of Banking Operations') === false &&
+    titleFilter('Opérateur de saisie GTA') === false &&
+    titleFilter('Django Engineer') === false
+  ) {
+    pass('title_filter does not match short tokens inside unrelated words');
+  } else {
+    fail('title_filter should not match AI/Go inside Maintenance/Banking/saisie/Django');
+  }
+
+  const capped = capNewOffers([
+    { company: 'Anthropic', title: 'A1' },
+    { company: 'Anthropic', title: 'A2' },
+    { company: 'Anthropic', title: 'A3' },
+    { company: 'Intercom', title: 'I1' },
+    { company: 'Intercom', title: 'I2' },
+    { company: 'Langfuse', title: 'L1' },
+  ], { maxNew: 4, maxPerCompany: 2 });
+  if (
+    capped.offers.length === 4 &&
+    capped.offers.map(o => o.title).join(',') === 'A1,A2,I1,I2' &&
+    capped.deferredByCompanyCap === 1 &&
+    capped.deferredByRunCap === 1
+  ) {
+    pass('scan caps bound first-run batches by run and company');
+  } else {
+    fail(`scan caps returned unexpected result: ${JSON.stringify(capped)}`);
+  }
 
   // Case 14: non-string location (number/object/null) → pass without throwing
   let crashed = false;
