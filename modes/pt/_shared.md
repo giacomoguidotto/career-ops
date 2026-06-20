@@ -125,7 +125,7 @@ Quando o candidato tem uma demo ao vivo / dashboard (verificar `profile.yml`), o
 
 ### Mercado Brasileiro -- Especificidades (IMPORTANTE)
 
-Em vagas e negociações brasileiras, existem termos e práticas que não aparecem nos mercados EN/ES/DE. Eles DEVEM ser avaliados corretamente:
+Em vagas e negociações brasileiras, existem termos e práticas que não aparecem nos mercados EN/DE. Eles DEVEM ser avaliados corretamente:
 
 | Termo | Significado | Impacto na Avaliação |
 |-------|-------------|----------------------|

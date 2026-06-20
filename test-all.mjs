@@ -551,7 +551,8 @@ console.log('\n5. Data contract validation');
 const systemFiles = [
   'CLAUDE.md', 'CODEX.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md', 'docs/CODEX.md',
   'modes/_shared.md', 'modes/_profile.template.md',
-  'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
+  'modes/_custom.template.md',
+  'modes/offer.md', 'modes/pdf.md', 'modes/scan.md',
   'modes/heuristics/recruiter-side.md',
   'templates/states.yml', 'templates/cv-template.html',
   '.claude/skills/career-ops/SKILL.md',
@@ -945,10 +946,10 @@ try {
 console.log('\n8. Mode file integrity');
 
 const expectedModes = [
-  '_shared.md', '_profile.template.md', 'oferta.md', 'pdf.md', 'scan.md',
-  'batch.md', 'apply.md', 'auto-pipeline.md', 'contacto.md', 'deep.md',
-  'ofertas.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
-  'interview.md', 'latex.md', 'email.md', 'add.md', 'titles.md',
+  '_shared.md', '_profile.template.md', '_custom.template.md', 'offer.md', 'pdf.md', 'scan.md',
+  'batch.md', 'apply.md', 'auto-pipeline.md', 'contact.md', 'deep.md',
+  'offers.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
+  'interview.md', 'latex.md', 'email.md', 'add.md', 'titles.md', 'offer-prep.md',
   'regional/eu-swe.md',
 ];
 
@@ -1155,28 +1156,28 @@ if (
   fail('application-answers CLI accepted a missing option value');
 }
 
-const ofertaMode = readFile('modes/oferta.md');
+const offerMode = readFile('modes/offer.md');
 const autoPipelineMode = readFile('modes/auto-pipeline.md');
 if (
-  ofertaMode.includes('## Liveness gate (URL inputs)') &&
-  ofertaMode.includes('closed posting evidence') &&
-  ofertaMode.includes('Do not continue to Block A until this gate is resolved') &&
+  offerMode.includes('## Liveness gate (URL inputs)') &&
+  offerMode.includes('closed posting evidence') &&
+  offerMode.includes('Do not continue to Block A until this gate is resolved') &&
   autoPipelineMode.includes('## Step 0.5 — Liveness gate') &&
   autoPipelineMode.includes('closed posting evidence') &&
   autoPipelineMode.includes('Do not continue to Step 1 until this gate is resolved')
 ) {
-  pass('eval modes (oferta/auto-pipeline) gate dead links before evaluation');
+  pass('eval modes (offer/auto-pipeline) gate dead links before evaluation');
 } else {
   fail('eval modes missing liveness gate before evaluation');
 }
 
 if (
-  ofertaMode.includes('## Bounded Research Budget') &&
-  ofertaMode.includes('single-pass') &&
-  ofertaMode.includes('hard cap: 5 total WebSearch queries') &&
-  ofertaMode.includes('Do not invoke `deep-research`') &&
-  ofertaMode.includes('Do not spawn subagents') &&
-  ofertaMode.includes('Do not continue researching after the query cap is reached') &&
+  offerMode.includes('## Bounded Research Budget') &&
+  offerMode.includes('single-pass') &&
+  offerMode.includes('hard cap: 5 total WebSearch queries') &&
+  offerMode.includes('Do not invoke `deep-research`') &&
+  offerMode.includes('Do not spawn subagents') &&
+  offerMode.includes('Do not continue researching after the query cap is reached') &&
   autoPipelineMode.includes('bounded research budget') &&
   autoPipelineMode.includes('must not invoke `deep-research`') &&
   autoPipelineMode.includes('must not spawn subagents')
@@ -1187,14 +1188,14 @@ if (
 }
 
 if (
-  ofertaMode.includes('### Geo-mismatch check') &&
-  ofertaMode.includes('binding attendance requirement') &&
-  ofertaMode.includes('⚠️ **Geo-mismatch:** location field says remote, but JD body says') &&
-  ofertaMode.includes('silence is absence of signal, not agreement')
+  offerMode.includes('### Geo-mismatch check') &&
+  offerMode.includes('binding attendance requirement') &&
+  offerMode.includes('⚠️ **Geo-mismatch:** location field says remote, but JD body says') &&
+  offerMode.includes('silence is absence of signal, not agreement')
 ) {
-  pass('oferta cross-checks the remote location field against JD-body signals (#1433)');
+  pass('offer cross-checks the remote location field against JD-body signals (#1433)');
 } else {
-  fail('oferta missing geo-mismatch cross-check of location field vs JD body (#1433)');
+  fail('offer missing geo-mismatch cross-check of location field vs JD body (#1433)');
 }
 
 // --- offer-prep mode: contract reading companion (describes, never judges) ---

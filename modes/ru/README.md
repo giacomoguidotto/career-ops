@@ -23,7 +23,7 @@
 
 или
 
-> "Оценки и отклики на русском — используй `modes/ru/_shared.md` и `modes/ru/oferta.md`."
+> "Оценки и отклики на русском — используй `modes/ru/_shared.md` и `modes/ru/offer.md`."
 
 Claude будет читать файлы из этого каталога. Если режима нет в `modes/ru/` (например, `scan`, `batch`, `pdf`), используется оригинал из `modes/`.
 
@@ -48,12 +48,12 @@ language:
 | Файл | Оригинал | Назначение |
 |------|----------|------------|
 | `_shared.md` | `modes/_shared.md` (EN) | Общий контекст, архетипы, глобальные правила, специфика рынка РФ |
-| `oferta.md` | `modes/oferta.md` (ES) | Полная оценка вакансии (блоки A-F) |
-| `apply.md` | `modes/apply.md` (ES) | Ассистент заполнения форм откликов |
-| `pipeline.md` | `modes/pipeline.md` (ES) | Очередь URL-ов / Second Brain для собранных вакансий |
+| `oferta.md` | `modes/offer.md` (EN) | Полная оценка вакансии (блоки A-F) |
+| `apply.md` | `modes/apply.md` (EN) | Ассистент заполнения форм откликов |
+| `pipeline.md` | `modes/pipeline.md` (EN) | Очередь URL-ов / Second Brain для собранных вакансий |
 | `interview-prep.md` | `modes/interview-prep.md` (EN) | Подготовка к собеседованию |
 
-Остальные режимы (`scan`, `batch`, `pdf`, `tracker`, `auto-pipeline`, `deep`, `contacto`, `ofertas`, `project`, `training`) остаются на EN/ES. Их содержимое — в основном tooling, пути и команды — не зависит от языка.
+Остальные режимы (`scan`, `batch`, `pdf`, `tracker`, `auto-pipeline`, `deep`, `contact`, `offers`, `project`, `training`) остаются на English. Их содержимое — в основном tooling, пути и команды — не зависит от языка.
 
 ## Что остаётся на английском?
 

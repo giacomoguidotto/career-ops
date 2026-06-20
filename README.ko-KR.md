@@ -142,7 +142,7 @@ Career-ops는 다양한 모드를 가진 하나의 슬래시 커맨드입니다:
 /career-ops tracker        → 지원 현황 확인
 /career-ops apply          → AI로 지원서 양식 작성
 /career-ops pipeline       → 대기 중인 URL 처리
-/career-ops contacto       → LinkedIn 아웃리치 메시지
+/career-ops contact       → LinkedIn 아웃리치 메시지
 /career-ops deep           → 기업 심층 리서치
 /career-ops training       → 교육 및 자격증 가치 평가
 /career-ops project        → 포트폴리오 프로젝트 평가
@@ -208,7 +208,7 @@ career-ops/
 │   └── profile.example.yml      # 프로필 템플릿
 ├── modes/                       # 14개 스킬 모드
 │   ├── _shared.md               # 공유 컨텍스트 (커스터마이즈 가능)
-│   ├── oferta.md                # 개별 평가
+│   ├── offer.md                # 개별 평가
 │   ├── pdf.md                   # PDF 생성
 │   ├── scan.md                  # 포털 스캐너
 │   ├── batch.md                 # 일괄 처리

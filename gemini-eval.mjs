@@ -3,7 +3,7 @@
  * gemini-eval.mjs — Gemini-powered Job Offer Evaluator for career-ops
  *
  * A free-tier alternative to the Claude-based pipeline.
- * Reads evaluation logic from modes/oferta.md + modes/_shared.md,
+ * Reads evaluation logic from modes/offer.md + modes/_shared.md,
  * reads the user's resume from cv.md, and evaluates a Job Description
  * passed as a command-line argument.
  *
@@ -53,7 +53,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const PATHS = {
   // Primary evaluation logic lives in these two mode files
   shared:      join(ROOT, 'modes', '_shared.md'),
-  oferta:      join(ROOT, 'modes', 'oferta.md'),
+  offer:       join(ROOT, 'modes', 'offer.md'),
   // Canonical skill path referenced in Issue #344
   evaluate:    join(ROOT, '.claude', 'skills', 'career-ops', 'SKILL.md'),
   cv:          join(ROOT, 'cv.md'),
@@ -227,7 +227,7 @@ function normalizedTrackerScore(value) {
 console.log('\n📂  Loading context files...');
 
 const sharedContext  = readFile(PATHS.shared,      'modes/_shared.md');
-const ofertaLogic    = readFile(PATHS.oferta,      'modes/oferta.md');
+const offerLogic     = readFile(PATHS.offer,       'modes/offer.md');
 const cvContent      = readFile(PATHS.cv,          'cv.md');
 const profileContent = readFile(PATHS.profile,     'modes/_profile.md');
 const profileYml     = readFile(PATHS.profileYml,  'config/profile.yml');
@@ -246,9 +246,9 @@ SYSTEM CONTEXT (_shared.md)
 ${sharedContext}
 
 ═══════════════════════════════════════════════════════
-EVALUATION MODE (oferta.md)
+EVALUATION MODE (offer.md)
 ═══════════════════════════════════════════════════════
-${ofertaLogic}
+${offerLogic}
 
 ═══════════════════════════════════════════════════════
 CANDIDATE RESUME (cv.md)

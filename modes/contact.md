@@ -1,4 +1,4 @@
-# Mode: contacto -- Outreach messages
+# Mode: contact -- Outreach messages
 
 > Apply `voice-dna.md` (if present) to every generated message — full guardrail, conversational voice included (Tier 1 + Tier 2). See `_shared.md` → Voice DNA.
 

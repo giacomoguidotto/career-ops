@@ -192,7 +192,7 @@ Career-ops est accessible via une commande slash unique avec plusieurs modes :
 /career-ops tracker        → Consulter l'état des candidatures
 /career-ops apply          → Remplir des formulaires de candidature avec l'IA
 /career-ops pipeline       → Traiter les URL en attente
-/career-ops contacto       → Message d'approche LinkedIn
+/career-ops contact       → Message d'approche LinkedIn
 /career-ops deep           → Recherche approfondie sur une entreprise
 /career-ops training       → Évaluer une formation/certification
 /career-ops project        → Évaluer un projet de portfolio
@@ -269,7 +269,7 @@ career-ops/
 │   └── profile.example.yml      # Modèle pour votre profil
 ├── modes/                       # Les 14 modes de compétences
 │   ├── _shared.md               # Contexte partagé (à personnaliser)
-│   ├── oferta.md                # Évaluation individuelle
+│   ├── offer.md                # Évaluation individuelle
 │   ├── pdf.md                   # Génération de CV
 │   ├── scan.md                  # Scanner de portails
 │   ├── batch.md                 # Traitement par lot

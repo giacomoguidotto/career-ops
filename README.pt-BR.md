@@ -142,7 +142,7 @@ Career-ops é um único comando slash com múltiplos modos:
 /career-ops tracker        → Ver status das candidaturas
 /career-ops apply          → Preencher formulários de candidatura com IA
 /career-ops pipeline       → Processar URLs pendentes
-/career-ops contacto       → Mensagem de outreach no LinkedIn
+/career-ops contact       → Mensagem de outreach no LinkedIn
 /career-ops deep           → Pesquisa aprofundada da empresa
 /career-ops training       → Avaliar um curso/certificação
 /career-ops project        → Avaliar um projeto de portfólio
@@ -209,7 +209,7 @@ career-ops/
 │   └── profile.example.yml      # Template para seu perfil
 ├── modes/                       # 14 modos de skill
 │   ├── _shared.md               # Contexto compartilhado (personalize)
-│   ├── oferta.md                # Avaliação individual
+│   ├── offer.md                # Avaliação individual
 │   ├── pdf.md                   # Geração de PDF
 │   ├── scan.md                  # Scanner de portais
 │   ├── batch.md                 # Processamento em lote

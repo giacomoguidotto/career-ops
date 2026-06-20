@@ -42,11 +42,11 @@ Ardından ilk oturumda Claude'a bu ayarı hatırlat ("profile.yml'e baktım, `la
 | Dosya | Kaynak | Amaç |
 |-------|--------|------|
 | `_shared.md` | `modes/_shared.md` (EN) | Paylaşılan bağlam, arketipler, global kurallar, Türkiye piyasa özelinde terimler |
-| `is-ilani.md` | `modes/oferta.md` (ES) | Tek bir ilanın tam değerlendirmesi (Bloklar A-G) |
+| `is-ilani.md` | `modes/offer.md` (EN) | Tek bir ilanın tam değerlendirmesi (Bloklar A-G) |
 | `basvuru.md` | `modes/apply.md` (EN) | Başvuru formu için canlı asistan |
-| `pipeline.md` | `modes/pipeline.md` (ES) | URL gelen kutusu / biriktirilmiş ilanlar için ikinci beyin |
+| `pipeline.md` | `modes/pipeline.md` (EN) | URL gelen kutusu / biriktirilmiş ilanlar için ikinci beyin |
 
-Diğer modlar (`scan`, `batch`, `pdf`, `tracker`, `auto-pipeline`, `deep`, `contacto`, `ofertas`, `project`, `training`) İngilizce/İspanyolca orijinalleriyle çalışmaya devam eder — içerikleri büyük ölçüde araç komutları, dosya yolları ve yapılandırma talimatlarından oluştuğundan dilden bağımsız kalmaları tercih edilmiştir.
+Diğer modlar (`scan`, `batch`, `pdf`, `tracker`, `auto-pipeline`, `deep`, `contact`, `offers`, `project`, `training`) İngilizce/İspanyolca orijinalleriyle çalışmaya devam eder — içerikleri büyük ölçüde araç komutları, dosya yolları ve yapılandırma talimatlarından oluştuğundan dilden bağımsız kalmaları tercih edilmiştir.
 
 ## Türkiye'ye Özgü Piyasa Kapsamı
 

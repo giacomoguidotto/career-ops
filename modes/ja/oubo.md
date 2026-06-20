@@ -133,10 +133,10 @@ Notes:
 
 ## Step 8 -- Post-apply (optional)
 
-候補者が application を submitted したと確認した場合：
-1. 正規 CLI で status を "Applied" に update: `node set-status.mjs <report#> Applied`（`applications.md` のテーブルを手動編集しない）
-2. Report の Section G を final responses で update
-3. Next step として LinkedIn outreach 用の `/career-ops contacto` を提案
+候補者が応募を送信したことを確認した場合：
+1. 正規 CLI でステータスを「Applied」に更新: `node set-status.mjs <report#> Applied`（`applications.md` のテーブルを手動編集しない）
+2. レポートのブロック G を最終回答で更新
+3. 次のステップを提案：LinkedIn アウトリーチ用に `/career-ops contact`
 
 ## Scroll handling
 

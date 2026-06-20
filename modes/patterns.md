@@ -235,5 +235,5 @@ For reference, outcomes are classified as:
 |--------|---------|
 | Interview, Offer, Responded, Applied | **Positive** (invested effort or got traction) |
 | Rejected, Discarded | **Negative** (company said no or offer closed) |
-| SKIP, NO APLICAR | **Self-filtered** (user decided not to apply) |
+| SKIP (legacy alias: NO APLICAR) | **Self-filtered** (user decided not to apply) |
 | Evaluated | **Pending** (no action taken yet) |

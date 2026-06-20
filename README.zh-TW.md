@@ -144,7 +144,7 @@ career-ops 是一個具有多種模式的單一斜線指令：
 /career-ops tracker        → 查看應徵狀態
 /career-ops apply          → AI 協助填寫應徵表單
 /career-ops pipeline       → 處理待辦 URL
-/career-ops contacto       → LinkedIn 外寄訊息
+/career-ops contact       → LinkedIn 外寄訊息
 /career-ops deep           → 深度公司研究
 /career-ops training       → 評估課程/證照
 /career-ops project        → 評估作品集專案
@@ -211,7 +211,7 @@ career-ops/
 │   └── profile.example.yml      # 個人檔案範本
 ├── modes/                       # 14 個技能模式
 │   ├── _shared.md               # 共用情境（在此自訂）
-│   ├── oferta.md                # 單一職缺評估
+│   ├── offer.md                # 單一職缺評估
 │   ├── pdf.md                   # PDF 生成
 │   ├── scan.md                  # 平台掃描器
 │   ├── batch.md                 # 批次處理

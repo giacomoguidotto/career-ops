@@ -3,10 +3,10 @@
  * normalize-statuses.mjs — Clean non-canonical states in applications.md
  *
  * Maps all non-canonical statuses to canonical ones per states.yml:
- *   Evaluada, Aplicado, Respondido, Entrevista, Oferta, Rechazado, Descartado, NO APLICAR
+ *   Evaluated, Applied, Responded, Interview, Offer, Rejected, Discarded, SKIP
  *
  * Also strips markdown bold (**) and dates from the status field,
- * moving DUPLICADO info to the notes column.
+ * moving duplicate markers to the notes column.
  *
  * Run: node career-ops/normalize-statuses.mjs [--dry-run]
  */
@@ -32,37 +32,37 @@ function normalizeStatus(raw) {
   let s = raw.replace(/\*\*/g, '').trim();
   const lower = s.toLowerCase();
 
-  // DUPLICADO variants → Discarded
+  // Legacy duplicate variants -> Discarded
   if (/^duplicado/i.test(s) || /^dup\b/i.test(s)) {
     return { status: 'Discarded', moveToNotes: raw.trim() };
   }
 
-  // CERRADA / Cancelada / Descartada → Discarded
+  // Legacy closed/cancelled/discarded aliases -> Discarded
   if (/^cerrada$/i.test(s)) return { status: 'Discarded' };
   if (/^cancelada/i.test(s)) return { status: 'Discarded' };
   if (/^descartada$/i.test(s)) return { status: 'Discarded' };
   if (/^descartado$/i.test(s)) return { status: 'Discarded' };
 
-  // Rechazada / Rechazado → Rejected
+  // Legacy rejected aliases -> Rejected
   if (/^rechazada?$/i.test(s)) return { status: 'Rejected' };
   if (/^rechazado\s+\d{4}/i.test(s)) return { status: 'Rejected' };
 
-  // Aplicado with date → Applied (strip date)
+  // Legacy applied status with date -> Applied (strip date)
   if (/^aplicado\s+\d{4}/i.test(s)) return { status: 'Applied' };
 
-  // CONDICIONAL / HOLD / EVALUAR / Verificar → Evaluated
+  // Legacy review/hold aliases -> Evaluated
   if (/^(condicional|hold|evaluar|verificar)$/i.test(s)) return { status: 'Evaluated' };
 
-  // MONITOR → SKIP
+  // Legacy monitor status -> SKIP
   if (/^monitor$/i.test(s)) return { status: 'SKIP' };
 
-  // GEO BLOCKER → SKIP
+  // Geo blocker -> SKIP
   if (/geo.?blocker/i.test(s)) return { status: 'SKIP' };
 
-  // Repost #NNN → Discarded
+  // Repost marker -> Discarded
   if (/^repost/i.test(s)) return { status: 'Discarded', moveToNotes: raw.trim() };
 
-  // "—" (em dash, no status) → Discarded
+  // Empty/no-status markers -> Discarded
   if (s === '—' || s === '-' || s === '') return { status: 'Discarded' };
 
   // Already canonical (English, per states.yml) — just fix casing/bold
@@ -74,7 +74,7 @@ function normalizeStatus(raw) {
     if (lower === c.toLowerCase()) return { status: c };
   }
 
-  // Spanish aliases → English canonicals
+  // Legacy aliases -> English canonicals
   if (['evaluada'].includes(lower)) return { status: 'Evaluated' };
   if (['aplicado', 'enviada', 'aplicada', 'applied', 'sent'].includes(lower)) return { status: 'Applied' };
   if (['respondido'].includes(lower)) return { status: 'Responded' };
@@ -84,7 +84,7 @@ function normalizeStatus(raw) {
   if (['cerrada', 'descartada'].includes(lower)) return { status: 'Discarded' };
   if (['no aplicar', 'no_aplicar', 'skip'].includes(lower)) return { status: 'SKIP' };
 
-  // Unknown — flag it
+  // Unknown -> flag it
   return { status: null, unknown: true };
 }
 

@@ -99,9 +99,9 @@ Generate a 3-4 sentence email:
 
 ### LinkedIn Follow-up (if no email contact found)
 
-Reuse the contacto framework: 3 sentences, 300 character max.
+Reuse the contact framework: 3 sentences, 300 character max.
 - Hook specific to company → proof point → soft ask
-- Suggest the user run `/career-ops contacto {company}` to find the right person first
+- Suggest the user run `/career-ops contact {company}` to find the right person first
 
 ### Second Follow-up (followupCount == 1)
 
@@ -115,7 +115,7 @@ Shorter than first (2-3 sentences). Take a **new angle**:
 Do NOT generate another follow-up. Instead suggest:
 > "This application has had {N} follow-ups with no response. Consider:
 > - Updating status to `Discarded` if the role seems filled
-> - Trying a different contact via `/career-ops contacto`
+> - Trying a different contact via `/career-ops contact`
 > - Keeping in `Applied` status but deprioritizing"
 
 ## Step 4 — Present Drafts
@@ -125,7 +125,7 @@ For each draft, show:
 ```
 ## Follow-up: {Company} — {Role} (#{num})
 
-**To:** {email or "No contact found — run `/career-ops contacto` first"}
+**To:** {email or "No contact found — run `/career-ops contact` first"}
 **Subject:** {subject line}
 **Days since application:** {N}
 **Follow-ups sent:** {N}

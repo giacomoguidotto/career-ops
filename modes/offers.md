@@ -1,4 +1,4 @@
-# Mode: jobs — Multi-Job Comparison
+# Mode: offers -- Multi-Job Comparison
 
 Scoring matrix with 10 weighted dimensions:
 

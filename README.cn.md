@@ -186,7 +186,7 @@ career-ops 是一个单一斜杠命令，带有多种模式：
 /career-ops tracker        → 查看申请状态
 /career-ops apply          → 用 AI 协助填写申请表
 /career-ops pipeline       → 处理待办 URL
-/career-ops contacto       → 生成 LinkedIn 外联消息
+/career-ops contact       → 生成 LinkedIn 外联消息
 /career-ops deep           → 深度公司研究
 /career-ops training       → 评估课程/证书
 /career-ops project        → 评估作品集项目
@@ -252,7 +252,7 @@ career-ops/
 │   └── profile.example.yml      # 个人档案模板
 ├── modes/                       # 14 个技能模式
 │   ├── _shared.md               # 共享上下文（在这里自定义）
-│   ├── oferta.md                # 单个职位评估
+│   ├── offer.md                # 单个职位评估
 │   ├── pdf.md                   # PDF 生成
 │   ├── scan.md                  # 平台扫描器
 │   ├── batch.md                 # 批量处理

@@ -103,7 +103,7 @@ const CANONICAL_STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Off
 /**
  * Convert raw addition status text into one canonical tracker state.
  *
- * Batch workers and older tracker additions may emit Spanish labels, bold
+ * Older tracker additions may emit legacy non-English labels, bold
  * Markdown, legacy date suffixes, or repost markers. The merge script normalizes
  * all of those variants here so applications.md keeps the states defined by
  * templates/states.yml.
@@ -121,7 +121,7 @@ function validateStatus(status) {
 
   // Aliases
   const aliases = {
-    // Spanish → English
+    // Legacy aliases -> English
     'evaluada': 'Evaluated', 'condicional': 'Evaluated', 'hold': 'Evaluated', 'evaluar': 'Evaluated', 'verificar': 'Evaluated',
     'aplicado': 'Applied', 'enviada': 'Applied', 'aplicada': 'Applied', 'applied': 'Applied', 'sent': 'Applied',
     'respondido': 'Responded',
