@@ -44,6 +44,46 @@ func (m *ProgressModel) Resize(width, height int) {
 	m.height = height
 }
 
+func (m ProgressModel) bodyLines() []string {
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		m.renderFunnel(),
+		"",
+		m.renderScoreDistribution(),
+		"",
+		m.renderRates(),
+		"",
+		m.renderWeeklyActivity(),
+	)
+	return strings.Split(body, "\n")
+}
+
+func (m ProgressModel) viewportHeight() int {
+	availHeight := m.height - 4 // header + help + padding
+	if availHeight < 3 {
+		availHeight = 3
+	}
+	return availHeight
+}
+
+func (m ProgressModel) maxScrollOffset() int {
+	maxScroll := len(m.bodyLines()) - m.viewportHeight()
+	if maxScroll < 0 {
+		return 0
+	}
+	return maxScroll
+}
+
+func (m ProgressModel) clampedScroll() ProgressModel {
+	maxScroll := m.maxScrollOffset()
+	if m.scrollOffset > maxScroll {
+		m.scrollOffset = maxScroll
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	return m
+}
+
 // Update handles input for the progress screen.
 func (m ProgressModel) Update(msg tea.Msg) (ProgressModel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -54,20 +94,25 @@ func (m ProgressModel) Update(msg tea.Msg) (ProgressModel, tea.Cmd) {
 		case "down", "j":
 			m.scrollOffset++
 		case "up", "k":
-			if m.scrollOffset > 0 {
-				m.scrollOffset--
-			}
+			m.scrollOffset--
 		case "pgdown", "ctrl+d":
 			m.scrollOffset += m.height / 2
 		case "pgup", "ctrl+u":
 			m.scrollOffset -= m.height / 2
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
+		case "ctrl+f":
+			m.scrollOffset += m.viewportHeight()
+		case "ctrl+b":
+			m.scrollOffset -= m.viewportHeight()
+		case "home", "g":
+			m.scrollOffset = 0
+		case "end", "G":
+			m.scrollOffset = m.maxScrollOffset()
 		}
+		return m.clampedScroll(), nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m.clampedScroll(), nil
 	}
 	return m, nil
 }
@@ -75,25 +120,10 @@ func (m ProgressModel) Update(msg tea.Msg) (ProgressModel, tea.Cmd) {
 // View renders the progress screen.
 func (m ProgressModel) View() string {
 	header := m.renderHeader()
-	funnel := m.renderFunnel()
-	scores := m.renderScoreDistribution()
-	rates := m.renderRates()
-	weekly := m.renderWeeklyActivity()
 	help := m.renderHelp()
 
-	// Combine panels
-	body := lipgloss.JoinVertical(lipgloss.Left,
-		funnel,
-		"",
-		scores,
-		"",
-		rates,
-		"",
-		weekly,
-	)
-
 	// Apply scroll
-	bodyLines := strings.Split(body, "\n")
+	bodyLines := m.bodyLines()
 	offset := m.scrollOffset
 	if offset >= len(bodyLines) {
 		offset = len(bodyLines) - 1
@@ -106,15 +136,12 @@ func (m ProgressModel) View() string {
 	}
 
 	// Clamp to available height
-	availHeight := m.height - 4 // header + help + padding
-	if availHeight < 3 {
-		availHeight = 3
-	}
+	availHeight := m.viewportHeight()
 	if len(bodyLines) > availHeight {
 		bodyLines = bodyLines[:availHeight]
 	}
 
-	body = strings.Join(bodyLines, "\n")
+	body := strings.Join(bodyLines, "\n")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, help)
 }
@@ -385,8 +412,10 @@ func (m ProgressModel) renderHelp() string {
 
 	brand := lipgloss.NewStyle().Foreground(m.theme.Overlay).Render("career-ops by santifer.io")
 
-	keys := keyStyle.Render("\u2191\u2193") + descStyle.Render(" scroll  ") +
-		keyStyle.Render("PgUp/Dn") + descStyle.Render(" page  ") +
+	keys := keyStyle.Render("jk") + descStyle.Render(" scroll  ") +
+		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
+		keyStyle.Render("^F/^B") + descStyle.Render(" page  ") +
+		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
 		keyStyle.Render("Esc") + descStyle.Render(" back")
 
 	gap := m.width - lipgloss.Width(keys) - lipgloss.Width(brand) - 2

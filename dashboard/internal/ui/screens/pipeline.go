@@ -149,10 +149,10 @@ const (
 
 // colDef describes one optional column for the picker UI.
 type colDef struct {
-	id     ColumnID
-	header string
-	hint   string
-	width  int
+	id          ColumnID
+	header      string
+	hint        string
+	width       int
 	onByDefault bool
 }
 
@@ -537,14 +537,14 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 			m.statusCursor = 0
 		}
 
-	case "g":
+	case "home", "g":
 		if len(m.filtered) > 0 {
 			m.cursor = 0
 			m.scrollOffset = 0
 			return m, m.loadCurrentReport()
 		}
 
-	case "G":
+	case "end", "G":
 		if len(m.filtered) > 0 {
 			m.cursor = len(m.filtered) - 1
 			m.adjustScroll()
@@ -565,6 +565,16 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 			return m, m.loadCurrentReport()
 		}
 
+	case "ctrl+f":
+		if len(m.filtered) > 0 {
+			m.cursor += m.pageRows()
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+			}
+			m.adjustScroll()
+			return m, m.loadCurrentReport()
+		}
+
 	case "pgup", "ctrl+u":
 		if len(m.filtered) > 0 {
 			halfPage := m.height / 2
@@ -572,6 +582,16 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				halfPage = 1
 			}
 			m.cursor -= halfPage
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			m.adjustScroll()
+			return m, m.loadCurrentReport()
+		}
+
+	case "ctrl+b":
+		if len(m.filtered) > 0 {
+			m.cursor -= m.pageRows()
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
@@ -891,7 +911,6 @@ func (m PipelineModel) openPDFCmd(relPath string) tea.Cmd {
 	}
 }
 
-
 func (m PipelineModel) loadCurrentReport() tea.Cmd {
 	app, ok := m.CurrentApp()
 	if !ok || app.ReportPath == "" {
@@ -1039,9 +1058,17 @@ func (m PipelineModel) chromeRowsFixed() int {
 // height; adjustScroll uses this constant to avoid re-rendering on every keystroke.
 const previewBudgetApprox = 6
 
+func (m PipelineModel) pageRows() int {
+	rows := m.height - m.chromeRowsFixed() - previewBudgetApprox
+	if rows < 1 {
+		return 1
+	}
+	return rows
+}
+
 // adjustScroll updates scrollOffset so the cursor stays visible.
 func (m *PipelineModel) adjustScroll() {
-	availHeight := m.height - m.chromeRowsFixed() - previewBudgetApprox
+	availHeight := m.pageRows()
 	if availHeight < 5 {
 		availHeight = 5
 	}
@@ -1695,8 +1722,11 @@ func (m PipelineModel) renderHelp() string {
 
 	brand := lipgloss.NewStyle().Foreground(m.theme.Overlay).Render("career-ops by santifer.io")
 
-	keys := keyStyle.Render("↑↓/jk") + descStyle.Render(" nav  ") +
-		keyStyle.Render("←→/hl") + descStyle.Render(" tabs  ") +
+	keys := keyStyle.Render("jk") + descStyle.Render(" nav  ") +
+		keyStyle.Render("hl") + descStyle.Render(" tabs  ") +
+		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
+		keyStyle.Render("^F/^B") + descStyle.Render(" page  ") +
+		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
 		keyStyle.Render("/") + descStyle.Render(" search  ") +
 		keyStyle.Render("s") + descStyle.Render(" sort  ") +
 		keyStyle.Render("r") + descStyle.Render(" refresh  ") +

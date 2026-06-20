@@ -180,6 +180,30 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 				m.scrollOffset = 0
 			}
 
+		case "ctrl+f":
+			jump := m.bodyHeight()
+			if jump < 1 {
+				jump = 1
+			}
+			maxScroll := len(m.renderedLines) - m.bodyHeight()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			m.scrollOffset += jump
+			if m.scrollOffset > maxScroll {
+				m.scrollOffset = maxScroll
+			}
+
+		case "ctrl+b":
+			jump := m.bodyHeight()
+			if jump < 1 {
+				jump = 1
+			}
+			m.scrollOffset -= jump
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+
 		case "home", "g":
 			m.scrollOffset = 0
 
@@ -721,8 +745,9 @@ func (m ViewerModel) renderFooter() string {
 				keyStyle.Render("Esc/q") + descStyle.Render(" cancel"))
 	}
 
-	footer := keyStyle.Render("↑↓") + descStyle.Render(" scroll  ") +
-		keyStyle.Render("PgUp/Dn") + descStyle.Render(" page  ") +
+	footer := keyStyle.Render("jk") + descStyle.Render(" scroll  ") +
+		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
+		keyStyle.Render("^F/^B") + descStyle.Render(" page  ") +
 		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
 		keyStyle.Render("c") + descStyle.Render(" status  ") +
 		keyStyle.Render("Esc") + descStyle.Render(" back")
