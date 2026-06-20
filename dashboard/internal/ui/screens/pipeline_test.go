@@ -114,6 +114,26 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 	}
 }
 
+func TestColumnWidthsExpandLocationOnWideTerminals(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		120,
+		40,
+	)
+
+	if got := pm.columnWidths().loc; got != 20 {
+		t.Fatalf("default location width = %d, want 20", got)
+	}
+
+	pm.Resize(220, 40)
+	if got := pm.columnWidths().loc; got < 40 {
+		t.Fatalf("wide terminal location width = %d, want at least 40", got)
+	}
+}
+
 func TestSearchFiltersByCompanyRoleAndNotes(t *testing.T) {
 	apps := []model.CareerApplication{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6, Notes: "payments infra"},
@@ -580,4 +600,3 @@ func TestWithReloadedDataPreservesCursorWhenAppRemoved(t *testing.T) {
 		t.Fatalf("expected cursor to be within [0, %d], got %d", len(reloaded.filtered)-1, reloaded.cursor)
 	}
 }
-

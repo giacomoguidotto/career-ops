@@ -21,6 +21,7 @@ var (
 	reTlDrColon      = regexp.MustCompile(`(?i)\*\*TL;DR:\*\*\s*(.+)`)
 	reRemote         = regexp.MustCompile(`(?i)\*\*Remote\*\*\s*\|\s*(.+)`)
 	reComp           = regexp.MustCompile(`(?i)\*\*Comp\*\*\s*\|\s*(.+)`)
+	reCompMoneyRange = regexp.MustCompile(`(?i)(USD|EUR|GBP|CAD|AUD|SGD|CHF|\$|€|£)\s*(\d[\d,]*(?:\.\d+)?)([KkMm]?)\s*(?:[-–—]|\bto\b)\s*(?:(USD|EUR|GBP|CAD|AUD|SGD|CHF|\$|€|£)\s*)?(\d[\d,]*(?:\.\d+)?)([KkMm]?)`)
 	reArchetypeColon = regexp.MustCompile(`(?i)\*\*(?:Arquetipo|Archetype):\*\*\s*(.+)`)
 	reArchetypeYAML  = regexp.MustCompile(`(?m)^archetype:\s*"?([^"\n]+)"?\s*$`)
 	reReportURL      = regexp.MustCompile(`(?m)^\*\*URL:\*\*\s*(https?://\S+)`)
@@ -307,21 +308,36 @@ func loadJobURLs(careerOpsPath string) map[string]string {
 	return reportToURL
 }
 
-// enrichFromScanHistory fills JobURL from scan-history.tsv by matching company name.
+func readScanHistory(careerOpsPath string) ([]byte, error) {
+	for _, rel := range []string{
+		filepath.Join("data", "scan-history.tsv"),
+		"scan-history.tsv",
+	} {
+		scanData, err := os.ReadFile(filepath.Join(careerOpsPath, rel))
+		if err == nil {
+			return scanData, nil
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
+// enrichFromScanHistory fills JobURL and location metadata from scan-history.tsv.
 func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication) {
-	scanPath := filepath.Join(careerOpsPath, "scan-history.tsv")
-	scanData, err := os.ReadFile(scanPath)
+	scanData, err := readScanHistory(careerOpsPath)
 	if err != nil {
 		return
 	}
 
-	// Build company -> URL index from scan-history
+	// Build URL and company indexes from scan-history. The location column is
+	// optional for backward compatibility with older 6-column history files.
 	type scanEntry struct {
-		url     string
-		company string
-		title   string
+		url      string
+		company  string
+		title    string
+		location string
 	}
 	byCompany := make(map[string][]scanEntry)
+	byURL := make(map[string]scanEntry)
 	for _, line := range strings.Split(string(scanData), "\n") {
 		fields := strings.Split(line, "\t")
 		if len(fields) < 5 || fields[0] == "url" {
@@ -330,40 +346,57 @@ func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication)
 		url := fields[0]
 		company := fields[4]
 		title := fields[3]
+		location := ""
+		if len(fields) > 6 {
+			location = strings.TrimSpace(fields[6])
+		}
 		if url == "" || !strings.HasPrefix(url, "http") {
 			continue
 		}
 		key := normalizeCompany(company)
-		byCompany[key] = append(byCompany[key], scanEntry{url: url, company: company, title: title})
+		entry := scanEntry{url: url, company: company, title: title, location: location}
+		byURL[url] = entry
+		byCompany[key] = append(byCompany[key], entry)
 	}
 
 	for i := range apps {
-		if apps[i].JobURL != "" {
-			continue
-		}
-		key := normalizeCompany(apps[i].Company)
-		matches := byCompany[key]
-		if len(matches) == 1 {
-			apps[i].JobURL = matches[0].url
-		} else if len(matches) > 1 {
-			// Multiple entries: pick best role match
-			appRole := strings.ToLower(apps[i].Role)
-			best := matches[0].url
-			bestScore := 0
-			for _, m := range matches {
-				score := 0
-				mTitle := strings.ToLower(m.title)
-				for _, word := range strings.Fields(appRole) {
-					if len(word) > 2 && strings.Contains(mTitle, word) {
-						score++
+		match, ok := byURL[apps[i].JobURL]
+		if !ok {
+			key := normalizeCompany(apps[i].Company)
+			matches := byCompany[key]
+			if len(matches) == 1 {
+				match = matches[0]
+				ok = true
+			} else if len(matches) > 1 {
+				// Multiple entries: pick best role match
+				appRole := strings.ToLower(apps[i].Role)
+				best := matches[0]
+				bestScore := 0
+				for _, m := range matches {
+					score := 0
+					mTitle := strings.ToLower(m.title)
+					for _, word := range strings.Fields(appRole) {
+						if len(word) > 2 && strings.Contains(mTitle, word) {
+							score++
+						}
+					}
+					if score > bestScore {
+						bestScore = score
+						best = m
 					}
 				}
-				if score > bestScore {
-					bestScore = score
-					best = m.url
-				}
+				match = best
+				ok = true
 			}
-			apps[i].JobURL = best
+		}
+		if !ok {
+			continue
+		}
+		if apps[i].JobURL == "" {
+			apps[i].JobURL = match.url
+		}
+		if match.location != "" {
+			applyLocationHint(&apps[i], match.location)
 		}
 	}
 }
@@ -556,8 +589,14 @@ func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remot
 		remote = cleanTableCell(m[1])
 	}
 
-	if m := reComp.FindStringSubmatch(text); m != nil {
-		comp = cleanTableCell(m[1])
+	comp = extractCompEstimate(text)
+	if comp == "" {
+		if m := reComp.FindStringSubmatch(text); m != nil {
+			legacy := cleanTableCell(m[1])
+			if strings.ContainsAny(legacy, "$€£") || reCompMoneyRange.MatchString(legacy) {
+				comp = legacy
+			}
+		}
 	}
 
 	// Truncate long fields
@@ -566,6 +605,165 @@ func LoadReportSummary(careerOpsPath, reportPath string) (archetype, tldr, remot
 	}
 
 	return
+}
+
+func extractCompEstimate(text string) string {
+	section := compensationSection(text)
+	lines := strings.Split(section, "\n")
+
+	for _, line := range lines {
+		if !looksLikeCompensationLine(line) {
+			continue
+		}
+		if payRange := extractCompRangeFromLine(line); payRange != "" {
+			return payRange
+		}
+	}
+
+	for _, line := range lines {
+		if isCompensationNoiseLine(line) {
+			continue
+		}
+		if payRange := extractCompRangeFromLine(line); payRange != "" {
+			return payRange
+		}
+	}
+
+	return ""
+}
+
+func compensationSection(text string) string {
+	lines := strings.Split(text, "\n")
+	start := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "##") && strings.Contains(lower, "compensation") {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return text
+	}
+
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "## ") {
+			end = i
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func looksLikeCompensationLine(line string) bool {
+	if isCompensationNoiseLine(line) {
+		return false
+	}
+	lower := strings.ToLower(line)
+	for _, hint := range []string{
+		"salary",
+		"base pay",
+		"pay range",
+		"compensation",
+		"total comp",
+		"package",
+		"ote",
+	} {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCompensationNoiseLine(line string) bool {
+	lower := strings.ToLower(line)
+	for _, noise := range []string{
+		"comp score",
+		"funding",
+		"valuation",
+		"investment",
+		"series ",
+		"raised ",
+		"runway",
+		" arr",
+		"revenue",
+		"market cap",
+		"tender offer",
+	} {
+		if strings.Contains(lower, noise) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractCompRangeFromLine(line string) string {
+	m := reCompMoneyRange.FindStringSubmatch(line)
+	if m == nil {
+		return ""
+	}
+
+	currency := formatCompCurrency(m[1])
+	lowSuffix := m[3]
+	highSuffix := m[6]
+	if lowSuffix == "" && highSuffix != "" {
+		lowSuffix = highSuffix
+	}
+	if highSuffix == "" && lowSuffix != "" {
+		highSuffix = lowSuffix
+	}
+
+	low := formatCompAmount(m[2], lowSuffix)
+	high := formatCompAmount(m[5], highSuffix)
+	if low == "" || high == "" {
+		return ""
+	}
+
+	if currency == "$" || currency == "€" || currency == "£" {
+		return currency + low + "-" + high
+	}
+	return currency + " " + low + "-" + high
+}
+
+func formatCompCurrency(raw string) string {
+	switch raw {
+	case "$", "€", "£":
+		return raw
+	default:
+		return strings.ToUpper(raw)
+	}
+}
+
+func formatCompAmount(raw, suffix string) string {
+	v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", ""), 64)
+	if err != nil {
+		return ""
+	}
+
+	switch strings.ToUpper(suffix) {
+	case "K":
+		return compactNumber(v) + "K"
+	case "M":
+		return compactNumber(v) + "M"
+	}
+
+	switch {
+	case v >= 1_000_000:
+		return compactNumber(v/1_000_000) + "M"
+	case v >= 1_000:
+		return compactNumber(v/1_000) + "K"
+	default:
+		return compactNumber(v)
+	}
+}
+
+func compactNumber(v float64) string {
+	s := strconv.FormatFloat(v, 'f', 1, 64)
+	return strings.TrimSuffix(s, ".0")
 }
 
 // splitTrackerRow splits a tracker table line into trimmed cell values, using

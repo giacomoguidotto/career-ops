@@ -295,3 +295,105 @@ func TestResolveTrackerColumnsVia(t *testing.T) {
 		t.Errorf("status index = %d, want 6", cols["status"])
 	}
 }
+
+func TestParseApplicationsEnrichesLocationFromDataScanHistory(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	reportsDir := filepath.Join(tempDir, "reports")
+	for _, dir := range []string{dataDir, reportsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 4 | 2026-06-20 | Hume AI | Senior Platform Engineer | 3.4/5 | Evaluated | ❌ | [004](../reports/004-hume-ai.md) | Research first: senior platform role with location ambiguity. |
+| 30 | 2026-06-20 | Vercel | Forward-Deployed Engineer | 3.50/5 | Evaluated | ✅ | [030](../reports/030-vercel.md) | Research first: customer-facing FDE tenure and London/Berlin setup need recruiter confirmation. |
+`
+	if err := os.WriteFile(filepath.Join(dataDir, "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write applications tracker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reportsDir, "030-vercel.md"), []byte("**URL:** https://job-boards.greenhouse.io/vercel/jobs/5778418004\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	scanHistory := "url\tfirst_seen\tportal\ttitle\tcompany\tstatus\tlocation\n" +
+		"https://job-boards.greenhouse.io/humeai/jobs/5064248008\t2026-06-20\tgreenhouse-api\tSenior Platform Engineer\tHume AI\tadded\tNew York, New York, United States\n" +
+		"https://job-boards.greenhouse.io/vercel/jobs/5778418004\t2026-06-20\tgreenhouse-api\tForward-Deployed Engineer\tVercel\tadded\tHybrid - London, Berlin\n"
+	if err := os.WriteFile(filepath.Join(dataDir, "scan-history.tsv"), []byte(scanHistory), 0o644); err != nil {
+		t.Fatalf("failed to write scan history: %v", err)
+	}
+
+	apps := ParseApplications(tempDir)
+	if len(apps) != 2 {
+		t.Fatalf("expected 2 parsed applications, got %d", len(apps))
+	}
+
+	if apps[0].WorkMode != "Full" || apps[0].Location != "New York, New York, United States" {
+		t.Fatalf("Hume location = %q/%q, want Full/New York, New York, United States", apps[0].WorkMode, apps[0].Location)
+	}
+	if apps[1].JobURL != "https://job-boards.greenhouse.io/vercel/jobs/5778418004" {
+		t.Fatalf("Vercel JobURL = %q", apps[1].JobURL)
+	}
+	if apps[1].WorkMode != "Hybrid" || apps[1].Location != "London, Berlin" {
+		t.Fatalf("Vercel location = %q/%q, want Hybrid/London, Berlin", apps[1].WorkMode, apps[1].Location)
+	}
+}
+
+func TestLoadReportSummaryExtractsCompensationRange(t *testing.T) {
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("failed to create reports dir: %v", err)
+	}
+
+	report := `# Evaluation: RunPod -- Senior Software Engineer
+
+## D) Compensation and Demand
+
+| Source | Data | Relevance |
+|---|---|---|
+| RunPod official Greenhouse posting | Base pay range is $150,000-$200,000 plus stock options and standard benefits. | Direct source for this role. Strong transparency. |
+| Funding | RunPod raised $20M seed in May 2024. | Company signal, not pay. |
+
+**Comp score: 4.0/5.**
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "runpod.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "runpod.md"))
+	if comp != "$150K-200K" {
+		t.Fatalf("comp = %q, want $150K-200K", comp)
+	}
+}
+
+func TestLoadReportSummaryExtractsCurrencyCodeCompensationRange(t *testing.T) {
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatalf("failed to create reports dir: %v", err)
+	}
+
+	report := `# Evaluation: Hume AI -- Senior Platform Engineer
+
+## D) Compensation and Demand
+
+| Data point | Signal | Interpretation |
+|---|---|---|
+| Hume JD salary: USD 180,000-230,000 | Stated on Greenhouse. | Strong transparency. |
+
+Comp score: 4.0/5.
+`
+	if err := os.WriteFile(filepath.Join(reportsDir, "hume.md"), []byte(report), 0o644); err != nil {
+		t.Fatalf("failed to write report: %v", err)
+	}
+
+	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "hume.md"))
+	if comp != "USD 180K-230K" {
+		t.Fatalf("comp = %q, want USD 180K-230K", comp)
+	}
+}

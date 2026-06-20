@@ -1375,7 +1375,7 @@ func (m PipelineModel) columnWidths() colWidths {
 		c.date = 10
 	}
 	if m.colVisible(ColLocation) {
-		c.loc = 20
+		c.loc = m.locationColumnWidth()
 	}
 	if m.colVisible(ColPay) {
 		c.pay = 16
@@ -1395,6 +1395,19 @@ func (m PipelineModel) columnWidths() colWidths {
 		c.role = 15
 	}
 	return c
+}
+
+func (m PipelineModel) locationColumnWidth() int {
+	switch {
+	case m.width >= 220:
+		return 40
+	case m.width >= 180:
+		return 32
+	case m.width >= 150:
+		return 28
+	default:
+		return 20
+	}
 }
 
 func (m PipelineModel) workModeColor(mode string) lipgloss.Color {

@@ -210,3 +210,50 @@ func TestPayCeiling(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyLocationHint(t *testing.T) {
+	cases := []struct {
+		name     string
+		raw      string
+		location string
+		workMode string
+	}{
+		{
+			name:     "hybrid prefix strips work mode",
+			raw:      "Hybrid - London, Berlin",
+			location: "London, Berlin",
+			workMode: "Hybrid",
+		},
+		{
+			name:     "plain location implies onsite",
+			raw:      "New York, New York, United States",
+			location: "New York, New York, United States",
+			workMode: "Full",
+		},
+		{
+			name:     "remote parens keep region",
+			raw:      "Remote (Singapore)",
+			location: "Singapore",
+			workMode: "Remote",
+		},
+		{
+			name:     "remote friendly prefix",
+			raw:      "Remote-Friendly, United States; San Francisco, CA",
+			location: "United States; San Francisco, CA",
+			workMode: "RemoteFlex",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := model.CareerApplication{}
+			applyLocationHint(&app, tc.raw)
+			if app.Location != tc.location {
+				t.Errorf("Location = %q, want %q", app.Location, tc.location)
+			}
+			if app.WorkMode != tc.workMode {
+				t.Errorf("WorkMode = %q, want %q", app.WorkMode, tc.workMode)
+			}
+		})
+	}
+}

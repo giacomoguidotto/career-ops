@@ -36,6 +36,89 @@ var (
 	reEstHint = regexp.MustCompile(`\(est[),;. ]|\best\)|\bmarket\b`)
 )
 
+func locationHintWorkMode(raw string) string {
+	lower := strings.ToLower(raw)
+	switch {
+	case strings.Contains(lower, "hybrid"):
+		return "Hybrid"
+	case strings.Contains(lower, "remote-friendly") ||
+		strings.Contains(lower, "remote-first") ||
+		strings.Contains(lower, "remote first"):
+		return "RemoteFlex"
+	case strings.Contains(lower, "remote") || strings.Contains(lower, "remotely"):
+		return "Remote"
+	case strings.Contains(lower, "onsite") ||
+		strings.Contains(lower, "on-site") ||
+		strings.Contains(lower, "in-office"):
+		return "Full"
+	default:
+		return ""
+	}
+}
+
+func stripLeadingLocationMode(raw string) string {
+	s := strings.TrimSpace(raw)
+	lower := strings.ToLower(s)
+	for _, prefix := range []string{
+		"remote-friendly",
+		"remote-first",
+		"remote first",
+		"remote",
+		"remotely",
+		"hybrid",
+		"in-office",
+		"on-site",
+		"onsite",
+	} {
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		rest := strings.TrimSpace(s[len(prefix):])
+		rest = strings.Trim(rest, " \t-–—,;:()")
+		if strings.HasPrefix(strings.ToLower(rest), "in ") {
+			rest = strings.TrimSpace(rest[3:])
+		}
+		return strings.Trim(rest, " \t-–—,;:()")
+	}
+	return s
+}
+
+func cleanLocationHint(raw string) string {
+	s := stripLeadingLocationMode(raw)
+	for _, suffix := range []string{"(Remote)", "(Hybrid)", "(Onsite)", "(On-site)", "(In-office)"} {
+		if strings.HasSuffix(strings.ToLower(s), strings.ToLower(suffix)) {
+			s = strings.TrimSpace(s[:len(s)-len(suffix)])
+			break
+		}
+	}
+	s = strings.Trim(s, " \t-–—,;:()")
+	switch strings.ToLower(s) {
+	case "", "remote", "remotely", "hybrid", "onsite", "on-site", "in-office":
+		return ""
+	default:
+		return s
+	}
+}
+
+func applyLocationHint(app *model.CareerApplication, raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+
+	location := cleanLocationHint(raw)
+	workMode := locationHintWorkMode(raw)
+	if workMode == "" && location != "" {
+		workMode = "Full"
+	}
+	if location != "" {
+		app.Location = location
+	}
+	if workMode != "" {
+		app.WorkMode = workMode
+	}
+}
+
 // payCeiling converts a matched pay span to its top dollar amount for sorting:
 // "$140-210K" → 210000, "$174,986-209,983" → 209983, "$170K" → 170000.
 func payCeiling(span string) float64 {

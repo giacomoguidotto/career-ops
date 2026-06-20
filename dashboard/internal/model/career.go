@@ -14,9 +14,9 @@ type CareerApplication struct {
 	ReportNumber string
 	Notes        string
 	JobURL       string // URL of the original job posting
-	// Derived from Notes free-text (see data.deriveNoteFields)
-	Location    string  // "City, ST" when a US city+state appears in the notes
-	WorkMode    string  // "Remote" | "Hybrid" | "Full" (onsite), "" when unknown
+	// Derived from Notes free-text and scan-history metadata.
+	Location    string  // City/region text for dashboard display
+	WorkMode    string  // "Remote" | "RemoteFlex" | "Hybrid" | "Full" (onsite), "" when unknown
 	PayRange    string  // first $-range found in the notes, e.g. "$140-210K"
 	PayMax      float64 // top of PayRange in dollars (sort key), 0 when unknown
 	PaySource   string  // "POSTED" when the JD listed it, "est" for estimates, "" unknown
