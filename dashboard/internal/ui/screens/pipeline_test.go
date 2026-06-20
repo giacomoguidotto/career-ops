@@ -1,10 +1,13 @@
 package screens
 
 import (
+	"io"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
@@ -131,6 +134,61 @@ func TestColumnWidthsExpandLocationOnWideTerminals(t *testing.T) {
 	pm.Resize(220, 40)
 	if got := pm.columnWidths().loc; got < 40 {
 		t.Fatalf("wide terminal location width = %d, want at least 40", got)
+	}
+}
+
+func TestGroupedDividerSpansFullTableWidth(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Number: 1, Date: "2026-06-20", Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.0},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 160, 40)
+	pm.viewMode = "grouped"
+	pm.applyFilterAndSort()
+
+	lines := strings.Split(pm.renderBody(), "\n")
+	if len(lines) == 0 {
+		t.Fatal("expected grouped body to render at least one line")
+	}
+	if got := lipgloss.Width(lines[0]); got != pm.width {
+		t.Fatalf("group divider width = %d, want %d", got, pm.width)
+	}
+}
+
+func TestSelectedAppLineAppliesBackgroundAcrossStyledCells(t *testing.T) {
+	oldRenderer := lipgloss.DefaultRenderer()
+	r := lipgloss.NewRenderer(io.Discard)
+	r.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetDefaultRenderer(r)
+	t.Cleanup(func() {
+		lipgloss.SetDefaultRenderer(oldRenderer)
+	})
+
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		160,
+		40,
+	)
+	pm.reportCache["reports/001-acme.md"] = reportSummary{comp: "$150K-200K"}
+
+	line := pm.renderAppLine(model.CareerApplication{
+		Number:     1,
+		Date:       "2026-06-20",
+		Company:    "Acme",
+		Role:       "Backend Engineer",
+		Status:     "Evaluated",
+		Score:      4.0,
+		WorkMode:   "Hybrid",
+		Location:   "London, Berlin",
+		ReportPath: "reports/001-acme.md",
+	}, true)
+
+	const overlaySeq = "\x1b[48;2;69;71;89m"
+	if count := strings.Count(line, overlaySeq); count < 6 {
+		t.Fatalf("selected row emitted overlay background %d times, want it across styled cells; line=%q", count, line)
 	}
 }
 
