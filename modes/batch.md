@@ -90,14 +90,17 @@ batch/batch-runner.sh [OPTIONS]
 ```
 
 Options:
+- `--cli codex|claude` — worker CLI (default: `codex`, or `CAREER_OPS_BATCH_CLI`)
 - `--dry-run` — list pending jobs without executing
 - `--retry-failed` — retry only failed jobs
-- `--resume-paused` — resume jobs paused after a Claude session/rate limit
+- `--resume-paused` — resume jobs paused after a worker session/rate limit
 - `--start-from N` — start from ID N
 - `--limit N` — max number of jobs to process in this run
 - `--parallel N` — N workers in parallel
 - `--max-retries N` — attempts per job (default: 2)
 - `--rate-limit-sleep N` — seconds to wait before retrying a transient rate-limited worker (default: 300; use 0 to pause the batch immediately)
+- `--model NAME` — model passed to the worker CLI; Codex defaults to `gpt-5.5`
+- `--reasoning-effort N` — Codex reasoning effort (default: `high`)
 
 ## batch-state.tsv Format
 
@@ -112,7 +115,7 @@ id	url	status	started_at	completed_at	report_num	score	error	retries
 
 Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, and `paused_rate_limit`. `rate_limited` is an intermediate non-completed state emitted while the runner waits before retrying; if the run is interrupted there, a later non-`--retry-failed` run treats it as pending work.
 
-`paused_rate_limit` means a worker hit a Claude session/usage limit. The runner stops scheduling new offers, preserves the retry count, and resumes only when explicitly called with `--resume-paused`.
+`paused_rate_limit` means a worker hit a session/usage limit. The runner stops scheduling new offers, preserves the retry count, and resumes only when explicitly called with `--resume-paused`.
 
 ## Resumability
 

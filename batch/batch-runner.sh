@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# career-ops batch runner — standalone orchestrator for claude -p workers
-# Reads batch-input.tsv, delegates each offer to a claude -p worker,
+# career-ops batch runner — standalone orchestrator for headless CLI workers
+# Reads batch-input.tsv, delegates each offer to a worker CLI,
 # tracks state in batch-state.tsv for resumability.
-#
-# NOTE: This script is Claude Code-specific. It uses claude -p with
-# --dangerously-skip-permissions and --append-system-prompt-file flags
-# that are not available in other CLIs. Multi-CLI support is out of scope
-# for now — contributions welcome.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -36,7 +31,9 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 SKIP_PDF=false
-MODEL=""  # empty = let claude -p use the Claude Max default
+WORKER_CLI="${CAREER_OPS_BATCH_CLI:-codex}"
+MODEL=""  # empty = worker CLI default; Codex falls back to gpt-5.5 below
+REASONING_EFFORT="${CAREER_OPS_BATCH_REASONING_EFFORT:-high}"
 RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
@@ -50,16 +47,17 @@ is_decimal_number() {
 
 usage() {
   cat <<'USAGE'
-career-ops batch runner — process job offers in batch via claude -p workers
-Uses your default Claude model (Claude Max subscription).
+career-ops batch runner — process job offers in batch via headless workers
 
 Usage: batch-runner.sh [OPTIONS]
 
 Options:
+  --cli NAME           Worker CLI: codex or claude (default: codex; can also
+                       set CAREER_OPS_BATCH_CLI)
   --parallel N         Number of parallel workers (default: 1)
   --dry-run            Show what would be processed, don't execute
   --retry-failed       Only retry offers marked as "failed" in state
-  --resume-paused      Resume offers paused by a Claude session/rate limit
+  --resume-paused      Resume offers paused by a worker session/rate limit
   --start-from N       Start from offer ID N (skip earlier IDs)
   --limit N            Max number of offers to process in this run
   --max-retries N      Max retry attempts per offer (default: 2)
@@ -67,9 +65,10 @@ Options:
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
   --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
                        (default: 300)
-  --model NAME         Claude model passed to `claude -p --model` (default:
-                       unset = Claude Max default). Use a cheaper model for
-                       large batches, e.g. `--model claude-sonnet-4-6`.
+  --model NAME         Model passed to the worker CLI. Codex defaults to
+                       gpt-5.5 when unset; Claude uses its CLI default.
+  --reasoning-effort N Codex reasoning effort (default: high; can also set
+                       CAREER_OPS_BATCH_REASONING_EFFORT)
   --status             Show batch progress and a per-job table, then exit
   --watch              Live-refresh progress until the run completes
   -h, --help           Show this help
@@ -99,6 +98,7 @@ USAGE
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --cli) WORKER_CLI="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
@@ -114,6 +114,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --model) MODEL="$2"; shift 2 ;;
+    --reasoning-effort) REASONING_EFFORT="$2"; shift 2 ;;
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -174,8 +175,13 @@ check_prerequisites() {
     exit 1
   fi
 
-  if ! command -v claude &>/dev/null; then
-    echo "ERROR: 'claude' CLI not found in PATH."
+  if [[ "$WORKER_CLI" != "codex" && "$WORKER_CLI" != "claude" ]]; then
+    echo "ERROR: unsupported --cli '$WORKER_CLI' (expected: codex or claude)."
+    exit 1
+  fi
+
+  if ! command -v "$WORKER_CLI" &>/dev/null; then
+    echo "ERROR: '$WORKER_CLI' CLI not found in PATH."
     exit 1
   fi
 
@@ -392,7 +398,15 @@ reserve_report_num_unlocked() {
   local id="$1" url="$2" started="$3" retries="$4"
 
   local report_num=""
-  if report_num=$(next_report_num_unlocked); then
+  if [[ -f "$STATE_FILE" ]]; then
+    report_num=$(awk -F'\t' -v id="$id" '$1 == id && $6 != "-" && $6 != "" { print $6; exit }' "$STATE_FILE")
+  fi
+
+  if [[ -z "$report_num" ]] && report_num=$(next_report_num_unlocked); then
+    :
+  fi
+
+  if [[ -n "$report_num" ]]; then
     update_state_unlocked "$id" "$url" "processing" "$started" "-" "$report_num" "-" "-" "$retries"
   fi
 
@@ -401,6 +415,60 @@ reserve_report_num_unlocked() {
 
 reserve_report_num() {
   run_with_state_lock reserve_report_num_unlocked "$@"
+}
+
+run_worker() {
+  local resolved_prompt="$1"
+  local prompt="$2"
+  local log_file="$3"
+
+  case "$WORKER_CLI" in
+    claude)
+      # --strict-mcp-config (with no --mcp-config) starts workers with no MCP
+      # servers: they only evaluate offers and need none. Without it each
+      # parallel worker inherits the parent session's MCP (e.g. Playwright) and
+      # they deadlock fighting over the single shared browser when --parallel > 1
+      # (issue #506).
+      local -a claude_args=(-p --dangerously-skip-permissions --strict-mcp-config)
+      if [[ -n "$MODEL" ]]; then
+        claude_args+=(--model "$MODEL")
+      fi
+      claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
+      claude "${claude_args[@]}" > "$log_file" 2>&1
+      ;;
+    codex)
+      local combined_prompt
+      combined_prompt=$(mktemp "$BATCH_DIR/.codex-worker-prompt.XXXXXX")
+      {
+        cat "$resolved_prompt"
+        printf '\n\n---\n\n'
+        printf '%s\n' "$prompt"
+      } > "$combined_prompt"
+
+      local codex_model="${MODEL:-gpt-5.5}"
+      local -a codex_args=(
+        exec
+        --ignore-user-config
+        --ephemeral
+        --model "$codex_model"
+        --config "model_reasoning_effort=\"$REASONING_EFFORT\""
+        --sandbox danger-full-access
+        --dangerously-bypass-approvals-and-sandbox
+        --cd "$PROJECT_DIR"
+        --skip-git-repo-check
+        -
+      )
+
+      local status=0
+      codex "${codex_args[@]}" < "$combined_prompt" > "$log_file" 2>&1 || status=$?
+      rm -f "$combined_prompt"
+      return "$status"
+      ;;
+    *)
+      echo "ERROR: unsupported worker CLI '$WORKER_CLI'" > "$log_file"
+      return 127
+      ;;
+  esac
 }
 
 # Process a single offer
@@ -472,26 +540,13 @@ process_offer() {
     fi
   done
 
-  # Launch claude -p worker.
-  # Model defaults to the Claude Max subscription default unless --model was
-  # passed. Building the command in an array keeps quoting safe regardless.
-  # --strict-mcp-config (with no --mcp-config) starts workers with no MCP
-  # servers: they only evaluate offers and need none. Without it each parallel
-  # worker inherits the parent session's MCP (e.g. Playwright) and they deadlock
-  # fighting over the single shared browser when --parallel > 1 (issue #506).
-  local -a claude_args=(-p --dangerously-skip-permissions --strict-mcp-config)
-  if [[ -n "$MODEL" ]]; then
-    claude_args+=(--model "$MODEL")
-  fi
-  claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
-
   local exit_code=0
   local terminal_failure_recorded=false
   local shim_retries=0
   local max_shim_retries=4
   while true; do
     exit_code=0
-    claude "${claude_args[@]}" > "$log_file" 2>&1 || exit_code=$?
+    run_worker "$resolved_prompt" "$prompt" "$log_file" || exit_code=$?
 
     if [[ $exit_code -eq 0 ]]; then
       break
@@ -760,6 +815,7 @@ main() {
   fi
 
   echo "=== career-ops batch runner ==="
+  echo "Worker CLI: $WORKER_CLI | Model: ${MODEL:-default} | Reasoning: $REASONING_EFFORT"
   if (( LIMIT > 0 )); then
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
   else
@@ -929,4 +985,3 @@ main() {
 }
 
 main "$@"
-

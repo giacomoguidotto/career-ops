@@ -30,14 +30,17 @@ Process multiple job offers in parallel via headless workers. Each worker runs t
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--cli codex\|claude` | `codex` | Worker CLI to spawn; can also be set with `CAREER_OPS_BATCH_CLI` |
 | `--parallel N` | `1` | Number of concurrent headless workers |
 | `--dry-run` | off | Preview pending offers without processing |
 | `--retry-failed` | off | Only retry offers marked as `failed` in state |
-| `--resume-paused` | off | Resume offers paused after a Claude session/rate limit |
+| `--resume-paused` | off | Resume offers paused after a worker session/rate limit |
 | `--start-from N` | `0` | Skip offers with ID below N |
 | `--limit N` | `0` | Max number of offers to process in this run (0 = no limit) |
 | `--max-retries N` | `2` | Max retry attempts per offer before giving up |
 | `--rate-limit-sleep N` | `300` | Seconds to wait before retrying a transient rate-limited worker; use `0` to pause the batch immediately |
+| `--model NAME` | Codex: `gpt-5.5`; Claude: CLI default | Model passed to the worker CLI |
+| `--reasoning-effort N` | `high` | Codex reasoning effort |
 
 ## Directory Layout
 
@@ -80,7 +83,7 @@ Batch mode reads offers from `batch-input.tsv`, but the `data/pipeline.md` inbox
 
 `batch-state.tsv` tracks the status of every offer (`pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, `paused_rate_limit`). If the batch is interrupted, re-running `batch-runner.sh` picks up where it left off -- completed offers are skipped automatically. `rate_limited` is a non-completed state used while the runner waits before retrying, so interrupted rate-limited jobs are eligible on the next normal run.
 
-`paused_rate_limit` is different: it means a worker hit a Claude session/usage limit, so the runner stopped scheduling new offers and preserved the retry count. Resume those rows explicitly after the limit resets:
+`paused_rate_limit` is different: it means a worker hit a session/usage limit, so the runner stopped scheduling new offers and preserved the retry count. Resume those rows explicitly after the limit resets:
 
 ```bash
 ./batch/batch-runner.sh --resume-paused

@@ -4960,7 +4960,7 @@ try {
   }
 
   const env = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}` };
-  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--parallel', '1', '--max-retries', '3', '--rate-limit-sleep', '0'], {
+  const out = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--parallel', '1', '--max-retries', '3', '--rate-limit-sleep', '0'], {
     cwd: tmp,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -5021,16 +5021,32 @@ console.log('\n15. Batch runner MCP isolation');
 
 try {
   const batchRunner = readFileSync(join(ROOT, 'batch', 'batch-runner.sh'), 'utf-8');
-  // Workers must be spawned with --strict-mcp-config so they don't inherit the
-  // parent session's MCP servers (e.g. Playwright) and deadlock fighting over a
-  // single browser when --parallel > 1 (issue #506).
+  // Claude workers must be spawned with --strict-mcp-config so they don't inherit
+  // the parent session's MCP servers (e.g. Playwright) and deadlock fighting over
+  // a single browser when --parallel > 1 (issue #506).
   const claudeArgsLine = batchRunner
     .split('\n')
     .find(l => l.includes('claude_args=('));
   if (claudeArgsLine && claudeArgsLine.includes('--strict-mcp-config')) {
-    pass('batch workers spawn with --strict-mcp-config (no inherited MCP)');
+    pass('Claude batch workers spawn with --strict-mcp-config (no inherited MCP)');
   } else {
     fail('batch-runner.sh worker spawn missing --strict-mcp-config (issue #506 regression)');
+  }
+
+  const codexArgsBlock = batchRunner.slice(
+    batchRunner.indexOf('local -a codex_args=('),
+    batchRunner.indexOf('codex "${codex_args[@]}"'),
+  );
+  if (
+    codexArgsBlock.includes('exec') &&
+    codexArgsBlock.includes('--ignore-user-config') &&
+    codexArgsBlock.includes('--ephemeral') &&
+    codexArgsBlock.includes('--dangerously-bypass-approvals-and-sandbox') &&
+    codexArgsBlock.includes('--cd "$PROJECT_DIR"')
+  ) {
+    pass('Codex batch workers use codex exec with isolated ephemeral context');
+  } else {
+    fail('batch-runner.sh missing Codex worker invocation flags');
   }
 } catch (e) {
   fail(`Batch runner MCP isolation test crashed: ${e.message}`);
