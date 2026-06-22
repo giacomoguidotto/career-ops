@@ -60,7 +60,8 @@ batch/
 1. **batch-runner.sh** reads `batch-input.tsv` and `batch-state.tsv` to determine which offers need processing.
 2. For each pending offer, it assigns a report number and launches a headless worker with `batch-prompt.md` as the system prompt (placeholders like `{{URL}}`, `{{REPORT_NUM}}` are resolved).
 3. Each worker evaluates the offer, writes a report to `reports/`, generates a PDF to `output/`, and writes a tracker TSV to `tracker-additions/`.
-4. After all workers finish, batch-runner calls `merge-tracker.mjs` to merge TSVs into `data/applications.md`, `reconcile-pipeline.mjs` to move processed offers out of the `data/pipeline.md` inbox, and `verify-pipeline.mjs` to check integrity.
+4. As each worker finishes, batch-runner calls the lock-protected `merge-tracker.mjs` so `data/applications.md` updates during long batches without concurrent worker writes racing on the markdown table.
+5. After all workers finish, batch-runner runs a final merge, calls `reconcile-pipeline.mjs` to move processed offers out of the `data/pipeline.md` inbox, and calls `verify-pipeline.mjs` to check integrity.
 
 ## Tracker Merge
 

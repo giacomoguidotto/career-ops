@@ -596,7 +596,7 @@ process_offer() {
     # Try to extract score from worker output
     local score="-"
     local score_match
-   score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
+    score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
     if [[ -n "$score_match" ]]; then
       score="$score_match"
     fi
@@ -605,12 +605,14 @@ process_offer() {
     if is_decimal_number "$score" && awk -v min="$MIN_SCORE" 'BEGIN{exit !(min > 0)}'; then
       if awk -v score="$score" -v min="$MIN_SCORE" 'BEGIN{exit !(score < min)}'; then
         update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "$score" "below-min-score" "$retries"
+        merge_tracker_additions
         echo "    ⏭️  Skipped (score: $score < min-score: $MIN_SCORE)"
         return 0
       fi
     fi
 
     update_state "$id" "$url" "completed" "$started_at" "$completed_at" "$report_num" "$score" "-" "$retries"
+    merge_tracker_additions
     echo "    ✅ Completed (score: $score, report: $report_num)"
   elif [[ "$terminal_failure_recorded" == "false" ]]; then
     if (( retries < MAX_RETRIES )); then
@@ -623,11 +625,21 @@ process_offer() {
   fi
 }
 
+# Merge just the worker-produced tracker TSVs into applications.md.
+#
+# Workers write per-offer TSV files instead of touching applications.md
+# directly. Calling the lock-protected merge after each terminal worker keeps
+# the tracker current during long batches without making parallel workers race
+# on the markdown table.
+merge_tracker_additions() {
+  node "$PROJECT_DIR/merge-tracker.mjs" || echo "⚠️  Tracker merge had issues (see above)"
+}
+
 # Merge tracker additions into applications.md
 merge_tracker() {
   echo ""
   echo "=== Merging tracker additions ==="
-  node "$PROJECT_DIR/merge-tracker.mjs"
+  merge_tracker_additions
   echo ""
   echo "=== Reconciling pipeline.md ==="
   node "$PROJECT_DIR/reconcile-pipeline.mjs" || echo "⚠️  Pipeline reconcile had issues (see above)"

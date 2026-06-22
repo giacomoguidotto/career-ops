@@ -26,6 +26,9 @@ type CareerApplication struct {
 	TlDr         string
 	Remote       string
 	CompEstimate string
+	// Source identifies where this dashboard row came from. Empty is treated as
+	// "tracker" for older tests/fixtures.
+	Source string
 }
 
 // PipelineMetrics holds aggregate stats for the pipeline dashboard.

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/santifer/career-ops/dashboard/internal/theme"
@@ -102,6 +103,31 @@ func TestViewerEmptyContentRendersPlaceholder(t *testing.T) {
 	body := ansi.Strip(m.renderBody())
 	if !strings.Contains(body, "(empty file)") {
 		t.Fatalf("expected empty placeholder, got %q", body)
+	}
+}
+
+func TestViewerSafePageKeysMirrorCtrlPageKeys(t *testing.T) {
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = "- line"
+	}
+	m := ViewerModel{
+		lines:  lines,
+		width:  80,
+		height: 10,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+	m.rebuildRender()
+
+	pageRows := m.bodyHeight()
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if m.scrollOffset != pageRows {
+		t.Fatalf("Space moved to offset %d, want %d", m.scrollOffset, pageRows)
+	}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if m.scrollOffset != 0 {
+		t.Fatalf("b should page back to the top, got offset %d", m.scrollOffset)
 	}
 }
 

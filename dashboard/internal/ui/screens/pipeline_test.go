@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/santifer/career-ops/dashboard/internal/model"
@@ -117,6 +118,40 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 	}
 }
 
+func TestPendingAndScoredRowsKeepCompanyColumnAligned(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		140,
+		40,
+	)
+
+	scored := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+		Number:  42,
+		Date:    "2026-04-13",
+		Company: "Anthropic",
+		Role:    "Forward Deployed Engineer",
+		Status:  "Evaluated",
+		Score:   4.5,
+	}, false))
+	pending := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+		Company: "Vercel",
+		Role:    "Pending Engineer",
+		Status:  "Pending",
+	}, false))
+
+	scoredIdx := strings.Index(scored, "Anthropic")
+	pendingIdx := strings.Index(pending, "Vercel")
+	if scoredIdx < 0 || pendingIdx < 0 {
+		t.Fatalf("expected company names in rendered rows, got scored=%q pending=%q", scored, pending)
+	}
+	if scoredWidth, pendingWidth := ansi.StringWidth(scored[:scoredIdx]), ansi.StringWidth(pending[:pendingIdx]); scoredWidth != pendingWidth {
+		t.Fatalf("company column misaligned: scored starts at width %d in %q, pending starts at width %d in %q", scoredWidth, scored, pendingWidth, pending)
+	}
+}
+
 func TestColumnWidthsExpandLocationOnWideTerminals(t *testing.T) {
 	pm := NewPipelineModel(
 		theme.NewTheme("catppuccin-mocha"),
@@ -134,6 +169,31 @@ func TestColumnWidthsExpandLocationOnWideTerminals(t *testing.T) {
 	pm.Resize(220, 40)
 	if got := pm.columnWidths().loc; got < 40 {
 		t.Fatalf("wide terminal location width = %d, want at least 40", got)
+	}
+}
+
+func TestTabsUnderlineSpansFullWidth(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{Total: 73},
+		"..",
+		120,
+		40,
+	)
+
+	lines := strings.Split(pm.renderTabs(), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected tabs to render two lines, got %d: %q", len(lines), lines)
+	}
+
+	underline := ansi.Strip(lines[1])
+	if got := ansi.StringWidth(underline); got != pm.width {
+		t.Fatalf("tab underline width = %d, want %d; line=%q", got, pm.width, underline)
+	}
+	visibleRuleWidth := strings.Count(underline, "━") + strings.Count(underline, "─")
+	if visibleRuleWidth < pm.width-2 {
+		t.Fatalf("tab underline visible rule width = %d, want at least %d; line=%q", visibleRuleWidth, pm.width-2, underline)
 	}
 }
 
@@ -427,6 +487,42 @@ func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 	}
 }
 
+func TestQueueTabFiltersPendingAndProcessingRows(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Acme", Role: "Evaluated Role", Status: "Evaluated", Score: 4.0, Source: "tracker"},
+		{Company: "Beta", Role: "Pending Role", Status: "Pending", Source: "pipeline"},
+		{Company: "Gamma", Role: "Processing Role", Status: "Processing", Source: "batch"},
+		{Company: "Delta", Role: "Skipped Role", Status: "Skipped", Source: "batch"},
+		{Company: "Epsilon", Role: "Completed Role", Status: "Completed", Source: "batch"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm.activeTab = tabIndexForFilter(t, filterQueue)
+	pm.applyFilterAndSort()
+
+	if len(pm.filtered) != 2 {
+		t.Fatalf("expected queue tab to show 2 queue rows, got %+v", pm.filtered)
+	}
+	for _, app := range pm.filtered {
+		if app.Status != "Pending" && app.Status != "Processing" {
+			t.Fatalf("queue tab included non-queue row: %+v", app)
+		}
+	}
+}
+
+func TestStatusPickerDoesNotOpenForQueueRows(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Beta", Role: "Pending Role", Status: "Pending", Source: "pipeline"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+	if pm.statusPicker {
+		t.Fatal("status picker should not open for queue-only rows")
+	}
+}
+
 // Regression: with no committed search query, Esc must NOT close the screen.
 // The help bar advertises only `q quit`, so Esc quitting silently was a bug
 // that surfaced as accidental exits when users hit Esc to "back out" of the UI.
@@ -452,6 +548,70 @@ func TestEscWithoutQueryIsNoOp(t *testing.T) {
 	}
 	if pm.searchInput {
 		t.Fatal("Esc with no query should not toggle searchInput")
+	}
+}
+
+func TestGroupedPageNavigationMovesByVisibleRows(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "A", Role: "A", Status: "Interview", Score: 5.0, ReportPath: "reports/a.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "B", Role: "B", Status: "Offer", Score: 4.9, ReportPath: "reports/b.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "C", Role: "C", Status: "Responded", Score: 4.8, ReportPath: "reports/c.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "D", Role: "D", Status: "Applied", Score: 4.7, ReportPath: "reports/d.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "E", Role: "E", Status: "Evaluated", Score: 4.6, ReportPath: "reports/e.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "F", Role: "F", Status: "SKIP", Score: 4.5, ReportPath: "reports/f.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "G", Role: "G", Status: "Rejected", Score: 4.4, ReportPath: "reports/g.md", WorkMode: "Remote", Location: "Madrid"},
+		{Company: "H", Role: "H", Status: "Discarded", Score: 4.3, ReportPath: "reports/h.md", WorkMode: "Remote", Location: "Madrid"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 20)
+	pm.viewMode = "grouped"
+	pm.applyFilterAndSort()
+	for _, app := range apps {
+		pm.reportCache[app.ReportPath] = reportSummary{
+			archetype: "Forward Deployed Engineer",
+			tldr:      "strong applied AI fit",
+			comp:      "$180K-220K",
+			remote:    "Remote-friendly",
+		}
+	}
+
+	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if pm.cursor != 3 {
+		t.Fatalf("Ctrl+F in grouped view moved to cursor %d, want 3", pm.cursor)
+	}
+
+	pm.cursor = 6
+	pm.adjustScroll()
+	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if pm.cursor != 4 {
+		t.Fatalf("Ctrl+B in grouped view moved to cursor %d, want 4", pm.cursor)
+	}
+}
+
+func TestPipelineSafePageKeysMirrorCtrlPageKeys(t *testing.T) {
+	apps := make([]model.CareerApplication, 20)
+	for i := range apps {
+		apps[i] = model.CareerApplication{
+			Company: "Company",
+			Role:    "Role",
+			Status:  "Evaluated",
+			Score:   float64(20 - i),
+		}
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 20)
+	pm.viewMode = "flat"
+	pm.applyFilterAndSort()
+
+	pageRows := pm.pageRows()
+	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if pm.cursor != pageRows {
+		t.Fatalf("Space moved to cursor %d, want %d", pm.cursor, pageRows)
+	}
+
+	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if pm.cursor != 0 {
+		t.Fatalf("b should page back to the first row, got cursor %d", pm.cursor)
 	}
 }
 

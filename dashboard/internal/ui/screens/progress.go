@@ -88,6 +88,15 @@ func (m ProgressModel) clampedScroll() ProgressModel {
 func (m ProgressModel) Update(msg tea.Msg) (ProgressModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if isPageDownKey(msg) {
+			m.scrollOffset += m.viewportHeight()
+			return m.clampedScroll(), nil
+		}
+		if isPageUpKey(msg) {
+			m.scrollOffset -= m.viewportHeight()
+			return m.clampedScroll(), nil
+		}
+
 		switch msg.String() {
 		case "q", "esc":
 			return m, func() tea.Msg { return ProgressClosedMsg{} }
@@ -95,14 +104,10 @@ func (m ProgressModel) Update(msg tea.Msg) (ProgressModel, tea.Cmd) {
 			m.scrollOffset++
 		case "up", "k":
 			m.scrollOffset--
-		case "pgdown", "ctrl+d":
-			m.scrollOffset += m.height / 2
-		case "pgup", "ctrl+u":
-			m.scrollOffset -= m.height / 2
-		case "ctrl+f":
-			m.scrollOffset += m.viewportHeight()
-		case "ctrl+b":
-			m.scrollOffset -= m.viewportHeight()
+		case "ctrl+d":
+			m.scrollOffset += m.viewportHeight() / 2
+		case "ctrl+u":
+			m.scrollOffset -= m.viewportHeight() / 2
 		case "home", "g":
 			m.scrollOffset = 0
 		case "end", "G":
@@ -414,7 +419,7 @@ func (m ProgressModel) renderHelp() string {
 
 	keys := keyStyle.Render("jk") + descStyle.Render(" scroll  ") +
 		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
-		keyStyle.Render("^F/^B") + descStyle.Render(" page  ") +
+		keyStyle.Render("Space/b") + descStyle.Render(" page  ") +
 		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
 		keyStyle.Render("Esc") + descStyle.Render(" back")
 

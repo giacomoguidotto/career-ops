@@ -607,6 +607,20 @@ if (/if \[\[ "\$status" == "completed" \|\| "\$status" == "skipped" \]\]/.test(b
   fail('Batch resume can reprocess min-score skipped offers');
 }
 
+const skippedMergeIndex = batchRunnerSource.indexOf('merge_tracker_additions', minScoreSkipIndex);
+const completedMergeIndex = batchRunnerSource.indexOf('merge_tracker_additions', completedStateIndex);
+if (
+  skippedMergeIndex !== -1 &&
+  minScoreSkipIndex < skippedMergeIndex &&
+  skippedMergeIndex < minScoreReturnIndex &&
+  completedMergeIndex !== -1 &&
+  completedStateIndex < completedMergeIndex
+) {
+  pass('Batch runner merges tracker additions as workers finish');
+} else {
+  fail('Batch runner waits until the end before merging worker tracker additions');
+}
+
 if (/local total=0 completed=0 skipped=0 failed=0 pending=0/.test(batchRunnerSource) &&
     /skipped\) skipped=\$\(\(skipped \+ 1\)\)/.test(batchRunnerSource) &&
     /Completed: \$completed \| Skipped: \$skipped \| Failed: \$failed \| Pending: \$pending/.test(batchRunnerSource)) {

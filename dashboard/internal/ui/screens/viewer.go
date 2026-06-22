@@ -131,6 +131,33 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 		if m.statusPicker {
 			return m.handleStatusPicker(msg)
 		}
+		if isPageDownKey(msg) {
+			jump := m.bodyHeight()
+			if jump < 1 {
+				jump = 1
+			}
+			maxScroll := len(m.renderedLines) - m.bodyHeight()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			m.scrollOffset += jump
+			if m.scrollOffset > maxScroll {
+				m.scrollOffset = maxScroll
+			}
+			return m, nil
+		}
+		if isPageUpKey(msg) {
+			jump := m.bodyHeight()
+			if jump < 1 {
+				jump = 1
+			}
+			m.scrollOffset -= jump
+			if m.scrollOffset < 0 {
+				m.scrollOffset = 0
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "esc":
 			return m, func() tea.Msg { return ViewerClosedMsg{} }
@@ -162,7 +189,7 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 				m.scrollOffset--
 			}
 
-		case "pgdown", "ctrl+d":
+		case "ctrl+d":
 			jump := m.bodyHeight() / 2
 			maxScroll := len(m.renderedLines) - m.bodyHeight()
 			if maxScroll < 0 {
@@ -173,32 +200,8 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 				m.scrollOffset = maxScroll
 			}
 
-		case "pgup", "ctrl+u":
+		case "ctrl+u":
 			jump := m.bodyHeight() / 2
-			m.scrollOffset -= jump
-			if m.scrollOffset < 0 {
-				m.scrollOffset = 0
-			}
-
-		case "ctrl+f":
-			jump := m.bodyHeight()
-			if jump < 1 {
-				jump = 1
-			}
-			maxScroll := len(m.renderedLines) - m.bodyHeight()
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			m.scrollOffset += jump
-			if m.scrollOffset > maxScroll {
-				m.scrollOffset = maxScroll
-			}
-
-		case "ctrl+b":
-			jump := m.bodyHeight()
-			if jump < 1 {
-				jump = 1
-			}
 			m.scrollOffset -= jump
 			if m.scrollOffset < 0 {
 				m.scrollOffset = 0
@@ -747,7 +750,7 @@ func (m ViewerModel) renderFooter() string {
 
 	footer := keyStyle.Render("jk") + descStyle.Render(" scroll  ") +
 		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
-		keyStyle.Render("^F/^B") + descStyle.Render(" page  ") +
+		keyStyle.Render("Space/b") + descStyle.Render(" page  ") +
 		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
 		keyStyle.Render("c") + descStyle.Render(" status  ") +
 		keyStyle.Render("Esc") + descStyle.Render(" back")

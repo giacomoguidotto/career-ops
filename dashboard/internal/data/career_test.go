@@ -343,6 +343,97 @@ func TestParseApplicationsEnrichesLocationFromDataScanHistory(t *testing.T) {
 	}
 }
 
+func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(tempDir, "data"),
+		filepath.Join(tempDir, "reports"),
+		filepath.Join(tempDir, "batch", "tracker-additions"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 1 | 2026-06-20 | Acme | Evaluated Role | 4.0/5 | Evaluated | ✅ | [001](../reports/001-acme.md) | Existing tracker row |
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "data", "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write applications tracker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "reports", "001-acme.md"), []byte("**URL:** https://jobs.example.com/1\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report 001: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "reports", "002-beta.md"), []byte("**URL:** https://jobs.example.com/2\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report 002: %v", err)
+	}
+
+	addition := "2\t2026-06-22\tBeta\tUnmerged Role\tEvaluated\t3.5/5\t❌\t[002](reports/002-beta.md)\tUnmerged tracker addition\n"
+	if err := os.WriteFile(filepath.Join(tempDir, "batch", "tracker-additions", "2.tsv"), []byte(addition), 0o644); err != nil {
+		t.Fatalf("failed to write tracker addition: %v", err)
+	}
+
+	pipeline := `# Pipeline
+
+## Pending
+- [ ] https://jobs.example.com/2 | Beta | Unmerged Role
+- [ ] https://jobs.example.com/3 | Gamma | Pending Role
+- [ ] https://jobs.example.com/4 | Delta | Processing Role
+- [x] https://jobs.example.com/5 | Epsilon | Terminal Completed Role
+- [x] https://jobs.example.com/6 | Zeta | Terminal Skipped Role
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "data", "pipeline.md"), []byte(pipeline), 0o644); err != nil {
+		t.Fatalf("failed to write pipeline: %v", err)
+	}
+
+	state := "id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n" +
+		"2\thttps://jobs.example.com/2\tcompleted\t2026-06-22T07:00:00Z\t2026-06-22T07:10:00Z\t002\t3.5\t-\t0\n" +
+		"4\thttps://jobs.example.com/4\tprocessing\t2026-06-22T08:00:00Z\t-\t004\t-\t-\t0\n" +
+		"5\thttps://jobs.example.com/5\tcompleted\t2026-06-22T08:10:00Z\t2026-06-22T08:12:00Z\t005\t2.5\t-\t0\n" +
+		"6\thttps://jobs.example.com/6\tskipped\t2026-06-22T08:12:00Z\t2026-06-22T08:14:00Z\t006\t2.0\tbelow-min-score\t0\n"
+	if err := os.WriteFile(filepath.Join(tempDir, "batch", "batch-state.tsv"), []byte(state), 0o644); err != nil {
+		t.Fatalf("failed to write batch state: %v", err)
+	}
+
+	apps := ParseApplications(tempDir)
+	if len(apps) != 4 {
+		t.Fatalf("expected tracker + unmerged + processing + pending rows, got %d: %+v", len(apps), apps)
+	}
+
+	byURL := map[string]modelSource{}
+	for _, app := range apps {
+		byURL[app.JobURL] = modelSource{source: app.Source, status: NormalizeStatus(app.Status), company: app.Company, role: app.Role}
+	}
+	if byURL["https://jobs.example.com/1"].source != "tracker" {
+		t.Fatalf("expected existing report URL to remain tracker row, got %+v", byURL["https://jobs.example.com/1"])
+	}
+	if got := byURL["https://jobs.example.com/2"]; got.source != "tracker-addition" || got.status != "evaluated" {
+		t.Fatalf("expected URL 2 to come from unmerged tracker addition, got %+v", got)
+	}
+	if got := byURL["https://jobs.example.com/4"]; got.source != "batch" || got.status != "processing" || got.role != "Processing Role" {
+		t.Fatalf("expected URL 4 to come from batch state with pipeline role, got %+v", got)
+	}
+	if got := byURL["https://jobs.example.com/3"]; got.source != "pipeline" || got.status != "pending" || got.company != "Gamma" {
+		t.Fatalf("expected URL 3 to come from pending pipeline row, got %+v", got)
+	}
+	if _, ok := byURL["https://jobs.example.com/5"]; ok {
+		t.Fatalf("terminal completed batch URL 5 should come from tracker merge, not batch-state fallback: %+v", byURL["https://jobs.example.com/5"])
+	}
+	if _, ok := byURL["https://jobs.example.com/6"]; ok {
+		t.Fatalf("terminal skipped batch URL 6 should come from tracker merge, not batch-state fallback: %+v", byURL["https://jobs.example.com/6"])
+	}
+}
+
+type modelSource struct {
+	source  string
+	status  string
+	company string
+	role    string
+}
+
 func TestLoadReportSummaryExtractsCompensationRange(t *testing.T) {
 	tempDir := t.TempDir()
 	reportsDir := filepath.Join(tempDir, "reports")

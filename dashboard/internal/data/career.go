@@ -106,6 +106,7 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 			Role:    at("role"),
 			Status:  at("status"),
 			HasPDF:  strings.Contains(at("pdf"), "\u2705"),
+			Source:  "tracker",
 		}
 
 		// Parse score from the Score column.
@@ -187,7 +188,416 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	// Strategy 5: company name fallback from batch-input.tsv
 	enrichAppURLsByCompany(careerOpsPath, apps)
 
+	apps = appendLiveQueueRows(careerOpsPath, apps)
+
 	return apps
+}
+
+type pipelineEntry struct {
+	url     string
+	company string
+	role    string
+}
+
+func appendLiveQueueRows(careerOpsPath string, apps []model.CareerApplication) []model.CareerApplication {
+	pipelinePending, pipelineByURL := readPipelineEntries(careerOpsPath)
+	seenReports, seenURLs := seenDashboardRows(apps)
+
+	for _, app := range readUnmergedTrackerAdditions(careerOpsPath) {
+		reportKey := canonicalReportNum(app.ReportNumber)
+		if reportKey != "" && seenReports[reportKey] {
+			continue
+		}
+		if app.JobURL != "" && seenURLs[app.JobURL] {
+			continue
+		}
+		apps = append(apps, app)
+		if reportKey != "" {
+			seenReports[reportKey] = true
+		}
+		if app.JobURL != "" {
+			seenURLs[app.JobURL] = true
+		}
+	}
+
+	for _, app := range readBatchStateRows(careerOpsPath, pipelineByURL) {
+		reportKey := canonicalReportNum(app.ReportNumber)
+		if reportKey != "" && seenReports[reportKey] {
+			continue
+		}
+		if app.JobURL != "" && seenURLs[app.JobURL] {
+			continue
+		}
+		apps = append(apps, app)
+		if reportKey != "" {
+			seenReports[reportKey] = true
+		}
+		if app.JobURL != "" {
+			seenURLs[app.JobURL] = true
+		}
+	}
+
+	for _, entry := range pipelinePending {
+		if entry.url == "" || seenURLs[entry.url] {
+			continue
+		}
+		app := model.CareerApplication{
+			Company:  entry.company,
+			Role:     entry.role,
+			Status:   "Pending",
+			ScoreRaw: "—",
+			JobURL:   entry.url,
+			Notes:    "Queued in data/pipeline.md",
+			Source:   "pipeline",
+		}
+		if app.Company == "" {
+			app.Company = companyFromURL(entry.url)
+		}
+		if app.Role == "" {
+			app.Role = entry.url
+		}
+		apps = append(apps, app)
+		seenURLs[entry.url] = true
+	}
+
+	return apps
+}
+
+func seenDashboardRows(apps []model.CareerApplication) (map[string]bool, map[string]bool) {
+	seenReports := make(map[string]bool)
+	seenURLs := make(map[string]bool)
+	for _, app := range apps {
+		if reportKey := canonicalReportNum(app.ReportNumber); reportKey != "" {
+			seenReports[reportKey] = true
+		}
+		if app.JobURL != "" {
+			seenURLs[app.JobURL] = true
+		}
+	}
+	return seenReports, seenURLs
+}
+
+func canonicalReportNum(reportNum string) string {
+	reportNum = strings.TrimSpace(reportNum)
+	if reportNum == "" || reportNum == "-" {
+		return ""
+	}
+	n, err := strconv.Atoi(reportNum)
+	if err != nil {
+		return reportNum
+	}
+	return fmt.Sprintf("%03d", n)
+}
+
+func readUnmergedTrackerAdditions(careerOpsPath string) []model.CareerApplication {
+	additionsDir := filepath.Join(careerOpsPath, "batch", "tracker-additions")
+	entries, err := os.ReadDir(additionsDir)
+	if err != nil {
+		return nil
+	}
+
+	var apps []model.CareerApplication
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tsv") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(additionsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		line := firstNonEmptyLine(string(content))
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) < 8 {
+			continue
+		}
+
+		app := model.CareerApplication{
+			Date:     strings.TrimSpace(fields[1]),
+			Company:  strings.TrimSpace(fields[2]),
+			Role:     strings.TrimSpace(fields[3]),
+			Status:   strings.TrimSpace(fields[4]),
+			ScoreRaw: strings.TrimSpace(fields[5]),
+			HasPDF:   strings.Contains(fields[6], "\u2705"),
+			Source:   "tracker-addition",
+		}
+		if len(fields) > 8 {
+			app.Notes = strings.TrimSpace(fields[8])
+		}
+		if rm := reReportLink.FindStringSubmatch(fields[7]); rm != nil {
+			app.ReportNumber = canonicalReportNum(rm[1])
+			app.ReportPath = resolveReportPath(careerOpsPath, filepath.Join(careerOpsPath, "data", "applications.md"), rm[2])
+			if n, err := strconv.Atoi(app.ReportNumber); err == nil {
+				app.Number = n
+			}
+		}
+		if app.Number == 0 {
+			if parsedNumber, err := strconv.Atoi(strings.TrimSpace(fields[0])); err == nil {
+				app.Number = parsedNumber
+			}
+		}
+		if sm := reScoreValue.FindStringSubmatch(app.ScoreRaw); sm != nil {
+			app.Score, _ = strconv.ParseFloat(sm[1], 64)
+		}
+		if app.ReportPath != "" {
+			app.JobURL = readReportURL(careerOpsPath, app.ReportPath)
+		}
+		deriveNoteFields(&app)
+		apps = append(apps, app)
+	}
+	return apps
+}
+
+func firstNonEmptyLine(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func readReportURL(careerOpsPath, reportPath string) string {
+	content, err := os.ReadFile(filepath.Join(careerOpsPath, reportPath))
+	if err != nil {
+		return ""
+	}
+	header := string(content)
+	if len(header) > 1000 {
+		header = header[:1000]
+	}
+	if m := reReportURL.FindStringSubmatch(header); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineEntry) []model.CareerApplication {
+	statePath := filepath.Join(careerOpsPath, "batch", "batch-state.tsv")
+	stateData, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil
+	}
+
+	var apps []model.CareerApplication
+	for _, line := range strings.Split(string(stateData), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 9 || fields[0] == "id" {
+			continue
+		}
+		status := strings.TrimSpace(fields[2])
+		if status == "" {
+			continue
+		}
+		if isTerminalBatchStatus(status) {
+			continue
+		}
+
+		url := strings.TrimSpace(fields[1])
+		reportNum := canonicalReportNum(fields[5])
+		info := pipelineByURL[url]
+		app := model.CareerApplication{
+			Company:      info.company,
+			Role:         info.role,
+			Status:       dashboardBatchStatus(status),
+			ScoreRaw:     scoreRawFromBatchState(fields[6]),
+			ReportNumber: reportNum,
+			JobURL:       url,
+			Notes:        batchStateNote(status, fields[7]),
+			Source:       "batch",
+		}
+		if app.Company == "" {
+			app.Company = companyFromURL(url)
+		}
+		if app.Role == "" {
+			app.Role = url
+		}
+		if n, err := strconv.Atoi(fields[0]); err == nil {
+			app.Number = n
+		}
+		if reportNum != "" {
+			if n, err := strconv.Atoi(reportNum); err == nil {
+				app.Number = n
+			}
+			app.ReportPath = findReportPath(careerOpsPath, reportNum)
+		}
+		if date := dateFromBatchState(fields[4]); date != "" {
+			app.Date = date
+		} else {
+			app.Date = dateFromBatchState(fields[3])
+		}
+		if sm := reScoreValue.FindStringSubmatch(app.ScoreRaw); sm != nil {
+			app.Score, _ = strconv.ParseFloat(sm[1], 64)
+		}
+		apps = append(apps, app)
+	}
+	return apps
+}
+
+func dashboardBatchStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "completed":
+		return "Evaluated"
+	case "processing":
+		return "Processing"
+	case "failed":
+		return "Failed"
+	case "skipped":
+		return "Skipped"
+	case "rate_limited":
+		return "Rate Limited"
+	case "paused_rate_limit":
+		return "Paused"
+	default:
+		return "Pending"
+	}
+}
+
+func isTerminalBatchStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "skipped":
+		return true
+	default:
+		return false
+	}
+}
+
+func scoreRawFromBatchState(score string) string {
+	score = strings.TrimSpace(score)
+	if score == "" || score == "-" {
+		return "—"
+	}
+	if strings.Contains(score, "/5") {
+		return score
+	}
+	return score + "/5"
+}
+
+func batchStateNote(status, rawError string) string {
+	status = strings.TrimSpace(status)
+	rawError = strings.TrimSpace(rawError)
+	if rawError != "" && rawError != "-" {
+		return rawError
+	}
+	return "Batch state: " + status
+}
+
+func dateFromBatchState(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= len("2006-01-02") {
+		return value[:len("2006-01-02")]
+	}
+	return ""
+}
+
+func findReportPath(careerOpsPath, reportNum string) string {
+	reportsDir := filepath.Join(careerOpsPath, "reports")
+	entries, err := os.ReadDir(reportsDir)
+	if err != nil {
+		return ""
+	}
+	prefix := canonicalReportNum(reportNum) + "-"
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), prefix) && strings.HasSuffix(entry.Name(), ".md") {
+			return filepath.Join("reports", entry.Name())
+		}
+	}
+	return ""
+}
+
+func readPipelineEntries(careerOpsPath string) ([]pipelineEntry, map[string]pipelineEntry) {
+	pipelinePath := filepath.Join(careerOpsPath, "data", "pipeline.md")
+	content, err := os.ReadFile(pipelinePath)
+	if err != nil {
+		pipelinePath = filepath.Join(careerOpsPath, "pipeline.md")
+		content, err = os.ReadFile(pipelinePath)
+		if err != nil {
+			return nil, map[string]pipelineEntry{}
+		}
+	}
+
+	byURL := make(map[string]pipelineEntry)
+	var pending []pipelineEntry
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "- [") {
+			continue
+		}
+		checked := strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]")
+		unchecked := strings.HasPrefix(trimmed, "- [ ]")
+		entry := parsePipelineEntry(trimmed)
+		if entry.url == "" {
+			continue
+		}
+		byURL[entry.url] = entry
+		if unchecked && !checked {
+			pending = append(pending, entry)
+		}
+	}
+	return pending, byURL
+}
+
+func parsePipelineEntry(line string) pipelineEntry {
+	body := strings.TrimSpace(line)
+	if strings.HasPrefix(body, "- [ ]") {
+		body = strings.TrimSpace(strings.TrimPrefix(body, "- [ ]"))
+	} else if strings.HasPrefix(body, "- [x]") {
+		body = strings.TrimSpace(strings.TrimPrefix(body, "- [x]"))
+	} else if strings.HasPrefix(body, "- [X]") {
+		body = strings.TrimSpace(strings.TrimPrefix(body, "- [X]"))
+	}
+	body = strings.TrimPrefix(body, "~~")
+	body = strings.TrimSuffix(body, "~~")
+
+	parts := strings.Split(body, "|")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(strings.Trim(parts[i], "~"))
+	}
+
+	urlIdx := -1
+	for i, part := range parts {
+		if strings.HasPrefix(part, "http://") || strings.HasPrefix(part, "https://") {
+			urlIdx = i
+			break
+		}
+	}
+	if urlIdx < 0 {
+		fields := strings.Fields(body)
+		for _, field := range fields {
+			field = strings.Trim(field, "|~")
+			if strings.HasPrefix(field, "http://") || strings.HasPrefix(field, "https://") {
+				return pipelineEntry{url: field}
+			}
+		}
+		return pipelineEntry{}
+	}
+
+	entry := pipelineEntry{url: parts[urlIdx]}
+	if len(parts) > urlIdx+1 {
+		entry.company = parts[urlIdx+1]
+	}
+	if len(parts) > urlIdx+2 {
+		entry.role = parts[urlIdx+2]
+	}
+	return entry
+}
+
+func companyFromURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	rawURL = strings.TrimPrefix(rawURL, "https://")
+	rawURL = strings.TrimPrefix(rawURL, "http://")
+	host := strings.Split(rawURL, "/")[0]
+	host = strings.TrimPrefix(host, "www.")
+	if host == "" {
+		return "Queued"
+	}
+	return host
 }
 
 // loadBatchInputURLs reads batch-input.tsv and returns a map of batch ID -> job URL.
@@ -541,6 +951,20 @@ func NormalizeStatus(raw string) string {
 		return "hired"
 	case strings.Contains(s, "no aplicar") || strings.Contains(s, "no_aplicar") || s == "skip" || strings.Contains(s, "geo blocker"):
 		return "skip"
+	case s == "processing":
+		return "processing"
+	case s == "pending":
+		return "pending"
+	case s == "completed":
+		return "evaluated"
+	case s == "failed":
+		return "failed"
+	case s == "skipped":
+		return "skip"
+	case s == "rate limited" || s == "rate_limited":
+		return "rate_limited"
+	case s == "paused" || s == "paused_rate_limit":
+		return "paused"
 	case strings.Contains(s, "interview") || strings.Contains(s, "entrevista"):
 		return "interview"
 	case s == "offer" || strings.Contains(s, "oferta"):
@@ -943,24 +1367,32 @@ func cleanTableCell(s string) string {
 // StatusPriority returns the sort priority for a status (lower = higher priority).
 func StatusPriority(status string) int {
 	switch NormalizeStatus(status) {
-	case "interview":
+	case "hired":
 		return 0
-	case "offer":
+	case "processing":
 		return 1
-	case "responded":
+	case "pending":
 		return 2
-	case "applied":
+	case "failed", "rate_limited", "paused":
 		return 3
-	case "evaluated":
+	case "interview":
 		return 4
-	case "skip":
+	case "offer":
 		return 5
-	case "rejected":
+	case "responded":
 		return 6
-	case "discarded":
+	case "applied":
 		return 7
-	default:
+	case "evaluated":
 		return 8
+	case "skip":
+		return 9
+	case "rejected":
+		return 10
+	case "discarded":
+		return 11
+	default:
+		return 12
 	}
 }
 
