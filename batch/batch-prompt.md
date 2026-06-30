@@ -325,7 +325,7 @@ advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"
 8. Reorder experience bullets by JD relevance.
 9. Build competency grid (6-8 keyword phrases).
 10. Inject keywords into real achievements (**NEVER invent**).
-11. Generate complete HTML from `templates/cv-template.html`.
+11. Generate complete HTML from `templates/cv-template.html`. Do not include the candidate phone number in the PDF or any generated contact row, even if `config/profile.yml` contains one.
 12. Write HTML to `output/cv-candidate-{company-slug}.html` (not `/tmp`; the registered HTML is the dashboard regeneration source).
 13. Run:
 
