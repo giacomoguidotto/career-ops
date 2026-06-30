@@ -573,6 +573,7 @@ for (const f of systemFiles) {
 // Check user files are NOT tracked (gitignored)
 const userFiles = [
   'config/profile.yml', 'modes/_profile.md', 'portals.yml',
+  'data/application-actions.yml',
 ];
 for (const f of userFiles) {
   const tracked = run('git', ['ls-files', f]);
@@ -963,7 +964,7 @@ const expectedModes = [
   '_shared.md', '_profile.template.md', '_custom.template.md', 'offer.md', 'pdf.md', 'scan.md',
   'batch.md', 'apply.md', 'auto-pipeline.md', 'contact.md', 'deep.md',
   'offers.md', 'pipeline.md', 'project.md', 'tracker.md', 'training.md',
-  'interview.md', 'latex.md', 'email.md', 'add.md', 'titles.md', 'offer-prep.md',
+  'interview.md', 'latex.md', 'next.md', 'email.md', 'add.md', 'titles.md', 'offer-prep.md',
   'regional/eu-swe.md',
 ];
 
@@ -1044,6 +1045,30 @@ if (
 }
 
 const applyMode = readFile('modes/apply.md');
+const nextMode = readFile('modes/next.md');
+if (
+  nextMode.includes('## Ready Block Contract') &&
+  nextMode.includes('### Copy-Paste:') &&
+  nextMode.includes('one-page interview cheatsheet') &&
+  !/\bKB\b|recall/i.test(nextMode)
+) {
+  pass('next mode produces copy-paste packs without KB/recall coupling');
+} else {
+  fail('next mode missing copy-paste contract or still references KB/recall');
+}
+
+if (
+  nextMode.includes('tailored CV/PDF reference') &&
+  nextMode.includes('copy-paste answers for likely form questions') &&
+  nextMode.includes('recruiter, hiring manager, and peer outreach drafts') &&
+  nextMode.includes('thank-you email draft') &&
+  nextMode.includes('negotiation script')
+) {
+  pass('next mode covers post-evaluation advancement pack families');
+} else {
+  fail('next mode missing one or more advancement pack families');
+}
+
 if (
   applyMode.includes('## Step 5 — Preflight gate') &&
   applyMode.includes('verify liveness with Playwright') &&

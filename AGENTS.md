@@ -95,6 +95,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | File | Function |
 |------|----------|
 | `data/applications.md` | Application tracker |
+| `data/application-actions.yml` | Optional post-evaluation action-state sidecar |
 | `data/pipeline.md` | Inbox of pending URLs |
 | `data/scan-history.tsv` | Scanner dedup history |
 | `portals.yml` | Query and company config |
@@ -291,6 +292,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 | Evaluates a course/cert | `training` |
 | Evaluates portfolio project | `project` |
 | Asks about application status | `tracker` |
+| Asks what to do next for evaluated/applied jobs | `next` |
 | Fills out application form | `apply` |
 | Searches for new offers | `scan` |
 | Processes pending URLs | `pipeline` |

@@ -22,6 +22,7 @@ These files contain your personal data, customizations, and work product. Update
 | `plugins.local/` | Your own / private plugins (never auto-updated) |
 | `plugins.lock` | Integrity pins + recorded consent for your enabled plugins (generated; never auto-updated) |
 | `data/applications.md` | Your application tracker (source of truth) |
+| `data/application-actions.yml` | Optional current action-state sidecar for post-evaluation advancement |
 | `data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync` — safe to delete) |
 | `data/pipeline.md` | Your URL inbox |
 | `data/scan-history.tsv` | Your scan history |
@@ -31,7 +32,7 @@ These files contain your personal data, customizations, and work product. Update
 | `data/salary-observations.tsv` | Your append-only compensation observation log: `{tracker#}\t{date}\t{desired\|advertised\|actual}\t{amount}\t{currency}\t{source}\t{note}`. Written by interactive modes when a figure is stated/confirmed; never edited in place. Advertised figures come from reports' `advertised_comp` instead — reports are themselves observation sources. Read by `salary-gap.mjs` |
 | `writing-samples/*` | Your personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
 | `reports/*` | Your evaluation reports |
-| `output/*` | Your generated PDFs |
+| `output/*` | Your generated PDFs and generated next packs |
 | `jds/*` | Your saved job descriptions |
 
 ## System Layer (safe to auto-update)
@@ -62,6 +63,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/followup.md` | Follow-up cadence instructions |
 | `modes/offer-prep.md` | Offer-stage contract reading companion instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
+| `modes/next.md` | Status-driven advancement instructions |
 | `modes/de/*` | German language modes |
 | `modes/fr/*` | French language modes |
 | `modes/hi/*` | Hindi language modes |

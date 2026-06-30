@@ -4,7 +4,7 @@ description: AI job search command center -- evaluate offers, generate CVs, scan
 arguments: mode
 user_invocable: true
 user-invocable: true
-argument-hint: "[scan | deep | pdf | latex | cover | email | add | eu-swe | offer | offers | apply | batch | tracker | agent-inbox | pipeline | contact | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | followup | update]"
+argument-hint: "[scan | next | deep | pdf | latex | cover | email | add | eu-swe | offer | offers | apply | batch | tracker | agent-inbox | pipeline | contact | training | project | interview-prep | interview | interview/plan | interview/practice | interview/debrief | patterns | offer-prep | titles | followup | update]"
 license: MIT
 ---
 
@@ -43,6 +43,7 @@ Determine the mode from `$mode`:
 | `ofertas` | `offers` (legacy alias) |
 | `contact` | `contact` |
 | `contacto` | `contact` (legacy alias) |
+| `next` | `next` |
 | `deep` | `deep` |
 | `interview-prep` | `interview-prep` |
 | `interview` | `interview` |
@@ -99,6 +100,7 @@ career-ops -- Command Center
 Available commands:
   /career-ops {JD}      → AUTO-PIPELINE: evaluate + report + PDF + tracker (paste text or URL)
   /career-ops pipeline  → Process pending URLs from inbox (data/pipeline.md)
+  /career-ops next      → Advance evaluated/applied/responded/interview/offer rows
   /career-ops offer     → Evaluation only A-F (no auto PDF)
   /career-ops offers    → Compare and rank multiple offers
   /career-ops contact   → LinkedIn power move: find contacts + draft message
@@ -145,7 +147,7 @@ Applies to: `auto-pipeline`, `offer`, `offers`, `pdf`, `contact`, `apply`, `pipe
 ### Standalone modes (only their mode file):
 Read `modes/{mode}.md`
 
-Applies to: `tracker`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `training`, `project`, `patterns`, `titles`, `followup`, `cover`, `email`, `add`, `offer-prep`
+Applies to: `tracker`, `next`, `agent-inbox`, `deep`, `interview-prep`, `interview`, `regional/eu-swe`, `interview/plan`, `interview/practice`, `interview/debrief`, `latex`, `training`, `project`, `patterns`, `titles`, `followup`, `cover`, `email`, `add`, `offer-prep`
 
 ### Modes delegated to subagent:
 For `scan`, `apply` (with Playwright), and `pipeline` (3+ URLs): launch as a worker/subagent with the content of `_shared.md` + `modes/{mode}.md` injected into the worker prompt. If your CLI exposes an `Agent(...)` primitive, the call looks like this:
