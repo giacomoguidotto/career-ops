@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/santifer/career-ops/dashboard/internal/data"
 	"github.com/santifer/career-ops/dashboard/internal/model"
@@ -107,6 +108,7 @@ const (
 // Filter modes
 const (
 	filterAll       = "all"
+	filterAction    = "action"
 	filterEvaluated = "evaluated"
 	filterApplied   = "applied"
 	filterInterview = "interview"
@@ -125,6 +127,7 @@ type pipelineTab struct {
 var pipelineTabs = []pipelineTab{
 	{filterAll, "ALL"},
 	{filterQueue, "QUEUE"},
+	{filterAction, "ACTION"},
 	{filterEvaluated, "EVALUATED"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
@@ -147,6 +150,7 @@ const (
 	ColHasReport                   // RPT: ✓/—
 	ColHasPDF                      // PDF: ✓/—
 	ColLastContact                 // LAST contact date
+	ColNext                        // NEXT manual action
 )
 
 // colDef describes one optional column for the picker UI.
@@ -165,6 +169,7 @@ var optionalCols = []colDef{
 	{ColHasReport, "RPT", "✓/—", 4, false},
 	{ColHasPDF, "PDF", "✓/—", 4, false},
 	{ColLastContact, "LAST", "", 10, false},
+	{ColNext, "NEXT", "manual", 16, true},
 }
 
 var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Hired", "Rejected", "Discarded", "SKIP"}
@@ -535,6 +540,15 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 					PDFPath:       pdf,
 					Format:        format,
 				}
+			}
+		}
+
+	case "n":
+		if app, ok := m.CurrentApp(); ok && app.NextPackPath != "" {
+			fullPath := filepath.Join(m.careerOpsPath, app.NextPackPath)
+			title := fmt.Sprintf("Next Pack -- %s -- %s", app.Company, app.Role)
+			return m, func() tea.Msg {
+				return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: app.JobURL, App: app}
 			}
 		}
 
@@ -972,6 +986,10 @@ func (m *PipelineModel) applyFilterAndSort() {
 			if isQueueStatus(norm) {
 				filtered = append(filtered, app)
 			}
+		case filterAction:
+			if needsManualAction(app) {
+				filtered = append(filtered, app)
+			}
 		default:
 			if norm == currentFilter {
 				filtered = append(filtered, app)
@@ -1308,7 +1326,13 @@ func (m PipelineModel) renderTabs() string {
 	if contentWidth < 0 {
 		contentWidth = 0
 	}
+	if lipgloss.Width(row) > contentWidth {
+		row = ansi.Truncate(row, contentWidth, "")
+	}
 	underlineText := strings.Join(underParts, "")
+	if lipgloss.Width(underlineText) > contentWidth {
+		underlineText = string([]rune(underlineText)[:contentWidth])
+	}
 	if fill := contentWidth - lipgloss.Width(underlineText); fill > 0 {
 		underlineText += strings.Repeat("─", fill)
 	}
@@ -1333,6 +1357,10 @@ func (m PipelineModel) countForFilter(filter string) int {
 			}
 		case filterQueue:
 			if isQueueStatus(norm) {
+				count++
+			}
+		case filterAction:
+			if needsManualAction(app) {
 				count++
 			}
 		default:
@@ -1407,7 +1435,7 @@ func (m PipelineModel) renderBody() string {
 
 // colWidths holds per-column rune budgets for the table.
 type colWidths struct {
-	num, score, company, status, role int
+	num, score, company, status, role, next int
 	// optional columns — 0 means the column is hidden
 	date, loc, pay, rpt, pdf, last int
 }
@@ -1436,6 +1464,9 @@ func (m PipelineModel) columnWidths() colWidths {
 	if m.colVisible(ColPay) {
 		c.pay = 16
 	}
+	if m.colVisible(ColNext) {
+		c.next = 16
+	}
 	if m.colVisible(ColHasReport) {
 		c.rpt = 4
 	}
@@ -1445,8 +1476,13 @@ func (m PipelineModel) columnWidths() colWidths {
 	if m.colVisible(ColLastContact) {
 		c.last = 10
 	}
-	fixed := c.num + c.score + c.date + c.company + c.status + c.loc + c.pay + c.rpt + c.pdf + c.last
-	c.role = m.width - fixed - 14 // separators + outer padding
+	fixed := func() int {
+		return c.num + c.score + c.date + c.company + c.status + c.next + c.loc + c.pay + c.rpt + c.pdf + c.last
+	}
+	if m.width-fixed()-14 < 15 && c.pay > 0 {
+		c.pay = 0
+	}
+	c.role = m.width - fixed() - 14 // separators + outer padding
 	if c.role < 15 {
 		c.role = 15
 	}
@@ -1566,6 +1602,9 @@ func (m PipelineModel) renderColumnHeader() string {
 	segments = append(segments, cell("COMPANY", cw.company))
 	segments = append(segments, cell("ROLE", cw.role))
 	segments = append(segments, cell("STATUS", cw.status))
+	if cw.next > 0 {
+		segments = append(segments, cell("NEXT", cw.next))
+	}
 	if cw.loc > 0 {
 		segments = append(segments, cell("LOCATION", cw.loc))
 	}
@@ -1628,6 +1667,8 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 	}
 	statusStyle := m.withSelectedBackground(lipgloss.NewStyle().Foreground(statusColor).Width(cw.status), selected)
 	statusText := statusStyle.Render(statusLabel(norm))
+	nextStyle := m.withSelectedBackground(lipgloss.NewStyle().Foreground(m.nextActionColor(app)).Width(cw.next), selected)
+	nextText := nextStyle.Render(truncateRunes(nextActionLabel(app), cw.next))
 
 	segments := []string{
 		numStyle.Render(truncateRunes(numText, cw.num)),
@@ -1639,6 +1680,9 @@ func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool)
 	segments = append(segments, companyStyle.Render(company))
 	segments = append(segments, roleStyle.Render(role))
 	segments = append(segments, statusText)
+	if cw.next > 0 {
+		segments = append(segments, nextText)
+	}
 
 	if cw.loc > 0 {
 		segments = append(segments, m.renderLocCell(app, cw.loc, selected))
@@ -1720,6 +1764,12 @@ func (m PipelineModel) renderPreview() string {
 		lines = append(lines, padStyle.Render(strings.Join(facts, "   ")))
 	}
 
+	nextDetail := nextActionDetail(app)
+	if nextDetail != "" {
+		lines = append(lines, padStyle.Render(
+			labelStyle.Render("Next: ")+valueStyle.Render(truncateRunes(nextDetail, m.width-10))))
+	}
+
 	outcome := previewOutcome(app)
 
 	// Check report cache
@@ -1777,6 +1827,80 @@ func previewOutcome(app model.CareerApplication) string {
 	return outcome
 }
 
+func needsManualAction(app model.CareerApplication) bool {
+	state := strings.ToLower(strings.TrimSpace(app.ActionState))
+	return state == "needs_action" || state == "blocked"
+}
+
+func nextActionLabel(app model.CareerApplication) string {
+	if app.NextAction == "" || app.NextAction == "none" {
+		if app.ActionState == "waiting" && app.WaitingOn != "" {
+			return "Waiting"
+		}
+		return "-"
+	}
+
+	label := map[string]string{
+		"research_gating_questions": "Research",
+		"draft_application_pack":    "App pack",
+		"draft_outreach":            "Outreach",
+		"follow_up":                 "Follow up",
+		"reply_recruiter":           "Reply",
+		"prep_interview":            "Prep",
+		"send_thank_you":            "Thank you",
+		"negotiation_prep":          "Negotiate",
+		"close_or_discard":          "Close?",
+	}[app.NextAction]
+	if label == "" {
+		label = app.NextAction
+	}
+	if app.NextPackPath != "" && label != "-" {
+		return label + " ready"
+	}
+	return label
+}
+
+func nextActionDetail(app model.CareerApplication) string {
+	label := nextActionLabel(app)
+	if label == "-" {
+		return ""
+	}
+
+	var parts []string
+	parts = append(parts, label)
+	if app.NextPackPath != "" {
+		parts = append(parts, "open with n: "+app.NextPackPath)
+	} else if app.NextCommand != "" && needsManualAction(app) {
+		parts = append(parts, "run: "+app.NextCommand)
+	}
+	if app.ActionDue != "" {
+		parts = append(parts, "due: "+app.ActionDue)
+	}
+	if app.ActionOwner != "" {
+		parts = append(parts, "owner: "+app.ActionOwner)
+	}
+	if app.WaitingOn != "" && !needsManualAction(app) {
+		parts = append(parts, "waiting on: "+app.WaitingOn)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func (m PipelineModel) nextActionColor(app model.CareerApplication) lipgloss.Color {
+	if app.NextPackPath != "" && needsManualAction(app) {
+		return m.theme.Green
+	}
+	switch strings.ToLower(strings.TrimSpace(app.ActionState)) {
+	case "needs_action":
+		return m.theme.Yellow
+	case "blocked":
+		return m.theme.Red
+	case "waiting", "snoozed":
+		return m.theme.Subtext
+	default:
+		return m.theme.Overlay
+	}
+}
+
 func (m PipelineModel) renderHelp() string {
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Text).Background(m.theme.Surface)
 	descStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Background(m.theme.Surface)
@@ -1829,6 +1953,7 @@ func (m PipelineModel) renderHelp() string {
 		keyStyle.Render("o") + descStyle.Render(" open URL  ") +
 		keyStyle.Render("d") + descStyle.Render(" open PDF  ") +
 		keyStyle.Render("D") + descStyle.Render(" regen PDF  ") +
+		keyStyle.Render("n") + descStyle.Render(" next pack  ") +
 		keyStyle.Render("c") + descStyle.Render(" change  ") +
 		keyStyle.Render("C") + descStyle.Render(" columns  ") +
 		keyStyle.Render("v") + descStyle.Render(" view  ") +

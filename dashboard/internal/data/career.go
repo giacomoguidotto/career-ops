@@ -28,6 +28,8 @@ var (
 	reBatchID        = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
 	reDiscardReasons = regexp.MustCompile(`(?s)discard_reasons:\s*\n((?:\s*-\s*.+?\n)+)`)
 	reDiscardItem    = regexp.MustCompile(`\s*-\s*([^\n]+)`)
+	reActionAppID    = regexp.MustCompile(`^\s{2}['"]?([^'":]+)['"]?:\s*$`)
+	reActionField    = regexp.MustCompile(`^\s{4}([A-Za-z_]+):\s*(.*)$`)
 )
 
 // resolveReportPath converts a report link from the tracker into a path
@@ -189,6 +191,7 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	enrichAppURLsByCompany(careerOpsPath, apps)
 
 	apps = appendLiveQueueRows(careerOpsPath, apps)
+	enrichNextActions(careerOpsPath, apps)
 
 	return apps
 }
@@ -896,6 +899,336 @@ func enrichAppURLsByCompany(careerOpsPath string, apps []model.CareerApplication
 			apps[i].JobURL = best
 		}
 	}
+}
+
+type applicationActionRecord struct {
+	ActionState string
+	NextAction  string
+	DueAfter    string
+	Owner       string
+	WaitingOn   string
+	Reason      string
+	Report      string
+}
+
+func enrichNextActions(careerOpsPath string, apps []model.CareerApplication) {
+	records := loadApplicationActionRecords(careerOpsPath)
+	packs := loadNextPackPaths(careerOpsPath)
+	now := time.Now()
+
+	for i := range apps {
+		inferred := inferApplicationAction(apps[i], now)
+		if explicit, ok := lookupApplicationActionRecord(records, apps[i]); ok {
+			inferred = mergeApplicationAction(inferred, explicit)
+		}
+
+		apps[i].ActionState = inferred.ActionState
+		apps[i].NextAction = inferred.NextAction
+		apps[i].ActionOwner = inferred.Owner
+		apps[i].ActionDue = inferred.DueAfter
+		apps[i].WaitingOn = inferred.WaitingOn
+		apps[i].ActionReason = inferred.Reason
+		apps[i].NextPackPath = lookupNextPackPath(packs, apps[i])
+		apps[i].NextCommand = nextCommandFor(apps[i])
+	}
+}
+
+func loadApplicationActionRecords(careerOpsPath string) map[string]applicationActionRecord {
+	path := filepath.Join(careerOpsPath, "data", "application-actions.yml")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	records := make(map[string]applicationActionRecord)
+	inApplications := false
+	currentID := ""
+
+	for _, raw := range strings.Split(string(content), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if trimmed == "applications:" {
+			inApplications = true
+			currentID = ""
+			continue
+		}
+		if !inApplications {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && strings.HasSuffix(trimmed, ":") {
+			inApplications = false
+			currentID = ""
+			continue
+		}
+		if m := reActionAppID.FindStringSubmatch(line); m != nil {
+			currentID = cleanActionValue(m[1])
+			if _, ok := records[currentID]; !ok {
+				records[currentID] = applicationActionRecord{}
+			}
+			continue
+		}
+		if currentID == "" {
+			continue
+		}
+		if m := reActionField.FindStringSubmatch(line); m != nil {
+			rec := records[currentID]
+			value := cleanActionValue(m[2])
+			switch m[1] {
+			case "action_state":
+				rec.ActionState = value
+			case "next_action":
+				rec.NextAction = value
+			case "due_after":
+				rec.DueAfter = value
+			case "owner":
+				rec.Owner = value
+			case "waiting_on":
+				rec.WaitingOn = value
+			case "reason":
+				rec.Reason = value
+			case "report":
+				rec.Report = value
+			}
+			records[currentID] = rec
+		}
+	}
+
+	return records
+}
+
+func cleanActionValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "null" || value == "~" {
+		return ""
+	}
+	if idx := strings.Index(value, " #"); idx >= 0 {
+		value = strings.TrimSpace(value[:idx])
+	}
+	value = strings.Trim(value, `"'`)
+	return strings.TrimSpace(value)
+}
+
+func lookupApplicationActionRecord(records map[string]applicationActionRecord, app model.CareerApplication) (applicationActionRecord, bool) {
+	if len(records) == 0 {
+		return applicationActionRecord{}, false
+	}
+
+	for _, key := range applicationActionKeys(app) {
+		if rec, ok := records[key]; ok {
+			return rec, true
+		}
+	}
+	return applicationActionRecord{}, false
+}
+
+func applicationActionKeys(app model.CareerApplication) []string {
+	var keys []string
+	add := func(key string) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return
+		}
+		for _, existing := range keys {
+			if existing == key {
+				return
+			}
+		}
+		keys = append(keys, key)
+	}
+
+	if app.Number > 0 {
+		add(strconv.Itoa(app.Number))
+		add(fmt.Sprintf("%03d", app.Number))
+	}
+	if app.ReportNumber != "" {
+		add(app.ReportNumber)
+		add(canonicalReportNum(app.ReportNumber))
+	}
+	return keys
+}
+
+func mergeApplicationAction(inferred, explicit applicationActionRecord) applicationActionRecord {
+	if explicit.ActionState != "" {
+		inferred.ActionState = explicit.ActionState
+	}
+	if explicit.NextAction != "" {
+		inferred.NextAction = explicit.NextAction
+	}
+	if explicit.DueAfter != "" {
+		inferred.DueAfter = explicit.DueAfter
+	}
+	if explicit.Owner != "" {
+		inferred.Owner = explicit.Owner
+	}
+	if explicit.WaitingOn != "" {
+		inferred.WaitingOn = explicit.WaitingOn
+	}
+	if explicit.Reason != "" {
+		inferred.Reason = explicit.Reason
+	}
+	if explicit.Report != "" {
+		inferred.Report = explicit.Report
+	}
+	return inferred
+}
+
+func inferApplicationAction(app model.CareerApplication, now time.Time) applicationActionRecord {
+	switch NormalizeStatus(app.Status) {
+	case "evaluated":
+		if app.Score > 0 && app.Score < 3.5 {
+			return applicationActionRecord{
+				ActionState: "needs_action",
+				NextAction:  "close_or_discard",
+				Owner:       "user",
+				Reason:      "Score is below the default application threshold; decide whether to discard or override.",
+			}
+		}
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  "draft_application_pack",
+			Owner:       "agent-draft",
+			Reason:      "Evaluated opportunity is ready for an application and outreach pack.",
+		}
+	case "applied":
+		anchor := app.LastContact
+		if anchor == "" {
+			anchor = app.Date
+		}
+		due := addDays(anchor, 7)
+		if due == "" || !dateAfter(due, now) {
+			return applicationActionRecord{
+				ActionState: "needs_action",
+				NextAction:  "follow_up",
+				Owner:       "agent-draft",
+				DueAfter:    due,
+				Reason:      "Application is past the default follow-up cadence.",
+			}
+		}
+		return applicationActionRecord{
+			ActionState: "waiting",
+			NextAction:  "follow_up",
+			Owner:       "company",
+			DueAfter:    due,
+			WaitingOn:   "company response",
+			Reason:      "Application was sent; follow-up cadence is not due yet.",
+		}
+	case "responded":
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  "reply_recruiter",
+			Owner:       "user",
+			Reason:      "Company responded; draft a reply and recruiter-screen prep.",
+		}
+	case "interview":
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  "prep_interview",
+			Owner:       "agent-draft",
+			Reason:      "Interview-stage opportunity needs a cheatsheet and post-interview draft material.",
+		}
+	case "offer":
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  "negotiation_prep",
+			Owner:       "agent-draft",
+			Reason:      "Offer-stage opportunity needs negotiation prep.",
+		}
+	case "failed", "rate_limited", "paused":
+		return applicationActionRecord{
+			ActionState: "blocked",
+			NextAction:  "research_gating_questions",
+			Owner:       "user",
+			Reason:      "Evaluation did not complete cleanly; inspect the pipeline state before advancing.",
+		}
+	case "pending", "processing":
+		return applicationActionRecord{
+			ActionState: "waiting",
+			NextAction:  "none",
+			Owner:       "agent-draft",
+			WaitingOn:   "evaluation",
+			Reason:      "Opportunity is still queued or processing.",
+		}
+	default:
+		return applicationActionRecord{
+			ActionState: "none",
+			NextAction:  "none",
+			Owner:       "user",
+		}
+	}
+}
+
+func addDays(date string, days int) string {
+	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(date))
+	if err != nil {
+		return ""
+	}
+	return parsed.AddDate(0, 0, days).Format("2006-01-02")
+}
+
+func dateAfter(date string, now time.Time) bool {
+	parsed, err := time.Parse("2006-01-02", strings.TrimSpace(date))
+	if err != nil {
+		return false
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return parsed.After(today)
+}
+
+func loadNextPackPaths(careerOpsPath string) map[string]string {
+	dir := filepath.Join(careerOpsPath, "output", "next-packs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	packs := make(map[string]string)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		prefix := entry.Name()
+		if idx := strings.Index(prefix, "-"); idx >= 0 {
+			prefix = prefix[:idx]
+		}
+		if prefix == "" {
+			continue
+		}
+		relPath := filepath.Join("output", "next-packs", entry.Name())
+		packs[prefix] = relPath
+		if n, err := strconv.Atoi(prefix); err == nil {
+			packs[strconv.Itoa(n)] = relPath
+			packs[fmt.Sprintf("%03d", n)] = relPath
+		}
+	}
+	return packs
+}
+
+func lookupNextPackPath(packs map[string]string, app model.CareerApplication) string {
+	if len(packs) == 0 {
+		return ""
+	}
+	for _, key := range applicationActionKeys(app) {
+		if path := packs[key]; path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+func nextCommandFor(app model.CareerApplication) string {
+	if app.Number > 0 {
+		return fmt.Sprintf("/career-ops next %d", app.Number)
+	}
+	if app.ReportNumber != "" {
+		return fmt.Sprintf("/career-ops next %s", app.ReportNumber)
+	}
+	if app.Company != "" && app.Role != "" {
+		return fmt.Sprintf("/career-ops next %s %s", app.Company, app.Role)
+	}
+	return "/career-ops next"
 }
 
 // ComputeMetrics calculates aggregate metrics from applications.

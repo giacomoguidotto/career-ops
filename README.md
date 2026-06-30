@@ -279,6 +279,7 @@ Career-ops uses a shared command router. In CLIs that register slash commands, i
 /career-ops                → Show all available commands
 /career-ops {paste a JD}   → Full auto-pipeline (evaluate + PDF + tracker)
 /career-ops scan           → Scan portals for new offers
+/career-ops next           → Advance existing evaluated/applied opportunities
 /career-ops pdf            → Generate ATS-optimized CV
 /career-ops cover          → Cover letter generator (paste JD or /career-ops cover {slug})
 /career-ops email          → Formal application email draft (draft-only; never sends, submits, or clicks)
@@ -350,7 +351,9 @@ npm run serve:dashboard   # launch the TUI
 npm run build:dashboard   # optional: build the standalone binary
 ```
 
-Features: 6 filter tabs, 4 sort modes, grouped/flat view, lazy-loaded previews, inline status changes.
+Features: filter tabs including ACTION, grouped/flat view, lazy-loaded previews,
+inline status changes, next-action hints, and `n` to open an existing
+`output/next-packs/` pack for the selected row.
 
 There is also an **experimental web UI** (alpha, opt-in — nothing runs unless you start it): see [`web/README.md`](web/README.md).
 
@@ -386,7 +389,7 @@ career-ops/
 ├── dashboard/                   # Go TUI pipeline viewer
 ├── data/                        # Your tracking data (gitignored)
 ├── reports/                     # Evaluation reports (gitignored)
-├── output/                      # Generated PDFs (gitignored)
+├── output/                      # Generated PDFs and next packs (gitignored)
 ├── fonts/                       # Space Grotesk + DM Sans
 ├── docs/                        # Setup, customization, budget guide, architecture
 └── examples/                    # Sample CV, report, proof points

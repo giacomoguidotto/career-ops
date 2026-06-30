@@ -523,6 +523,96 @@ func TestStatusPickerDoesNotOpenForQueueRows(t *testing.T) {
 	}
 }
 
+func TestActionTabFiltersManualNextActions(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Acme", Role: "AI Engineer", Status: "Evaluated", ActionState: "needs_action", NextAction: "draft_application_pack"},
+		{Company: "Beta", Role: "Platform Engineer", Status: "Applied", ActionState: "waiting", NextAction: "follow_up"},
+		{Company: "Gamma", Role: "Data Engineer", Status: "Failed", ActionState: "blocked", NextAction: "research_gating_questions"},
+		{Company: "Delta", Role: "Backend Engineer", Status: "Rejected", ActionState: "none", NextAction: "none"},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+	pm.activeTab = tabIndexForFilter(t, filterAction)
+	pm.applyFilterAndSort()
+
+	if len(pm.filtered) != 2 {
+		t.Fatalf("expected action tab to include needs_action and blocked rows, got %+v", pm.filtered)
+	}
+	if pm.filtered[0].Company != "Gamma" || pm.filtered[1].Company != "Acme" {
+		t.Fatalf("expected action tab to keep status-priority ordering, got %+v", pm.filtered)
+	}
+}
+
+func TestRenderAppLineIncludesNextColumn(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		140,
+		40,
+	)
+
+	line := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+		Number:      42,
+		Company:     "Acme",
+		Role:        "AI Engineer",
+		Status:      "Evaluated",
+		Score:       4.2,
+		ActionState: "needs_action",
+		NextAction:  "draft_application_pack",
+	}, false))
+
+	if !strings.Contains(line, "App pack") {
+		t.Fatalf("expected rendered row to include next action label, got %q", line)
+	}
+}
+
+func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
+	pm := previewModelWith(t, model.CareerApplication{
+		Company:      "Acme",
+		Role:         "AI Engineer",
+		Status:       "Evaluated",
+		ActionState:  "needs_action",
+		NextAction:   "draft_application_pack",
+		NextPackPath: "output/next-packs/042-acme.md",
+		NextCommand:  "/career-ops next 42",
+	})
+
+	preview := pm.renderPreview()
+	if !strings.Contains(preview, "Next:") || !strings.Contains(preview, "open with n: output/next-packs/042-acme.md") {
+		t.Fatalf("expected preview to show next pack opener, got %q", preview)
+	}
+	if strings.Contains(preview, "/career-ops next 42") {
+		t.Fatalf("preview should prefer existing pack path over generation command, got %q", preview)
+	}
+}
+
+func TestNextKeyOpensExistingPack(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:      "Acme",
+			Role:         "AI Engineer",
+			Status:       "Evaluated",
+			NextPackPath: "output/next-packs/042-acme.md",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
+
+	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected n to emit an open-pack command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(PipelineOpenReportMsg)
+	if !ok {
+		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
+	}
+	if openMsg.Path != "/tmp/career-ops/output/next-packs/042-acme.md" {
+		t.Fatalf("opened path = %q", openMsg.Path)
+	}
+}
+
 // Regression: with no committed search query, Esc must NOT close the screen.
 // The help bar advertises only `q quit`, so Esc quitting silently was a bug
 // that surfaced as accidental exits when users hit Esc to "back out" of the UI.

@@ -434,6 +434,75 @@ type modelSource struct {
 	role    string
 }
 
+func TestParseApplicationsEnrichesNextActionsAndPacks(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(tempDir, "data"),
+		filepath.Join(tempDir, "reports"),
+		filepath.Join(tempDir, "output", "next-packs"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	applications := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 42 | 2026-06-20 | Acme | Applied AI Engineer | 4.2/5 | Evaluated | ✅ | [42](../reports/042-acme.md) | Strong fit |
+| 43 | 2026-06-01 | Beta | Platform Engineer | 4.0/5 | Applied | ✅ | [43](../reports/043-beta.md) | Already applied |
+| 44 | 2026-06-22 | Gamma | Data Engineer | 3.2/5 | Evaluated | ❌ | [44](../reports/044-gamma.md) | Weak fit |
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "data", "applications.md"), []byte(applications), 0o644); err != nil {
+		t.Fatalf("failed to write tracker: %v", err)
+	}
+	for _, name := range []string{"042-acme.md", "043-beta.md", "044-gamma.md"} {
+		if err := os.WriteFile(filepath.Join(tempDir, "reports", name), []byte("**URL:** https://jobs.example.com/"+name+"\n"), 0o644); err != nil {
+			t.Fatalf("failed to write report %s: %v", name, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n"), 0o644); err != nil {
+		t.Fatalf("failed to write next pack: %v", err)
+	}
+
+	sidecar := `version: 1
+applications:
+  "43":
+    action_state: waiting
+    next_action: follow_up
+    due_after: 2099-01-01
+    owner: company
+    waiting_on: recruiter response
+    reason: Fresh application; wait.
+`
+	if err := os.WriteFile(filepath.Join(tempDir, "data", "application-actions.yml"), []byte(sidecar), 0o644); err != nil {
+		t.Fatalf("failed to write action sidecar: %v", err)
+	}
+
+	apps := ParseApplications(tempDir)
+	if len(apps) != 3 {
+		t.Fatalf("expected 3 parsed apps, got %d", len(apps))
+	}
+
+	if apps[0].ActionState != "needs_action" || apps[0].NextAction != "draft_application_pack" {
+		t.Fatalf("evaluated high-fit row next action = %q/%q", apps[0].ActionState, apps[0].NextAction)
+	}
+	if apps[0].NextPackPath != filepath.Join("output", "next-packs", "042-acme.md") {
+		t.Fatalf("next pack path = %q", apps[0].NextPackPath)
+	}
+	if apps[0].NextCommand != "/career-ops next 42" {
+		t.Fatalf("next command = %q", apps[0].NextCommand)
+	}
+
+	if apps[1].ActionState != "waiting" || apps[1].ActionDue != "2099-01-01" || apps[1].WaitingOn != "recruiter response" {
+		t.Fatalf("sidecar override not applied: %+v", apps[1])
+	}
+	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "close_or_discard" {
+		t.Fatalf("low-score evaluated row next action = %q/%q", apps[2].ActionState, apps[2].NextAction)
+	}
+}
+
 func TestLoadReportSummaryExtractsCompensationRange(t *testing.T) {
 	tempDir := t.TempDir()
 	reportsDir := filepath.Join(tempDir, "reports")

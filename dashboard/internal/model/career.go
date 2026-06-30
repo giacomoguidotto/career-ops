@@ -29,6 +29,15 @@ type CareerApplication struct {
 	// Source identifies where this dashboard row came from. Empty is treated as
 	// "tracker" for older tests/fixtures.
 	Source string
+	// Next-action state powers the dashboard's manual-advancement surface.
+	ActionState  string // needs_action | waiting | blocked | snoozed | none
+	NextAction   string // draft_application_pack | follow_up | prep_interview | ...
+	ActionOwner  string // user | company | agent-draft
+	ActionDue    string // YYYY-MM-DD when a waiting/snoozed action becomes relevant
+	WaitingOn    string
+	ActionReason string
+	NextPackPath string // output/next-packs/... when a generated pack exists
+	NextCommand  string // /career-ops next {num}
 }
 
 // PipelineMetrics holds aggregate stats for the pipeline dashboard.
