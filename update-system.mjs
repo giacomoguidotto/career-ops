@@ -194,6 +194,8 @@ const SYSTEM_PATHS = [
   'config/profile.example.yml',
   '.env.example',
   '.editorconfig',
+  '.mcp.json',
+  '.mise.toml',
   '.agents/',
   '.claude/skills/',
   '.opencode/skills/',
