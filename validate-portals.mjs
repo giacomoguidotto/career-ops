@@ -14,6 +14,7 @@ import { join, dirname, resolve } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
+import { discoverPlugins, pluginRoots } from './plugins/_engine.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PROVIDERS_DIR = join(ROOT, 'providers');
@@ -88,13 +89,23 @@ function validateParser(parser, path, errors) {
 
 async function loadProviderIds() {
   const ids = new Set();
-  if (!existsSync(PROVIDERS_DIR)) return ids;
-  const files = readdirSync(PROVIDERS_DIR)
-    .filter(f => f.endsWith('.mjs') && !f.startsWith('_'))
-    .sort();
-  for (const file of files) {
-    const mod = await import(pathToFileURL(join(PROVIDERS_DIR, file)).href);
-    if (mod.default?.id) ids.add(mod.default.id);
+  if (existsSync(PROVIDERS_DIR)) {
+    const files = readdirSync(PROVIDERS_DIR)
+      .filter(f => f.endsWith('.mjs') && !f.startsWith('_'))
+      .sort();
+    for (const file of files) {
+      const mod = await import(pathToFileURL(join(PROVIDERS_DIR, file)).href);
+      if (mod.default?.id) ids.add(mod.default.id);
+    }
+  }
+
+  try {
+    for (const manifest of discoverPlugins(pluginRoots(ROOT))) {
+      if (manifest.hooks.includes('provider')) ids.add(manifest.id);
+    }
+  } catch {
+    // Validation should still work for core providers if plugin discovery is
+    // unavailable in a stripped-down checkout.
   }
   return ids;
 }

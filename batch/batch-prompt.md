@@ -59,6 +59,17 @@ When rules conflict, `_profile.md` wins over `_shared.md` defaults. This is inte
 
 ## Pipeline (Run In Order)
 
+### Generated artifact writes
+
+In headless batch mode, write generated artifacts (`reports/*.md`,
+`output/cv-candidate-*.html`, and `batch/tracker-additions/*.tsv`) with a small
+Node script using `fs.writeFileSync` or with the repository's existing generator
+scripts. Do not use patch-style interactive editing for these large generated
+files; the batch runner needs the worker process to return cleanly after the
+files are written. This exception applies only to generated batch artifacts.
+Source-of-truth files such as `cv.md`, `config/profile.yml`,
+`modes/_profile.md`, and `data/applications.md` remain read-only for workers.
+
 ### Step 1 -- Get JD
 
 1. Read the JD file at `{{JD_FILE}}`.
