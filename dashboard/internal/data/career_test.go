@@ -462,8 +462,11 @@ func TestParseApplicationsEnrichesNextActionsAndPacks(t *testing.T) {
 			t.Fatalf("failed to write report %s: %v", name, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n\n**Action:** draft_application_pack\n"), 0o644); err != nil {
 		t.Fatalf("failed to write next pack: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "043-beta.md"), []byte("# Old Next Pack\n\n**Action:** draft_application_pack\n"), 0o644); err != nil {
+		t.Fatalf("failed to write stale next pack: %v", err)
 	}
 
 	sidecar := `version: 1
@@ -497,6 +500,9 @@ applications:
 
 	if apps[1].ActionState != "waiting" || apps[1].ActionDue != "2099-01-01" || apps[1].WaitingOn != "recruiter response" {
 		t.Fatalf("sidecar override not applied: %+v", apps[1])
+	}
+	if apps[1].NextPackPath != "" {
+		t.Fatalf("stale next pack with mismatched action should not be surfaced, got %q", apps[1].NextPackPath)
 	}
 	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "close_or_discard" {
 		t.Fatalf("low-score evaluated row next action = %q/%q", apps[2].ActionState, apps[2].NextAction)

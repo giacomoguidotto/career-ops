@@ -30,6 +30,7 @@ var (
 	reDiscardItem    = regexp.MustCompile(`\s*-\s*([^\n]+)`)
 	reActionAppID    = regexp.MustCompile(`^\s{2}['"]?([^'":]+)['"]?:\s*$`)
 	reActionField    = regexp.MustCompile(`^\s{4}([A-Za-z_]+):\s*(.*)$`)
+	reNextPackAction = regexp.MustCompile(`(?m)^\*\*Action:\*\*\s*([A-Za-z_]+)\s*$`)
 )
 
 // resolveReportPath converts a report link from the tracker into a path
@@ -911,6 +912,11 @@ type applicationActionRecord struct {
 	Report      string
 }
 
+type nextPackRecord struct {
+	Path   string
+	Action string
+}
+
 func enrichNextActions(careerOpsPath string, apps []model.CareerApplication) {
 	records := loadApplicationActionRecords(careerOpsPath)
 	packs := loadNextPackPaths(careerOpsPath)
@@ -1177,14 +1183,14 @@ func dateAfter(date string, now time.Time) bool {
 	return parsed.After(today)
 }
 
-func loadNextPackPaths(careerOpsPath string) map[string]string {
+func loadNextPackPaths(careerOpsPath string) map[string]nextPackRecord {
 	dir := filepath.Join(careerOpsPath, "output", "next-packs")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 
-	packs := make(map[string]string)
+	packs := make(map[string]nextPackRecord)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
@@ -1197,25 +1203,45 @@ func loadNextPackPaths(careerOpsPath string) map[string]string {
 			continue
 		}
 		relPath := filepath.Join("output", "next-packs", entry.Name())
-		packs[prefix] = relPath
+		record := nextPackRecord{
+			Path:   relPath,
+			Action: readNextPackAction(filepath.Join(dir, entry.Name())),
+		}
+		packs[prefix] = record
 		if n, err := strconv.Atoi(prefix); err == nil {
-			packs[strconv.Itoa(n)] = relPath
-			packs[fmt.Sprintf("%03d", n)] = relPath
+			packs[strconv.Itoa(n)] = record
+			packs[fmt.Sprintf("%03d", n)] = record
 		}
 	}
 	return packs
 }
 
-func lookupNextPackPath(packs map[string]string, app model.CareerApplication) string {
+func readNextPackAction(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	match := reNextPackAction.FindStringSubmatch(string(content))
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func lookupNextPackPath(packs map[string]nextPackRecord, app model.CareerApplication) string {
 	if len(packs) == 0 {
 		return ""
 	}
 	for _, key := range applicationActionKeys(app) {
-		if path := packs[key]; path != "" {
-			return path
+		if pack := packs[key]; pack.Path != "" && nextPackMatchesAction(pack, app.NextAction) {
+			return pack.Path
 		}
 	}
 	return ""
+}
+
+func nextPackMatchesAction(pack nextPackRecord, nextAction string) bool {
+	return pack.Action == "" || nextAction == "" || pack.Action == nextAction
 }
 
 func nextCommandFor(app model.CareerApplication) string {
