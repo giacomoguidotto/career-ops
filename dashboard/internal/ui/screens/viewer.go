@@ -234,7 +234,7 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 }
 
 func (m ViewerModel) bodyHeight() int {
-	h := m.height - 4 // header + footer + padding
+	h := m.height - m.headerHeight() - m.footerHeight()
 	if m.statusPicker {
 		h -= (len(statusOptions) + 1)
 	}
@@ -243,6 +243,10 @@ func (m ViewerModel) bodyHeight() int {
 	}
 	return h
 }
+
+func (m ViewerModel) headerHeight() int { return 3 }
+
+func (m ViewerModel) footerHeight() int { return 1 }
 
 func (m ViewerModel) View() string {
 	header := m.renderHeader()
@@ -256,17 +260,7 @@ func (m ViewerModel) View() string {
 }
 
 func (m ViewerModel) renderHeader() string {
-	style := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.Text).
-		Background(m.theme.Surface).
-		Width(m.width).
-		Padding(0, 2)
-
-	title := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Blue).Render(m.title)
-
-	right := lipgloss.NewStyle().Foreground(m.theme.Subtext)
-	scroll := right.Render(func() string {
+	scrollText := func() string {
 		if len(m.renderedLines) == 0 {
 			return ""
 		}
@@ -285,23 +279,20 @@ func (m ViewerModel) renderHeader() string {
 			s := pct
 			return string(rune('0'+s/10%10)) + string(rune('0'+s%10)) + "%"
 		}()
-	}())
-
-	gap := m.width - lipgloss.Width(m.title) - lipgloss.Width(scroll) - 4
-	if gap < 1 {
-		gap = 1
-	}
-
-	return style.Render(title + strings.Repeat(" ", gap) + scroll)
+	}()
+	return strings.Join([]string{
+		m.blankTitleRow(),
+		m.renderTitleRowRight(m.title, scrollText, m.theme.Blue),
+		m.blankTitleRow(),
+	}, "\n")
 }
 
 func (m ViewerModel) renderBody() string {
 	bh := m.bodyHeight()
-	padStyle := lipgloss.NewStyle().Padding(0, 2)
 
 	if len(m.renderedLines) == 0 {
 		emptyStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext)
-		return padStyle.Render(emptyStyle.Render("(empty file)"))
+		return m.indentContent(emptyStyle.Render("(empty file)"))
 	}
 
 	end := m.scrollOffset + bh
@@ -313,7 +304,7 @@ func (m ViewerModel) renderBody() string {
 	flat := make([]string, bh)
 	copy(flat, visible)
 
-	return padStyle.Render(strings.Join(flat, "\n"))
+	return strings.Join(flat, "\n")
 }
 
 // renderAll converts every raw markdown line into visual terminal lines.
@@ -324,8 +315,22 @@ func (m ViewerModel) renderAll() []string {
 		line := m.lines[i]
 		trimmed := strings.TrimSpace(line)
 
+		if m.shouldHideLeadingTitleLine(i, trimmed) {
+			i++
+			if i < len(m.lines) && strings.TrimSpace(m.lines[i]) == "" {
+				i++
+			}
+			continue
+		}
+
 		if trimmed == "" {
-			styled = append(styled, "")
+			appendBlankLine(&styled)
+			i++
+			continue
+		}
+
+		if isHeadingLine(trimmed) || reBoldOnly.MatchString(trimmed) {
+			styled = appendHeadingBlock(styled, m.styleLine(line))
 			i++
 			continue
 		}
@@ -350,14 +355,11 @@ func (m ViewerModel) renderAll() []string {
 				codeLines = append(codeLines, m.lines[i])
 				i++
 			}
-			codeStyle := lipgloss.NewStyle().Background(m.theme.Surface).Foreground(m.theme.Text)
-			w := m.width - 6
-			if w < 10 {
-				w = 10
-			}
+			w := m.fullWidth()
+			codeStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text).Width(w)
 			for _, cl := range codeLines {
-				for _, wl := range strings.Split(ansi.Wrap("  "+cl, w, ""), "\n") {
-					styled = append(styled, codeStyle.Render(wl))
+				for _, wl := range strings.Split(ansi.Wrap(strings.TrimLeft(cl, " \t"), m.textWidth(), ""), "\n") {
+					styled = append(styled, codeStyle.Render(m.indentContent(wl)))
 				}
 			}
 			continue
@@ -379,14 +381,13 @@ func (m ViewerModel) renderAll() []string {
 		}
 		if i > start {
 			paraLines := m.lines[start:i]
-			para := strings.Join(paraLines, " ")
-			w := m.width - 6
-			if w < 10 {
-				w = 10
+			for j, line := range paraLines {
+				paraLines[j] = strings.TrimSpace(line)
 			}
-			wrapped := m.wrapParagraph(m.renderInlineElements(para), w)
+			para := strings.Join(paraLines, " ")
+			wrapped := m.wrapParagraph(m.renderInlineElements(para), m.textWidth())
 			for _, wl := range wrapped {
-				styled = append(styled, wl)
+				styled = append(styled, m.indentContent(wl))
 			}
 		}
 	}
@@ -400,6 +401,82 @@ func (m ViewerModel) renderAll() []string {
 		}
 	}
 	return flat
+}
+
+func appendBlankLine(lines *[]string) {
+	if len(*lines) == 0 || (*lines)[len(*lines)-1] == "" {
+		return
+	}
+	*lines = append(*lines, "")
+}
+
+func appendHeadingBlock(lines []string, heading string) []string {
+	if len(lines) > 0 && lines[len(lines)-1] != "" {
+		lines = append(lines, "")
+	}
+	lines = append(lines, strings.Split(heading, "\n")...)
+	lines = append(lines, "")
+	return lines
+}
+
+func (m ViewerModel) shouldHideLeadingTitleLine(index int, trimmed string) bool {
+	if index != 0 {
+		return false
+	}
+	if m.isNextStepViewer() && strings.HasPrefix(trimmed, "## Next:") {
+		return true
+	}
+	return m.isEvaluationViewer() && isEvaluationHeading(trimmed)
+}
+
+func (m ViewerModel) isNextStepViewer() bool {
+	return strings.HasPrefix(m.title, "NEXT STEP: ") ||
+		strings.HasPrefix(m.title, "Next Pack -- ")
+}
+
+func (m ViewerModel) isEvaluationViewer() bool {
+	return strings.HasPrefix(m.title, "EVALUATION: ")
+}
+
+func isEvaluationHeading(trimmed string) bool {
+	text, ok := markdownHeadingText(trimmed)
+	return ok && strings.HasPrefix(strings.ToUpper(text), "EVALUATION:")
+}
+
+func markdownHeadingText(trimmed string) (string, bool) {
+	for _, prefix := range []string{"###### ", "##### ", "#### ", "### ", "## ", "# "} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix)), true
+		}
+	}
+	return "", false
+}
+
+func (m ViewerModel) contentInset() int {
+	return 2
+}
+
+func (m ViewerModel) contentPrefix() string {
+	return strings.Repeat(" ", m.contentInset())
+}
+
+func (m ViewerModel) fullWidth() int {
+	if m.width < 10 {
+		return 10
+	}
+	return m.width
+}
+
+func (m ViewerModel) textWidth() int {
+	w := m.width - m.contentInset()
+	if w < 10 {
+		return 10
+	}
+	return w
+}
+
+func (m ViewerModel) indentContent(content string) string {
+	return m.contentPrefix() + content
 }
 
 func isTableLine(line string) bool {
@@ -484,10 +561,7 @@ func (m ViewerModel) renderTableBlock(lines []string) []string {
 		return result
 	}
 
-	w := m.width - 6
-	if w < 10 {
-		w = 10
-	}
+	w := m.textWidth()
 
 	borderStyle := lipgloss.NewStyle().Foreground(m.theme.Overlay)
 	t := table.New().
@@ -514,11 +588,16 @@ func (m ViewerModel) renderTableBlock(lines []string) []string {
 		return st.Foreground(m.theme.Text)
 	})
 
-	return strings.Split(t.String(), "\n")
+	rendered := strings.Split(t.String(), "\n")
+	for i, line := range rendered {
+		rendered[i] = m.indentContent(line)
+	}
+	return rendered
 }
 
 var (
 	reBold           = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	reBoldOnly       = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
 	reLink           = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	reBareURL        = regexp.MustCompile(`https?://\S*[^\s\)\]\.,;:!?]`)
 	reInlineCode     = regexp.MustCompile("`([^`]+)`")
@@ -546,6 +625,7 @@ func isSpecialBlockLine(line string) bool {
 		strings.HasPrefix(trimmed, "- ") ||
 		strings.HasPrefix(trimmed, "* ") ||
 		reListNumber.MatchString(trimmed) ||
+		reBoldOnly.MatchString(trimmed) ||
 		(strings.HasPrefix(trimmed, "**") && strings.Contains(trimmed, ":**"))
 }
 
@@ -566,7 +646,7 @@ func (m ViewerModel) renderInlineElements(line string) string {
 // bare URL) don't leak through to subsequent text.
 func (m ViewerModel) renderInlineElementsAs(line string, baseColor lipgloss.Color) string {
 	baseStyle := lipgloss.NewStyle().Foreground(baseColor)
-	codeStyle := lipgloss.NewStyle().Background(m.theme.Surface).Foreground(m.theme.Text)
+	codeStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text)
 	boldStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 	linkStyle := lipgloss.NewStyle().Foreground(m.theme.Blue)
 
@@ -644,77 +724,174 @@ func findInlineMatch(s string, codeStyle, boldStyle, linkStyle lipgloss.Style, c
 
 func (m ViewerModel) styleLine(line string) string {
 	trimmed := strings.TrimSpace(line)
-	w := m.width - 6
-	if w < 10 {
-		w = 10
-	}
 
 	if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
 		content := strings.TrimPrefix(trimmed, "# ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Blue).Width(w).Render("  " + content)
+		return m.renderSectionHeading(content, m.theme.Blue)
 	}
 	if strings.HasPrefix(trimmed, "## ") && !strings.HasPrefix(trimmed, "### ") {
 		content := strings.TrimPrefix(trimmed, "## ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Mauve).Width(w).Render("  " + content)
+		return m.renderSectionHeading(content, m.theme.Mauve)
 	}
 	if strings.HasPrefix(trimmed, "### ") && !strings.HasPrefix(trimmed, "#### ") {
 		content := strings.TrimPrefix(trimmed, "### ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Sky).Width(w).Render("  " + content)
+		return m.renderSectionHeading(content, m.theme.Sky)
 	}
 	if strings.HasPrefix(trimmed, "#### ") && !strings.HasPrefix(trimmed, "##### ") {
 		content := strings.TrimPrefix(trimmed, "#### ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Subtext).Width(w).Render("    " + content)
+		return m.renderHeadingRow(content, m.theme.Subtext, false)
 	}
 	if strings.HasPrefix(trimmed, "##### ") && !strings.HasPrefix(trimmed, "###### ") {
 		content := strings.TrimPrefix(trimmed, "##### ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Overlay).Width(w).Render("      " + content)
+		return m.renderHeadingRow(content, m.theme.Overlay, false)
 	}
 	if strings.HasPrefix(trimmed, "###### ") {
 		content := strings.TrimPrefix(trimmed, "###### ")
-		return lipgloss.NewStyle().Bold(true).Foreground(m.theme.Overlay).Width(w).Render("        " + content)
+		return m.renderHeadingRow(content, m.theme.Overlay, false)
 	}
 	if trimmed == "---" || trimmed == "***" {
+		w := m.fullWidth()
 		return lipgloss.NewStyle().Foreground(m.theme.Overlay).Width(w).Render(strings.Repeat("─", w))
 	}
 	if strings.HasPrefix(trimmed, "> ") {
 		content := strings.TrimPrefix(trimmed, "> ")
+		w := m.textWidth()
 		border := lipgloss.NewStyle().Foreground(m.theme.Overlay).Render("▎ ")
 		textStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Italic(true)
 		wrapped := strings.Split(ansi.Wrap(textStyle.Render(content), w-2, ""), "\n")
 		result := make([]string, 0, len(wrapped))
 		for i, line := range wrapped {
 			if i == 0 {
-				result = append(result, border+line)
+				result = append(result, m.indentContent(border+line))
 			} else {
-				result = append(result, strings.Repeat(" ", ansi.StringWidth(border))+line)
+				result = append(result, m.indentContent(strings.Repeat(" ", ansi.StringWidth(border))+line))
 			}
 		}
 		return strings.Join(result, "\n")
 	}
-	if strings.HasPrefix(trimmed, "**") && strings.Contains(trimmed, ":**") {
-		styled := m.renderInlineElements(line)
-		return ansi.Wrap(styled, w, "")
+	if key, value, ok := splitMetadataLine(trimmed); ok {
+		return m.renderMetadataLine(key, value)
+	}
+	if sm := reBoldOnly.FindStringSubmatch(trimmed); len(sm) == 2 {
+		return m.renderQuestionHeading(sm[1])
 	}
 	if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
 		content := trimmed[2:]
 		marker := lipgloss.NewStyle().Foreground(m.theme.Blue).Render("• ")
-		return m.renderListItem(marker, content, w)
+		return m.renderListItem(marker, content)
 	}
 	if reListNumber.MatchString(trimmed) {
 		sm := reListNumber.FindStringSubmatch(trimmed)
 		if len(sm) >= 3 {
 			marker := lipgloss.NewStyle().Foreground(m.theme.Blue).Render(sm[1])
-			return m.renderListItem(marker, sm[2], w)
+			return m.renderListItem(marker, sm[2])
 		}
 	}
 
 	styled := m.renderInlineElementsAs(trimmed, m.theme.Subtext)
-	return ansi.Wrap(styled, w, "")
+	wrapped := strings.Split(ansi.Wrap(styled, m.textWidth(), ""), "\n")
+	for i, line := range wrapped {
+		wrapped[i] = m.indentContent(line)
+	}
+	return strings.Join(wrapped, "\n")
 }
 
-func (m ViewerModel) renderListItem(marker, content string, width int) string {
+func splitMetadataLine(trimmed string) (string, string, bool) {
+	if !strings.HasPrefix(trimmed, "**") {
+		return "", "", false
+	}
+	idx := strings.Index(trimmed, ":**")
+	if idx < 2 {
+		return "", "", false
+	}
+	return trimmed[2:idx], strings.TrimSpace(trimmed[idx+3:]), true
+}
+
+func (m ViewerModel) renderSectionHeading(content string, color lipgloss.Color) string {
+	return m.renderHeadingRow(strings.ToUpper(content), color, false)
+}
+
+func (m ViewerModel) renderHeadingRow(content string, color lipgloss.Color, rightAligned bool) string {
+	if rightAligned {
+		return m.renderTitleRowRight(content, "", color)
+	}
+	return m.renderTitleRow(content, color)
+}
+
+func (m ViewerModel) renderTitleRow(content string, color lipgloss.Color) string {
+	return m.renderTitleRowRight(content, "", color)
+}
+
+func (m ViewerModel) renderTitleRowRight(content, rightText string, color lipgloss.Color) string {
+	surface := lipgloss.NewStyle().Background(m.theme.Surface)
+	leftStyle := lipgloss.NewStyle().Bold(true).Foreground(color).Background(m.theme.Surface)
+	rightStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Background(m.theme.Surface)
+
+	width := m.fullWidth()
+	contentWidth := width - m.contentInset()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	leftWidth := contentWidth
+	if rightText != "" {
+		leftWidth = contentWidth - lipgloss.Width(rightText) - 1
+	}
+	if leftWidth < 1 {
+		leftWidth = 1
+		rightText = ""
+	}
+
+	leftText := ansi.Truncate(content, leftWidth, "")
+	right := rightStyle.Render(rightText)
+	gap := contentWidth - lipgloss.Width(leftText) - lipgloss.Width(rightText)
+	if rightText != "" && gap < 1 {
+		gap = 1
+	}
+	if rightText == "" && gap < 0 {
+		gap = 0
+	}
+
+	line := surface.Render(m.contentPrefix()) +
+		leftStyle.Render(leftText) +
+		surface.Render(strings.Repeat(" ", gap)) +
+		right
+	if fill := width - lipgloss.Width(line); fill > 0 {
+		line += surface.Render(strings.Repeat(" ", fill))
+	}
+	return line
+}
+
+func (m ViewerModel) blankTitleRow() string {
+	return ""
+}
+
+func (m ViewerModel) renderMetadataLine(key, value string) string {
+	raw := key + ": " + value
+	wrapped := strings.Split(ansi.Wrap(raw, m.textWidth(), ""), "\n")
+
+	panelStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text).Width(m.fullWidth())
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow).Background(m.theme.Panel)
+	valueStyle := lipgloss.NewStyle().Foreground(m.theme.Text).Background(m.theme.Panel)
+
+	rows := make([]string, 0, len(wrapped))
+	for i, row := range wrapped {
+		content := valueStyle.Render(row)
+		prefix := key + ": "
+		if i == 0 && strings.HasPrefix(row, prefix) {
+			content = keyStyle.Render(prefix) + valueStyle.Render(strings.TrimPrefix(row, prefix))
+		}
+		rows = append(rows, panelStyle.Render(m.contentPrefix()+content))
+	}
+	return strings.Join(rows, "\n")
+}
+
+func (m ViewerModel) renderQuestionHeading(content string) string {
+	return m.renderHeadingRow(content, m.theme.Yellow, false)
+}
+
+func (m ViewerModel) renderListItem(marker, content string) string {
 	markerWidth := ansi.StringWidth(marker)
-	textWidth := width - markerWidth
+	textWidth := m.textWidth() - markerWidth
 	if textWidth < 10 {
 		textWidth = 10
 	}
@@ -723,9 +900,9 @@ func (m ViewerModel) renderListItem(marker, content string, width int) string {
 	result := make([]string, 0, len(lines))
 	for i, line := range lines {
 		if i == 0 {
-			result = append(result, marker+line)
+			result = append(result, m.indentContent(marker+line))
 		} else {
-			result = append(result, strings.Repeat(" ", markerWidth)+line)
+			result = append(result, m.indentContent(strings.Repeat(" ", markerWidth)+line))
 		}
 	}
 	return strings.Join(result, "\n")
@@ -738,8 +915,8 @@ func (m ViewerModel) renderFooter() string {
 		Width(m.width).
 		Padding(0, 1)
 
-	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Text)
-	descStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext)
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Text).Background(m.theme.Surface)
+	descStyle := lipgloss.NewStyle().Foreground(m.theme.Subtext).Background(m.theme.Surface)
 
 	if m.statusPicker {
 		return style.Render(
@@ -810,7 +987,7 @@ func (m ViewerModel) overlayStatusPicker(body string) string {
 	for i, opt := range statusOptions {
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
 		if i == m.statusCursor {
-			style = style.Background(m.theme.Overlay).Bold(true)
+			style = style.Background(m.theme.Selection).Bold(true)
 		}
 		prefix := "  "
 		if i == m.statusCursor {
