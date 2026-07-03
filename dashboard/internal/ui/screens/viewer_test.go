@@ -258,10 +258,10 @@ func TestNextStepMetadataRowsInheritBackground(t *testing.T) {
 
 	rendered := m.styleLine("**Decision:** apply")
 	if hasFillBackground(rendered) {
-		t.Fatalf("expected next-step metadata text to inherit background, got %q", rendered)
+		t.Fatalf("expected next-step metadata row to inherit background, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "\x1b[49m") || !strings.Contains(rendered, "\x1b[K") {
-		t.Fatalf("expected next-step metadata row to reset and clear terminal background, got %q", rendered)
+	if strings.Contains(rendered, "\x1b[K") {
+		t.Fatalf("expected next-step metadata row not to fill the rest of the line, got %q", rendered)
 	}
 	if plain := ansi.Strip(rendered); plain != "  Decision: apply" {
 		t.Fatalf("expected plain inset metadata text, got %q", plain)
@@ -277,7 +277,9 @@ func TestNextStepFormQuestionsAndParagraphsInheritBackground(t *testing.T) {
 			"",
 			"**Why n8n?**",
 			"",
-			"n8n sits close to the direction I am deliberately building toward.",
+			"n8n sits close to the direction I am deliberately building toward with `workflow` proof.",
+			"",
+			"- Confirm the role remains software-heavy.",
 		},
 		title:  "NEXT STEP: Send Application / n8n / Community Software Engineer / Remote",
 		width:  72,
@@ -297,14 +299,43 @@ func TestNextStepFormQuestionsAndParagraphsInheritBackground(t *testing.T) {
 			if !hasFillBackground(line) {
 				t.Fatalf("expected section heading to keep title background, got %q", line)
 			}
-		case strings.Contains(plain, "Why n8n?"), strings.Contains(plain, "n8n sits close"):
+		case strings.Contains(plain, "Why n8n?"),
+			strings.Contains(plain, "n8n sits close"),
+			strings.Contains(plain, "Confirm the role"):
 			if hasFillBackground(line) {
 				t.Fatalf("expected next-step content line to inherit background, got %q", line)
 			}
-			if !strings.Contains(line, "\x1b[49m") || !strings.Contains(line, "\x1b[K") {
-				t.Fatalf("expected next-step content line to reset and clear terminal background, got %q", line)
+			if strings.Contains(line, "\x1b[K") {
+				t.Fatalf("expected next-step content line not to fill the rest of the line, got %q", line)
 			}
 		}
+	}
+}
+
+func TestNextStepFencedCodeInheritsBackground(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"```text",
+			"draft answer",
+			"```",
+		},
+		title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
+		width:  48,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.renderAll()
+	if len(rendered) != 1 {
+		t.Fatalf("expected one rendered code line, got %d", len(rendered))
+	}
+	if hasFillBackground(rendered[0]) {
+		t.Fatalf("expected next-step code block content to inherit background, got %q", rendered[0])
+	}
+	if plain := ansi.Strip(rendered[0]); plain != "  draft answer" {
+		t.Fatalf("expected inset code block text, got %q", plain)
 	}
 }
 

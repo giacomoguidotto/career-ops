@@ -357,6 +357,9 @@ func (m ViewerModel) renderAll() []string {
 			}
 			w := m.fullWidth()
 			codeStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text).Width(w)
+			if m.isNextStepViewer() {
+				codeStyle = lipgloss.NewStyle().Foreground(m.theme.Text)
+			}
 			for _, cl := range codeLines {
 				for _, wl := range strings.Split(ansi.Wrap(strings.TrimLeft(cl, " \t"), m.textWidth(), ""), "\n") {
 					styled = append(styled, codeStyle.Render(m.indentContent(wl)))
@@ -488,7 +491,7 @@ func (m ViewerModel) renderContentLine(content string) string {
 }
 
 func inheritTerminalBackground(line string) string {
-	return "\x1b[49m" + line + "\x1b[49m\x1b[K"
+	return "\x1b[49m" + line + "\x1b[49m"
 }
 
 func isTableLine(line string) bool {
@@ -658,7 +661,10 @@ func (m ViewerModel) renderInlineElements(line string) string {
 // bare URL) don't leak through to subsequent text.
 func (m ViewerModel) renderInlineElementsAs(line string, baseColor lipgloss.Color) string {
 	baseStyle := lipgloss.NewStyle().Foreground(baseColor)
-	codeStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text)
+	codeStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
+	if !m.isNextStepViewer() {
+		codeStyle = codeStyle.Background(m.theme.Panel)
+	}
 	boldStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 	linkStyle := lipgloss.NewStyle().Foreground(m.theme.Blue)
 
