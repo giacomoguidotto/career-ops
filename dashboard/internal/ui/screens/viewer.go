@@ -357,7 +357,7 @@ func (m ViewerModel) renderAll() []string {
 			}
 			w := m.fullWidth()
 			codeStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text).Width(w)
-			if m.isNextStepViewer() {
+			if m.inheritsContentBackground() {
 				codeStyle = lipgloss.NewStyle().Foreground(m.theme.Text)
 			}
 			for _, cl := range codeLines {
@@ -484,7 +484,7 @@ func (m ViewerModel) indentContent(content string) string {
 
 func (m ViewerModel) renderContentLine(content string) string {
 	line := m.indentContent(content)
-	if m.isNextStepViewer() {
+	if m.inheritsContentBackground() {
 		return inheritTerminalBackground(line)
 	}
 	return line
@@ -492,6 +492,10 @@ func (m ViewerModel) renderContentLine(content string) string {
 
 func inheritTerminalBackground(line string) string {
 	return "\x1b[49m" + line + "\x1b[49m"
+}
+
+func (m ViewerModel) inheritsContentBackground() bool {
+	return m.isNextStepViewer() || m.isEvaluationViewer()
 }
 
 func isTableLine(line string) bool {
@@ -662,7 +666,7 @@ func (m ViewerModel) renderInlineElements(line string) string {
 func (m ViewerModel) renderInlineElementsAs(line string, baseColor lipgloss.Color) string {
 	baseStyle := lipgloss.NewStyle().Foreground(baseColor)
 	codeStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
-	if !m.isNextStepViewer() {
+	if !m.inheritsContentBackground() {
 		codeStyle = codeStyle.Background(m.theme.Panel)
 	}
 	boldStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
@@ -887,7 +891,7 @@ func (m ViewerModel) renderMetadataLine(key, value string) string {
 	raw := key + ": " + value
 	wrapped := strings.Split(ansi.Wrap(raw, m.textWidth(), ""), "\n")
 
-	if m.isNextStepViewer() {
+	if m.inheritsContentBackground() {
 		keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 		valueStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
 
@@ -920,7 +924,7 @@ func (m ViewerModel) renderMetadataLine(key, value string) string {
 }
 
 func (m ViewerModel) renderQuestionHeading(content string) string {
-	if m.isNextStepViewer() {
+	if m.inheritsContentBackground() {
 		style := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 		wrapped := strings.Split(ansi.Wrap(style.Render(content), m.textWidth(), ""), "\n")
 		for i, line := range wrapped {

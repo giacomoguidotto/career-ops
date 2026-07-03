@@ -339,6 +339,77 @@ func TestNextStepFencedCodeInheritsBackground(t *testing.T) {
 	}
 }
 
+func TestEvaluationContentInheritsBackgroundExceptHeadings(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"**Date:** 2026-07-03",
+			"",
+			"## A) Role Summary",
+			"",
+			"Use `workflow` proof without overstating experience.",
+			"",
+			"- Confirm the role remains software-heavy.",
+		},
+		title:  "EVALUATION: n8n / Community Software Engineer / Remote",
+		width:  72,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.renderAll()
+	if len(rendered) < 5 {
+		t.Fatalf("expected evaluation content to render, got %d lines: %q", len(rendered), rendered)
+	}
+
+	for _, line := range rendered {
+		plain := ansi.Strip(line)
+		switch {
+		case strings.Contains(plain, "A) ROLE SUMMARY"):
+			if !hasFillBackground(line) {
+				t.Fatalf("expected evaluation heading to keep title background, got %q", line)
+			}
+		case strings.Contains(plain, "Date:"),
+			strings.Contains(plain, "Use workflow proof"),
+			strings.Contains(plain, "Confirm the role"):
+			if hasFillBackground(line) {
+				t.Fatalf("expected evaluation content line to inherit background, got %q", line)
+			}
+			if strings.Contains(line, "\x1b[K") {
+				t.Fatalf("expected evaluation content line not to fill the rest of the line, got %q", line)
+			}
+		}
+	}
+}
+
+func TestEvaluationFencedCodeInheritsBackground(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"```yaml",
+			"score: 4.2",
+			"```",
+		},
+		title:  "EVALUATION: Acme / Backend Engineer / Remote",
+		width:  48,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.renderAll()
+	if len(rendered) != 1 {
+		t.Fatalf("expected one rendered code line, got %d", len(rendered))
+	}
+	if hasFillBackground(rendered[0]) {
+		t.Fatalf("expected evaluation code block content to inherit background, got %q", rendered[0])
+	}
+	if plain := ansi.Strip(rendered[0]); plain != "  score: 4.2" {
+		t.Fatalf("expected inset evaluation code block text, got %q", plain)
+	}
+}
+
 func TestViewerTablesUseContentInset(t *testing.T) {
 	m := ViewerModel{
 		lines: []string{
