@@ -5,11 +5,13 @@ import "github.com/charmbracelet/lipgloss"
 func newCatppuccinMocha() Theme {
 	return Theme{
 		// Catppuccin Mocha palette
-		Base:    lipgloss.Color("#1e1e2e"),
-		Surface: lipgloss.Color("#313244"),
-		Overlay: lipgloss.Color("#45475a"),
-		Text:    lipgloss.Color("#cdd6f4"),
-		Subtext: lipgloss.Color("#a6adc8"),
+		Base:      lipgloss.Color("#1e1e2e"),
+		Surface:   lipgloss.Color("#313244"),
+		Panel:     lipgloss.Color("#25283a"),
+		Overlay:   lipgloss.Color("#45475a"),
+		Selection: lipgloss.Color("#3d5874"),
+		Text:      lipgloss.Color("#cdd6f4"),
+		Subtext:   lipgloss.Color("#a6adc8"),
 
 		// Accents
 		Blue:   lipgloss.Color("#89b4fa"),

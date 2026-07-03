@@ -246,9 +246,9 @@ func TestSelectedAppLineAppliesBackgroundAcrossStyledCells(t *testing.T) {
 		ReportPath: "reports/001-acme.md",
 	}, true)
 
-	const overlaySeq = "\x1b[48;2;69;71;89m"
-	if count := strings.Count(line, overlaySeq); count < 6 {
-		t.Fatalf("selected row emitted overlay background %d times, want it across styled cells; line=%q", count, line)
+	const selectionSeq = "\x1b[48;2;60;88;116m"
+	if count := strings.Count(line, selectionSeq); count < 6 {
+		t.Fatalf("selected row emitted selection background %d times, want it across styled cells; line=%q", count, line)
 	}
 }
 
@@ -563,8 +563,76 @@ func TestRenderAppLineIncludesNextColumn(t *testing.T) {
 		NextAction:  "draft_application_pack",
 	}, false))
 
-	if !strings.Contains(line, "App pack") {
+	if !strings.Contains(line, "Generate application") {
 		t.Fatalf("expected rendered row to include next action label, got %q", line)
+	}
+}
+
+func TestRenderAppLineShowsReadyArtifactAsHumanStep(t *testing.T) {
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		nil,
+		model.PipelineMetrics{},
+		"..",
+		160,
+		40,
+	)
+
+	line := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+		Number:       42,
+		Company:      "Acme",
+		Role:         "AI Engineer",
+		Status:       "Evaluated",
+		Score:        4.2,
+		ActionState:  "needs_action",
+		NextAction:   "draft_application_pack",
+		NextPackPath: "output/next-packs/042-acme.md",
+	}, false))
+
+	if !strings.Contains(line, "Send application") {
+		t.Fatalf("expected generated application pack to become a human send step, got %q", line)
+	}
+}
+
+func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
+	cases := []struct {
+		name string
+		app  model.CareerApplication
+		want string
+	}{
+		{
+			name: "application generation",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_application_pack"},
+			want: "Generate application",
+		},
+		{
+			name: "application send after artifact",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_application_pack", NextPackPath: "output/next-packs/042-acme.md"},
+			want: "Send application",
+		},
+		{
+			name: "interview cheatsheet generation",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "prep_interview"},
+			want: "Generate interview cheatsheet",
+		},
+		{
+			name: "interview after cheatsheet",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "prep_interview", NextPackPath: "output/next-packs/042-acme.md"},
+			want: "Interview",
+		},
+		{
+			name: "waiting row",
+			app:  model.CareerApplication{ActionState: "waiting", NextAction: "follow_up", WaitingOn: "company response", NextPackPath: "output/next-packs/042-acme.md"},
+			want: "Wait for response",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nextActionLabel(tc.app); got != tc.want {
+				t.Fatalf("nextActionLabel() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -580,8 +648,11 @@ func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
 	})
 
 	preview := pm.renderPreview()
-	if !strings.Contains(preview, "Next:") || !strings.Contains(preview, "open with n: output/next-packs/042-acme.md") {
+	if !strings.Contains(preview, "Next step:") || !strings.Contains(preview, "n: open output/next-packs/042-acme.md") {
 		t.Fatalf("expected preview to show next pack opener, got %q", preview)
+	}
+	if strings.Contains(preview, "c: copy artifact") {
+		t.Fatalf("preview should not advertise artifact copying, got %q", preview)
 	}
 	if strings.Contains(preview, "/career-ops next 42") {
 		t.Fatalf("preview should prefer existing pack path over generation command, got %q", preview)
@@ -594,6 +665,8 @@ func TestNextKeyOpensExistingPack(t *testing.T) {
 			Company:      "Acme",
 			Role:         "AI Engineer",
 			Status:       "Evaluated",
+			ActionState:  "needs_action",
+			NextAction:   "draft_application_pack",
 			NextPackPath: "output/next-packs/042-acme.md",
 		},
 	}
@@ -610,6 +683,145 @@ func TestNextKeyOpensExistingPack(t *testing.T) {
 	}
 	if openMsg.Path != "/tmp/career-ops/output/next-packs/042-acme.md" {
 		t.Fatalf("opened path = %q", openMsg.Path)
+	}
+}
+
+func TestEnterUsesHumanEvaluationTitle(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:    "n8n",
+			Role:       "Community Software Engineer / Remote / Europe",
+			Status:     "Evaluated",
+			ReportPath: "reports/143-n8n.md",
+			WorkMode:   "Remote",
+			Location:   "Europe",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
+
+	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected Enter to emit an open-report command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(PipelineOpenReportMsg)
+	if !ok {
+		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
+	}
+	want := "EVALUATION: n8n / Community Software Engineer / Remote / Europe"
+	if openMsg.Title != want {
+		t.Fatalf("opened title = %q, want %q", openMsg.Title, want)
+	}
+}
+
+func TestNextKeyUsesHumanNextStepTitle(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:      "n8n",
+			Role:         "Community Software Engineer / Remote / Europe",
+			Status:       "Evaluated",
+			ActionState:  "needs_action",
+			NextAction:   "draft_application_pack",
+			NextPackPath: "output/next-packs/042-n8n.md",
+			WorkMode:     "Remote",
+			Location:     "Europe",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
+
+	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("expected n to emit an open-pack command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(PipelineOpenReportMsg)
+	if !ok {
+		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
+	}
+	want := "NEXT STEP: Send Application / n8n / Community Software Engineer / Remote / Europe"
+	if openMsg.Title != want {
+		t.Fatalf("opened title = %q, want %q", openMsg.Title, want)
+	}
+}
+
+func TestNextKeyDoesNotOpenAgentGenerationStep(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:      "Acme",
+			Role:         "AI Engineer",
+			Status:       "Evaluated",
+			ActionState:  "needs_action",
+			NextAction:   "draft_application_pack",
+			NextCommand:  "/career-ops next 42",
+			NextPackPath: "",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
+
+	updated, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Fatal("expected n to avoid opening a page before the artifact exists")
+	}
+	if !strings.Contains(updated.flash, "/career-ops next 42") {
+		t.Fatalf("expected n to explain the generation command, got flash %q", updated.flash)
+	}
+}
+
+func TestCopyKeyOpensStatusPickerEvenWhenArtifactIsReady(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:      "Acme",
+			Role:         "AI Engineer",
+			Status:       "Evaluated",
+			ActionState:  "needs_action",
+			NextAction:   "draft_application_pack",
+			NextPackPath: "output/next-packs/missing.md",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
+
+	updated, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if cmd != nil {
+		t.Fatal("c should no longer emit a copy command")
+	}
+	if !updated.statusPicker {
+		t.Fatal("c should open the status picker for tracker rows")
+	}
+}
+
+func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Company:      "Acme",
+			Role:         "AI Engineer",
+			Status:       "Evaluated",
+			ActionState:  "needs_action",
+			NextAction:   "draft_application_pack",
+			NextPackPath: "output/next-packs/042-acme.md",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 96, 40)
+
+	help := pm.renderHelp()
+	lines := strings.Split(help, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected help bar to wrap on narrow terminals, got %q", help)
+	}
+	for _, line := range lines {
+		if got := lipgloss.Width(line); got != pm.width {
+			t.Fatalf("help line width = %d, want %d; line=%q", got, pm.width, line)
+		}
+	}
+
+	plain := ansi.Strip(help)
+	if strings.Contains(plain, "copy") {
+		t.Fatalf("help bar should not advertise copy commands, got %q", plain)
+	}
+	if !strings.Contains(plain, "n artifact") {
+		t.Fatalf("help bar should keep the artifact opener when available, got %q", plain)
+	}
+	if !strings.Contains(plain, "c status") {
+		t.Fatalf("help bar should describe c as status editing, got %q", plain)
 	}
 }
 

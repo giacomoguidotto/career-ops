@@ -9,11 +9,13 @@ import (
 // Theme holds all color definitions for the pipeline dashboard.
 type Theme struct {
 	// Base colors
-	Base    lipgloss.Color
-	Surface lipgloss.Color
-	Overlay lipgloss.Color
-	Text    lipgloss.Color
-	Subtext lipgloss.Color
+	Base      lipgloss.Color
+	Surface   lipgloss.Color
+	Panel     lipgloss.Color
+	Overlay   lipgloss.Color
+	Selection lipgloss.Color
+	Text      lipgloss.Color
+	Subtext   lipgloss.Color
 
 	// Accent colors
 	Blue   lipgloss.Color

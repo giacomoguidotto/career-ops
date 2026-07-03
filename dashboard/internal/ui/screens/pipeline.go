@@ -150,7 +150,7 @@ const (
 	ColHasReport                   // RPT: ✓/—
 	ColHasPDF                      // PDF: ✓/—
 	ColLastContact                 // LAST contact date
-	ColNext                        // NEXT manual action
+	ColNext                        // NEXT STEP action
 )
 
 // colDef describes one optional column for the picker UI.
@@ -169,7 +169,7 @@ var optionalCols = []colDef{
 	{ColHasReport, "RPT", "✓/—", 4, false},
 	{ColHasPDF, "PDF", "✓/—", 4, false},
 	{ColLastContact, "LAST", "", 10, false},
-	{ColNext, "NEXT", "manual", 16, true},
+	{ColNext, "NEXT STEP", "action", 30, true},
 }
 
 var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Hired", "Rejected", "Discarded", "SKIP"}
@@ -479,7 +479,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 	case "enter":
 		if app, ok := m.CurrentApp(); ok && app.ReportPath != "" {
 			fullPath := filepath.Join(m.careerOpsPath, app.ReportPath)
-			title := fmt.Sprintf("%s — %s", app.Company, app.Role)
+			title := evaluationViewerTitle(app)
 			jobURL := app.JobURL
 			return m, func() tea.Msg {
 				return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: jobURL, App: app}
@@ -544,12 +544,14 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		}
 
 	case "n":
-		if app, ok := m.CurrentApp(); ok && app.NextPackPath != "" {
+		if app, ok := m.CurrentApp(); ok && canOpenNextArtifact(app) {
 			fullPath := filepath.Join(m.careerOpsPath, app.NextPackPath)
-			title := fmt.Sprintf("Next Pack -- %s -- %s", app.Company, app.Role)
+			title := nextStepViewerTitle(app)
 			return m, func() tea.Msg {
 				return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: app.JobURL, App: app}
 			}
+		} else if ok && app.NextCommand != "" && needsManualAction(app) {
+			m.flash = "No generated artifact yet - run " + app.NextCommand
 		}
 
 	case "p":
@@ -1069,11 +1071,10 @@ func workModeRank(mode string) int {
 	}
 }
 
-// chromeRowsFixed returns the number of fixed chrome rows above/below the body
-// (header + tabs(2) + metrics + sortbar + column header + help + 1 search bar
-// when active). Shared by View() and adjustScroll() so additions stay in sync.
+// chromeRowsFixed returns the number of fixed chrome rows above/below the body.
+// Shared by View() and adjustScroll() so additions stay in sync.
 func (m PipelineModel) chromeRowsFixed() int {
-	rows := 8 // header + tabs(2) + metrics + sortbar + column header + help + preview baseline
+	rows := 6 + lipgloss.Height(m.renderHelp()) // header + tabs(2) + metrics + sortbar + column header + help
 	if m.searchInput || m.searchQuery != "" {
 		rows++
 	}
@@ -1465,7 +1466,7 @@ func (m PipelineModel) columnWidths() colWidths {
 		c.pay = 16
 	}
 	if m.colVisible(ColNext) {
-		c.next = 16
+		c.next = 30
 	}
 	if m.colVisible(ColHasReport) {
 		c.rpt = 4
@@ -1511,13 +1512,13 @@ func (m PipelineModel) tableContentWidth() int {
 
 func (m PipelineModel) withSelectedBackground(style lipgloss.Style, selected bool) lipgloss.Style {
 	if selected {
-		return style.Background(m.theme.Overlay)
+		return style.Background(m.theme.Selection)
 	}
 	return style
 }
 
 func (m PipelineModel) selectedBackgroundText(text string) string {
-	return lipgloss.NewStyle().Background(m.theme.Overlay).Render(text)
+	return lipgloss.NewStyle().Background(m.theme.Selection).Render(text)
 }
 
 func (m PipelineModel) workModeColor(mode string) lipgloss.Color {
@@ -1603,7 +1604,7 @@ func (m PipelineModel) renderColumnHeader() string {
 	segments = append(segments, cell("ROLE", cw.role))
 	segments = append(segments, cell("STATUS", cw.status))
 	if cw.next > 0 {
-		segments = append(segments, cell("NEXT", cw.next))
+		segments = append(segments, cell("NEXT STEP", cw.next))
 	}
 	if cw.loc > 0 {
 		segments = append(segments, cell("LOCATION", cw.loc))
@@ -1767,7 +1768,7 @@ func (m PipelineModel) renderPreview() string {
 	nextDetail := nextActionDetail(app)
 	if nextDetail != "" {
 		lines = append(lines, padStyle.Render(
-			labelStyle.Render("Next: ")+valueStyle.Render(truncateRunes(nextDetail, m.width-10))))
+			labelStyle.Render("Next step: ")+valueStyle.Render(truncateRunes(nextDetail, m.width-15))))
 	}
 
 	outcome := previewOutcome(app)
@@ -1832,32 +1833,74 @@ func needsManualAction(app model.CareerApplication) bool {
 	return state == "needs_action" || state == "blocked"
 }
 
-func nextActionLabel(app model.CareerApplication) string {
-	if app.NextAction == "" || app.NextAction == "none" {
-		if app.ActionState == "waiting" && app.WaitingOn != "" {
-			return "Waiting"
+func actionStateIs(app model.CareerApplication, states ...string) bool {
+	current := strings.ToLower(strings.TrimSpace(app.ActionState))
+	for _, state := range states {
+		if current == state {
+			return true
 		}
+	}
+	return false
+}
+
+func canOpenNextArtifact(app model.CareerApplication) bool {
+	return app.NextPackPath != "" && needsManualAction(app) && artifactBackedNextAction(app.NextAction)
+}
+
+func artifactBackedNextAction(action string) bool {
+	switch action {
+	case "draft_application_pack",
+		"draft_outreach",
+		"follow_up",
+		"reply_recruiter",
+		"send_thank_you",
+		"prep_interview",
+		"negotiation_prep":
+		return true
+	default:
+		return false
+	}
+}
+
+func nextActionLabel(app model.CareerApplication) string {
+	if actionStateIs(app, "waiting", "snoozed") {
+		return "Wait for response"
+	}
+	if app.NextAction == "" || app.NextAction == "none" {
 		return "-"
 	}
 
-	label := map[string]string{
-		"research_gating_questions": "Research",
-		"draft_application_pack":    "App pack",
-		"draft_outreach":            "Outreach",
-		"follow_up":                 "Follow up",
-		"reply_recruiter":           "Reply",
-		"prep_interview":            "Prep",
-		"send_thank_you":            "Thank you",
-		"negotiation_prep":          "Negotiate",
-		"close_or_discard":          "Close?",
-	}[app.NextAction]
-	if label == "" {
-		label = app.NextAction
+	if canOpenNextArtifact(app) {
+		switch app.NextAction {
+		case "draft_application_pack":
+			return "Send application"
+		case "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you":
+			return "Send outreach messages"
+		case "prep_interview":
+			return "Interview"
+		case "negotiation_prep":
+			return "Negotiate offer"
+		default:
+			return "Use generated pack"
+		}
 	}
-	if app.NextPackPath != "" && label != "-" {
-		return label + " ready"
+
+	switch app.NextAction {
+	case "draft_application_pack":
+		return "Generate application"
+	case "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you":
+		return "Generate outreach messages"
+	case "prep_interview":
+		return "Generate interview cheatsheet"
+	case "research_gating_questions":
+		return "Research blockers"
+	case "negotiation_prep":
+		return "Generate negotiation prep"
+	case "close_or_discard":
+		return "Close opportunity"
+	default:
+		return app.NextAction
 	}
-	return label
 }
 
 func nextActionDetail(app model.CareerApplication) string {
@@ -1868,8 +1911,8 @@ func nextActionDetail(app model.CareerApplication) string {
 
 	var parts []string
 	parts = append(parts, label)
-	if app.NextPackPath != "" {
-		parts = append(parts, "open with n: "+app.NextPackPath)
+	if canOpenNextArtifact(app) {
+		parts = append(parts, "n: open "+app.NextPackPath)
 	} else if app.NextCommand != "" && needsManualAction(app) {
 		parts = append(parts, "run: "+app.NextCommand)
 	}
@@ -1885,9 +1928,73 @@ func nextActionDetail(app model.CareerApplication) string {
 	return strings.Join(parts, " | ")
 }
 
+func nextStepViewerTitle(app model.CareerApplication) string {
+	label := nextActionLabel(app)
+	if label == "-" {
+		label = "next step"
+	}
+
+	parts := []string{"NEXT STEP: " + titleCaseLabel(label)}
+	parts = append(parts, opportunityTitleParts(app)...)
+	return strings.Join(parts, " / ")
+}
+
+func evaluationViewerTitle(app model.CareerApplication) string {
+	parts := opportunityTitleParts(app)
+	if len(parts) == 0 {
+		return "EVALUATION"
+	}
+	return "EVALUATION: " + strings.Join(parts, " / ")
+}
+
+func opportunityTitleParts(app model.CareerApplication) []string {
+	var parts []string
+	if app.Company != "" {
+		parts = append(parts, app.Company)
+	}
+	if app.Role != "" {
+		parts = append(parts, app.Role)
+	}
+	if loc := titleLocationSummary(app); loc != "" && !strings.Contains(strings.ToLower(app.Role), strings.ToLower(loc)) {
+		parts = append(parts, loc)
+	}
+	return parts
+}
+
+func titleCaseLabel(label string) string {
+	words := strings.Fields(label)
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+func titleLocationSummary(app model.CareerApplication) string {
+	var parts []string
+	if app.WorkMode != "" {
+		parts = append(parts, app.WorkMode)
+	}
+	if app.Location != "" {
+		parts = append(parts, app.Location)
+	}
+	return strings.Join(parts, " / ")
+}
+
 func (m PipelineModel) nextActionColor(app model.CareerApplication) lipgloss.Color {
-	if app.NextPackPath != "" && needsManualAction(app) {
+	if canOpenNextArtifact(app) {
 		return m.theme.Green
+	}
+	if actionStateIs(app, "waiting", "snoozed") {
+		return m.theme.Subtext
+	}
+	switch app.NextAction {
+	case "draft_application_pack", "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you", "prep_interview", "negotiation_prep":
+		return m.theme.Yellow
+	case "close_or_discard":
+		return m.theme.Red
 	}
 	switch strings.ToLower(strings.TrimSpace(app.ActionState)) {
 	case "needs_action":
@@ -1940,27 +2047,95 @@ func (m PipelineModel) renderHelp() string {
 	}
 
 	brand := lipgloss.NewStyle().Foreground(m.theme.Overlay).Background(m.theme.Surface).Render("career-ops by santifer.io")
+	artifactReady := false
+	if app, ok := m.CurrentApp(); ok {
+		artifactReady = canOpenNextArtifact(app)
+	}
 
-	keys := keyStyle.Render("jk") + descStyle.Render(" nav  ") +
-		keyStyle.Render("hl") + descStyle.Render(" tabs  ") +
-		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
-		keyStyle.Render("Space/b") + descStyle.Render(" page  ") +
-		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
-		keyStyle.Render("/") + descStyle.Render(" search  ") +
-		keyStyle.Render("s") + descStyle.Render(" sort  ") +
-		keyStyle.Render("r") + descStyle.Render(" refresh  ") +
-		keyStyle.Render("Enter") + descStyle.Render(" report  ") +
-		keyStyle.Render("o") + descStyle.Render(" open URL  ") +
-		keyStyle.Render("d") + descStyle.Render(" open PDF  ") +
-		keyStyle.Render("D") + descStyle.Render(" regen PDF  ") +
-		keyStyle.Render("n") + descStyle.Render(" next pack  ") +
-		keyStyle.Render("c") + descStyle.Render(" change  ") +
-		keyStyle.Render("C") + descStyle.Render(" columns  ") +
-		keyStyle.Render("v") + descStyle.Render(" view  ") +
-		keyStyle.Render("p") + descStyle.Render(" progress  ") +
-		keyStyle.Render("q") + descStyle.Render(" quit")
+	segment := func(key, desc string) string {
+		return keyStyle.Render(key) + descStyle.Render(" "+desc)
+	}
 
-	return m.renderBarLineRight(keys, brand, 1)
+	groups := []string{
+		segment("Enter", "report"),
+		segment("o", "URL"),
+		segment("d", "PDF"),
+		segment("D", "regen PDF"),
+		segment("c", "status"),
+		segment("C", "columns"),
+		segment("p", "progress"),
+		segment("jk", "nav"),
+		segment("hl", "tabs"),
+		segment("^D/^U", "half"),
+		segment("Space/b", "page"),
+		segment("g/G", "top/end"),
+		segment("/", "search"),
+		segment("s", "sort"),
+		segment("r", "refresh"),
+		segment("v", "view"),
+		segment("q", "quit"),
+	}
+	if artifactReady {
+		groups = append([]string{segment("n", "artifact")}, groups...)
+	}
+
+	return m.renderCommandRows(groups, 1, brand)
+}
+
+func (m PipelineModel) renderCommandRows(groups []string, padding int, brand string) string {
+	rows := m.packCommandRows(groups, padding)
+	if len(rows) == 0 {
+		return m.renderBarLine("", padding)
+	}
+
+	rendered := make([]string, 0, len(rows))
+	for i, row := range rows {
+		if i == len(rows)-1 && brand != "" {
+			contentWidth := m.width - (padding * 2)
+			if contentWidth < 1 {
+				contentWidth = 1
+			}
+			if lipgloss.Width(row)+lipgloss.Width(brand)+1 <= contentWidth {
+				rendered = append(rendered, m.renderBarLineRight(row, brand, padding))
+				continue
+			}
+		}
+		rendered = append(rendered, m.renderBarLine(row, padding))
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func (m PipelineModel) packCommandRows(groups []string, padding int) []string {
+	contentWidth := m.width - (padding * 2)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	separator := m.barSpace(2)
+	var rows []string
+	row := ""
+	for _, group := range groups {
+		if lipgloss.Width(group) > contentWidth {
+			group = ansi.Truncate(group, contentWidth, "")
+		}
+
+		if row == "" {
+			row = group
+			continue
+		}
+
+		next := row + separator + group
+		if lipgloss.Width(next) <= contentWidth {
+			row = next
+			continue
+		}
+		rows = append(rows, row)
+		row = group
+	}
+	if row != "" {
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func (m PipelineModel) barSpace(width int) string {
@@ -2006,7 +2181,7 @@ func (m PipelineModel) overlayStatusPicker(body string) string {
 	for i, opt := range statusOptions {
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
 		if i == m.statusCursor {
-			style = style.Background(m.theme.Overlay).Bold(true)
+			style = style.Background(m.theme.Selection).Bold(true)
 		}
 		prefix := "  "
 		if i == m.statusCursor {
@@ -2121,7 +2296,7 @@ func (m PipelineModel) overlayPDFPicker(body string) string {
 	for i, choice := range m.pdfChoices {
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
 		if i == m.pdfCursor {
-			style = style.Background(m.theme.Overlay).Bold(true)
+			style = style.Background(m.theme.Selection).Bold(true)
 		}
 		prefix := "  "
 		if i == m.pdfCursor {
@@ -2157,7 +2332,7 @@ func (m PipelineModel) overlayColPicker(body string) string {
 		}
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
 		if i == m.colPickerIdx {
-			style = style.Background(m.theme.Overlay).Bold(true)
+			style = style.Background(m.theme.Selection).Bold(true)
 		}
 		checkStr := lipgloss.NewStyle().Foreground(checkColor).Render(check)
 		label := col.header
