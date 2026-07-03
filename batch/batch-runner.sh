@@ -35,6 +35,9 @@ WORKER_CLI="${CAREER_OPS_BATCH_CLI:-codex}"
 MODEL=""  # empty = worker CLI default; Codex falls back to gpt-5.5 below
 REASONING_EFFORT="${CAREER_OPS_BATCH_REASONING_EFFORT:-high}"
 RATE_LIMIT_SLEEP=300
+WORKER_IDLE_TIMEOUT="${CAREER_OPS_WORKER_IDLE_TIMEOUT:-900}"
+WORKER_MAX_SECONDS="${CAREER_OPS_WORKER_MAX_SECONDS:-0}"
+WORKER_POLL_INTERVAL="${CAREER_OPS_WORKER_POLL_INTERVAL:-5}"
 BATCH_PAUSED=false
 STATUS_ONLY=false
 WATCH_MODE=false
@@ -65,6 +68,12 @@ Options:
   --skip-pdf           Skip PDF generation entirely (write ❌ in tracker PDF column)
   --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
                        (default: 300)
+  --worker-idle-timeout N
+                       Kill and recover a worker after N seconds with no log
+                       activity (default: 900; 0 disables)
+  --worker-max-seconds N
+                       Kill and recover a worker after N total runtime seconds
+                       (default: 0 = disabled)
   --model NAME         Model passed to the worker CLI. Codex defaults to
                        gpt-5.5 when unset; Claude uses its CLI default.
   --reasoning-effort N Codex reasoning effort (default: high; can also set
@@ -113,6 +122,16 @@ while [[ $# -gt 0 ]]; do
       RATE_LIMIT_SLEEP="$2"
       shift 2
       ;;
+    --worker-idle-timeout)
+      [[ $# -ge 2 ]] || { echo "ERROR: --worker-idle-timeout requires an argument"; exit 1; }
+      WORKER_IDLE_TIMEOUT="$2"
+      shift 2
+      ;;
+    --worker-max-seconds)
+      [[ $# -ge 2 ]] || { echo "ERROR: --worker-max-seconds requires an argument"; exit 1; }
+      WORKER_MAX_SECONDS="$2"
+      shift 2
+      ;;
     --model) MODEL="$2"; shift 2 ;;
     --reasoning-effort) REASONING_EFFORT="$2"; shift 2 ;;
     --status) STATUS_ONLY=true; shift ;;
@@ -124,6 +143,21 @@ done
 
 if ! [[ "$RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]]; then
   echo "ERROR: --rate-limit-sleep must be a non-negative integer (seconds)."
+  exit 1
+fi
+
+if ! [[ "$WORKER_IDLE_TIMEOUT" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: --worker-idle-timeout must be a non-negative integer (seconds)."
+  exit 1
+fi
+
+if ! [[ "$WORKER_MAX_SECONDS" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: --worker-max-seconds must be a non-negative integer (seconds)."
+  exit 1
+fi
+
+if ! [[ "$WORKER_POLL_INTERVAL" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: CAREER_OPS_WORKER_POLL_INTERVAL must be a positive integer (seconds)."
   exit 1
 fi
 
@@ -394,6 +428,157 @@ mark_paused_rate_limit() {
   BATCH_PAUSED=true
 }
 
+file_mtime_epoch() {
+  local file="$1"
+  if stat -f %m "$file" 2>/dev/null; then
+    return 0
+  fi
+  if stat -c %Y "$file" 2>/dev/null; then
+    return 0
+  fi
+  echo "0"
+}
+
+terminate_process_tree() {
+  local pid="$1"
+  local child
+
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    terminate_process_tree "$child"
+  done
+
+  kill -TERM "$pid" 2>/dev/null || true
+}
+
+kill_process_tree() {
+  local pid="$1"
+  local child
+
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_process_tree "$child"
+  done
+
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
+run_command_with_watchdog() {
+  local log_file="$1"
+  local stdin_file="$2"
+  shift 2
+
+  : > "$log_file"
+
+  if [[ -n "$stdin_file" ]]; then
+    "$@" < "$stdin_file" > "$log_file" 2>&1 &
+  else
+    "$@" > "$log_file" 2>&1 &
+  fi
+
+  local worker_pid=$!
+  local start_epoch
+  start_epoch=$(date +%s)
+  local last_activity="$start_epoch"
+  local last_size=-1
+  local last_mtime=-1
+  local timeout_reason=""
+
+  while kill -0 "$worker_pid" 2>/dev/null; do
+    sleep "$WORKER_POLL_INTERVAL"
+
+    local now current_size current_mtime
+    now=$(date +%s)
+    current_size=$(wc -c < "$log_file" 2>/dev/null || echo 0)
+    current_mtime=$(file_mtime_epoch "$log_file")
+
+    if [[ "$current_size" != "$last_size" || "$current_mtime" != "$last_mtime" ]]; then
+      last_activity="$now"
+      last_size="$current_size"
+      last_mtime="$current_mtime"
+    fi
+
+    if (( WORKER_MAX_SECONDS > 0 && now - start_epoch >= WORKER_MAX_SECONDS )); then
+      timeout_reason="max runtime ${WORKER_MAX_SECONDS}s exceeded"
+      break
+    fi
+
+    if (( WORKER_IDLE_TIMEOUT > 0 && now - last_activity >= WORKER_IDLE_TIMEOUT )); then
+      timeout_reason="idle timeout ${WORKER_IDLE_TIMEOUT}s exceeded"
+      break
+    fi
+  done
+
+  if [[ -n "$timeout_reason" ]]; then
+    printf '\n[batch-runner] Worker watchdog: %s; terminating PID %s\n' "$timeout_reason" "$worker_pid" >> "$log_file"
+    terminate_process_tree "$worker_pid"
+    sleep 2
+    if kill -0 "$worker_pid" 2>/dev/null; then
+      printf '[batch-runner] Worker watchdog: process still alive; sending SIGKILL\n' >> "$log_file"
+      kill_process_tree "$worker_pid"
+    fi
+    wait "$worker_pid" 2>/dev/null || true
+    return 124
+  fi
+
+  local status=0
+  set +e
+  wait "$worker_pid"
+  status=$?
+  set -e
+  return "$status"
+}
+
+find_report_for_num() {
+  local report_num="$1"
+  local report_file
+  while IFS= read -r report_file; do
+    [[ -n "$report_file" ]] || continue
+    printf '%s\n' "$report_file"
+    return 0
+  done < <(find "$REPORTS_DIR" -maxdepth 1 -type f -name "${report_num}-*.md" | sort)
+  return 1
+}
+
+worker_artifacts_complete() {
+  local id="$1" report_num="$2"
+  local tracker_file="$TRACKER_DIR/${id}.tsv"
+  local report_file
+  report_file=$(find_report_for_num "$report_num" 2>/dev/null || true)
+
+  [[ -s "$tracker_file" && -n "$report_file" && -s "$report_file" ]]
+}
+
+extract_worker_score() {
+  local id="$1" report_num="$2" log_file="$3"
+  local score_match="-"
+
+  score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
+  if [[ -n "$score_match" ]]; then
+    printf '%s\n' "$score_match"
+    return 0
+  fi
+
+  local tracker_file="$TRACKER_DIR/${id}.tsv"
+  if [[ -s "$tracker_file" ]]; then
+    score_match=$(awk -F'\t' 'NF >= 6 { gsub(/\/5/, "", $6); print $6; exit }' "$tracker_file" 2>/dev/null || true)
+    if [[ -n "$score_match" ]]; then
+      printf '%s\n' "$score_match"
+      return 0
+    fi
+  fi
+
+  local report_file
+  report_file=$(find_report_for_num "$report_num" 2>/dev/null || true)
+  if [[ -s "$report_file" ]]; then
+    score_match=$(sed -nE 's/^\*\*Score:\*\*[[:space:]]*([0-9]+([.][0-9]+)?).*/\1/p' "$report_file" 2>/dev/null | head -1 || true)
+    if [[ -n "$score_match" ]]; then
+      printf '%s\n' "$score_match"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "-"
+}
+
 reserve_report_num_unlocked() {
   local id="$1" url="$2" started="$3" retries="$4"
 
@@ -434,7 +619,9 @@ run_worker() {
         claude_args+=(--model "$MODEL")
       fi
       claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
-      claude "${claude_args[@]}" > "$log_file" 2>&1
+      local status=0
+      run_command_with_watchdog "$log_file" "" claude "${claude_args[@]}" || status=$?
+      return "$status"
       ;;
     codex)
       local combined_prompt
@@ -460,7 +647,7 @@ run_worker() {
       )
 
       local status=0
-      codex "${codex_args[@]}" < "$combined_prompt" > "$log_file" 2>&1 || status=$?
+      run_command_with_watchdog "$log_file" "$combined_prompt" codex "${codex_args[@]}" || status=$?
       rm -f "$combined_prompt"
       return "$status"
       ;;
@@ -552,6 +739,12 @@ process_offer() {
       break
     fi
 
+    if worker_artifacts_complete "$id" "$report_num"; then
+      echo "    ✅ Worker exited nonzero after writing complete artifacts; recovering #$id (exit code $exit_code)."
+      exit_code=0
+      break
+    fi
+
     # Check for Claude Code npm shim swap (exit code 127 + command not found)
     if [[ $exit_code -eq 127 ]] && grep -qE "(claude: command not found|claude:.*not found|cannot find.*claude)" "$log_file" && (( shim_retries < max_shim_retries )); then
       shim_retries=$((shim_retries + 1))
@@ -595,11 +788,7 @@ process_offer() {
   if [[ $exit_code -eq 0 ]]; then
     # Try to extract score from worker output
     local score="-"
-    local score_match
-    score_match=$(sed -nE 's/.*"score":[[:space:]]*([0-9.]+).*/\1/p' "$log_file" 2>/dev/null | head -1 || true)
-    if [[ -n "$score_match" ]]; then
-      score="$score_match"
-    fi
+    score=$(extract_worker_score "$id" "$report_num" "$log_file")
 
     # Check min-score gate
     if is_decimal_number "$score" && awk -v min="$MIN_SCORE" 'BEGIN{exit !(min > 0)}'; then
@@ -828,6 +1017,7 @@ main() {
 
   echo "=== career-ops batch runner ==="
   echo "Worker CLI: $WORKER_CLI | Model: ${MODEL:-default} | Reasoning: $REASONING_EFFORT"
+  echo "Worker watchdog: idle ${WORKER_IDLE_TIMEOUT}s | max ${WORKER_MAX_SECONDS}s | poll ${WORKER_POLL_INTERVAL}s"
   if (( LIMIT > 0 )); then
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
   else

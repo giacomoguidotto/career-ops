@@ -647,6 +647,27 @@ if (
   fail('Batch runner interpolates score values into awk programs');
 }
 
+if (
+  /WORKER_IDLE_TIMEOUT="\$\{CAREER_OPS_WORKER_IDLE_TIMEOUT:-900\}"/.test(batchRunnerSource) &&
+  /run_command_with_watchdog\(\)/.test(batchRunnerSource) &&
+  /timeout_reason="idle timeout \$\{WORKER_IDLE_TIMEOUT\}s exceeded"/.test(batchRunnerSource) &&
+  /Worker watchdog: %s; terminating PID/.test(batchRunnerSource)
+) {
+  pass('Batch runner has a worker idle watchdog');
+} else {
+  fail('Batch runner can hang indefinitely on an idle worker');
+}
+
+if (
+  /worker_artifacts_complete\(\)/.test(batchRunnerSource) &&
+  /Worker exited nonzero after writing complete artifacts; recovering/.test(batchRunnerSource) &&
+  /score=\$\(extract_worker_score "\$id" "\$report_num" "\$log_file"\)/.test(batchRunnerSource)
+) {
+  pass('Batch runner recovers complete artifacts after worker timeout');
+} else {
+  fail('Batch runner can lose completed artifacts after worker timeout');
+}
+
 // ── 6. PERSONAL DATA LEAK CHECK ─────────────────────────────────
 
 console.log('\n6. Personal data leak check');
