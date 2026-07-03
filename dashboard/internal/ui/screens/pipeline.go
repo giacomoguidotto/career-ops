@@ -1074,7 +1074,7 @@ func workModeRank(mode string) int {
 // chromeRowsFixed returns the number of fixed chrome rows above/below the body.
 // Shared by View() and adjustScroll() so additions stay in sync.
 func (m PipelineModel) chromeRowsFixed() int {
-	rows := 6 + lipgloss.Height(m.renderHelp()) // header + tabs(2) + metrics + sortbar + column header + help
+	rows := 5 + lipgloss.Height(m.renderHelp()) // header + tabs(2) + metrics/action row + column header + help
 	if m.searchInput || m.searchQuery != "" {
 		rows++
 	}
@@ -1204,7 +1204,6 @@ func (m PipelineModel) View() string {
 	header := m.renderHeader()
 	tabs := m.renderTabs()
 	metricsBar := m.renderMetrics()
-	sortBar := m.renderSortBar()
 	searchBar := m.renderSearchBar()
 	body := m.renderBody()
 	preview := m.renderPreview()
@@ -1247,7 +1246,7 @@ func (m PipelineModel) View() string {
 		body = m.overlayDiscardFlow(body)
 	}
 
-	sections := []string{header, tabs, metricsBar, sortBar}
+	sections := []string{header, tabs, metricsBar}
 	if searchBar != "" {
 		sections = append(sections, searchBar)
 	}
@@ -1387,16 +1386,16 @@ func (m PipelineModel) renderMetrics() string {
 		parts = append(parts, s.Render(fmt.Sprintf("%s:%d", statusLabel(status), count)))
 	}
 
-	return m.renderBarLine(strings.Join(parts, m.barSpace(2)), 2)
+	return m.renderBarLineRight(strings.Join(parts, m.barSpace(2)), m.renderSortSummary(), 2)
 }
 
-func (m PipelineModel) renderSortBar() string {
+func (m PipelineModel) renderSortSummary() string {
 	style := lipgloss.NewStyle().Foreground(m.theme.Subtext).Background(m.theme.Surface)
 	sortLabel := fmt.Sprintf("[Sort: %s]", m.sortMode)
 	viewLabel := fmt.Sprintf("[View: %s]", m.viewMode)
 	count := fmt.Sprintf("%d shown", len(m.filtered))
 
-	return m.renderBarLine(style.Render(fmt.Sprintf("%s  %s  %s", sortLabel, viewLabel, count)), 2)
+	return style.Render(fmt.Sprintf("%s  %s  %s", sortLabel, viewLabel, count))
 }
 
 func (m PipelineModel) renderBody() string {
@@ -2154,9 +2153,37 @@ func (m PipelineModel) renderBarLine(content string, padding int) string {
 }
 
 func (m PipelineModel) renderBarLineRight(left, right string, padding int) string {
-	gap := m.width - (padding * 2) - lipgloss.Width(left) - lipgloss.Width(right)
+	contentWidth := m.width - (padding * 2)
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+
+	rightWidth := lipgloss.Width(right)
+	if rightWidth > contentWidth {
+		right = ansi.Truncate(right, contentWidth, "")
+		rightWidth = lipgloss.Width(right)
+		left = ""
+	}
+
+	leftWidth := lipgloss.Width(left)
+	if right != "" && leftWidth+rightWidth+1 > contentWidth {
+		maxLeft := contentWidth - rightWidth - 1
+		if maxLeft < 0 {
+			maxLeft = 0
+		}
+		left = ansi.Truncate(left, maxLeft, "")
+		leftWidth = lipgloss.Width(left)
+	} else if right == "" && leftWidth > contentWidth {
+		left = ansi.Truncate(left, contentWidth, "")
+		leftWidth = lipgloss.Width(left)
+	}
+
+	gap := contentWidth - leftWidth - rightWidth
 	if gap < 1 {
-		gap = 1
+		gap = 0
+		if left != "" && right != "" {
+			gap = 1
+		}
 	}
 	line := m.barSpace(padding) + left + m.barSpace(gap) + right
 	if fill := m.width - lipgloss.Width(line); fill > 0 {

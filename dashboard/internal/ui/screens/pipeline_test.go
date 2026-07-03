@@ -197,6 +197,56 @@ func TestTabsUnderlineSpansFullWidth(t *testing.T) {
 	}
 }
 
+func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.2},
+		{Company: "Beta", Role: "Platform Engineer", Status: "Applied", Score: 4.6},
+	}
+	metrics := model.PipelineMetrics{
+		Total: len(apps),
+		ByStatus: map[string]int{
+			"evaluated": 1,
+			"applied":   1,
+		},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, metrics, "..", 120, 40)
+	pm.sortMode = sortScore
+	pm.viewMode = "grouped"
+	pm.applyFilterAndSort()
+
+	line := pm.renderMetrics()
+	plain := ansi.Strip(line)
+	right := "[Sort: score]  [View: grouped]  2 shown"
+
+	if got := lipgloss.Width(line); got != pm.width {
+		t.Fatalf("metrics line width = %d, want %d; line=%q", got, pm.width, plain)
+	}
+	if !strings.Contains(plain, "Evaluated:1") || !strings.Contains(plain, "Applied:1") {
+		t.Fatalf("expected metrics to remain on the left side, got %q", plain)
+	}
+	if !strings.HasSuffix(strings.TrimRight(plain, " "), right) {
+		t.Fatalf("expected sort/view/count to be right-aligned on metrics row, got %q", plain)
+	}
+
+	view := ansi.Strip(pm.View())
+	if count := strings.Count(view, "[Sort:"); count != 1 {
+		t.Fatalf("expected sort summary to render exactly once, got %d occurrences in %q", count, view)
+	}
+
+	narrow := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, metrics, "..", 56, 40)
+	narrow.sortMode = sortScore
+	narrow.viewMode = "grouped"
+	narrow.applyFilterAndSort()
+	narrowLine := ansi.Strip(narrow.renderMetrics())
+	if got := lipgloss.Width(narrowLine); got != narrow.width {
+		t.Fatalf("narrow metrics line width = %d, want %d; line=%q", got, narrow.width, narrowLine)
+	}
+	if !strings.HasSuffix(strings.TrimRight(narrowLine, " "), right) {
+		t.Fatalf("expected narrow metrics row to preserve right-aligned sort summary, got %q", narrowLine)
+	}
+}
+
 func TestGroupedDividerSpansFullTableWidth(t *testing.T) {
 	apps := []model.CareerApplication{
 		{Number: 1, Date: "2026-06-20", Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.0},
@@ -877,16 +927,18 @@ func TestGroupedPageNavigationMovesByVisibleRows(t *testing.T) {
 		}
 	}
 
+	expectedForward := pm.cursorForVisualLine(pm.cursorLineEstimate() + pm.pageRows())
 	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
-	if pm.cursor != 3 {
-		t.Fatalf("Ctrl+F in grouped view moved to cursor %d, want 3", pm.cursor)
+	if pm.cursor != expectedForward {
+		t.Fatalf("Ctrl+F in grouped view moved to cursor %d, want %d", pm.cursor, expectedForward)
 	}
 
 	pm.cursor = 6
 	pm.adjustScroll()
+	expectedBackward := pm.cursorForVisualLine(pm.cursorLineEstimate() - pm.pageRows())
 	pm, _ = pm.Update(tea.KeyMsg{Type: tea.KeyCtrlB})
-	if pm.cursor != 4 {
-		t.Fatalf("Ctrl+B in grouped view moved to cursor %d, want 4", pm.cursor)
+	if pm.cursor != expectedBackward {
+		t.Fatalf("Ctrl+B in grouped view moved to cursor %d, want %d", pm.cursor, expectedBackward)
 	}
 }
 
