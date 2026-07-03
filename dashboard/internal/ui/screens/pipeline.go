@@ -108,14 +108,12 @@ const (
 // Filter modes
 const (
 	filterAll       = "all"
-	filterAction    = "action"
 	filterEvaluated = "evaluated"
 	filterApplied   = "applied"
 	filterInterview = "interview"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
 	filterDiscarded = "discarded"
-	filterTop       = "top"
 	filterQueue     = "queue"
 )
 
@@ -125,16 +123,30 @@ type pipelineTab struct {
 }
 
 var pipelineTabs = []pipelineTab{
-	{filterAll, "ALL"},
 	{filterQueue, "QUEUE"},
-	{filterAction, "ACTION"},
+	{filterAll, "ALL"},
 	{filterEvaluated, "EVALUATED"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
-	{filterTop, "TOP ≥4"},
 	{filterSkip, "SKIP"},
 	{filterRejected, "REJECTED"},
 	{filterDiscarded, "DISCARDED"},
+}
+
+func pipelineTabIndex(filter string) int {
+	for i, tab := range pipelineTabs {
+		if tab.filter == filter {
+			return i
+		}
+	}
+	return 0
+}
+
+func normalizePipelineTabIndex(index int) int {
+	if index >= 0 && index < len(pipelineTabs) {
+		return index
+	}
+	return pipelineTabIndex(filterAll)
 }
 
 var sortCycle = []string{sortScore, sortDate, sortCompany, sortStatus, sortLocation, sortPay, sortLast}
@@ -233,7 +245,7 @@ func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics mod
 		apps:          apps,
 		metrics:       metrics,
 		sortMode:      sortScore,
-		activeTab:     0,
+		activeTab:     pipelineTabIndex(filterAll),
 		viewMode:      "grouped",
 		width:         width,
 		height:        height,
@@ -294,7 +306,7 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 
 	reloaded := NewPipelineModel(m.theme, apps, metrics, m.careerOpsPath, m.width, m.height)
 	reloaded.sortMode = m.sortMode
-	reloaded.activeTab = m.activeTab
+	reloaded.activeTab = normalizePipelineTabIndex(m.activeTab)
 	reloaded.viewMode = m.viewMode
 	// Preserve search state across refresh — otherwise pressing `r` silently drops a
 	// committed query and the user loses their place mid-investigation.
@@ -970,6 +982,7 @@ func matchesSearch(app model.CareerApplication, query string) bool {
 // applyFilterAndSort rebuilds the filtered list from apps.
 func (m *PipelineModel) applyFilterAndSort() {
 	var filtered []model.CareerApplication
+	m.activeTab = normalizePipelineTabIndex(m.activeTab)
 
 	currentFilter := pipelineTabs[m.activeTab].filter
 	for _, app := range m.apps {
@@ -980,16 +993,8 @@ func (m *PipelineModel) applyFilterAndSort() {
 		switch currentFilter {
 		case filterAll:
 			filtered = append(filtered, app)
-		case filterTop:
-			if app.Score >= 4.0 && norm != "skip" {
-				filtered = append(filtered, app)
-			}
 		case filterQueue:
 			if isQueueStatus(norm) {
-				filtered = append(filtered, app)
-			}
-		case filterAction:
-			if needsManualAction(app) {
 				filtered = append(filtered, app)
 			}
 		default:
@@ -1074,7 +1079,7 @@ func workModeRank(mode string) int {
 // chromeRowsFixed returns the number of fixed chrome rows above/below the body.
 // Shared by View() and adjustScroll() so additions stay in sync.
 func (m PipelineModel) chromeRowsFixed() int {
-	rows := 5 + lipgloss.Height(m.renderHelp()) // header + tabs(2) + metrics/action row + column header + help
+	rows := 6 + lipgloss.Height(m.renderHelp()) // header + tabs(2) + metrics/action row + spacer + column header + help
 	if m.searchInput || m.searchQuery != "" {
 		rows++
 	}
@@ -1246,7 +1251,7 @@ func (m PipelineModel) View() string {
 		body = m.overlayDiscardFlow(body)
 	}
 
-	sections := []string{header, tabs, metricsBar}
+	sections := []string{header, tabs, metricsBar, m.blankInheritedLine()}
 	if searchBar != "" {
 		sections = append(sections, searchBar)
 	}
@@ -1351,16 +1356,8 @@ func (m PipelineModel) countForFilter(filter string) int {
 		switch filter {
 		case filterAll:
 			count++
-		case filterTop:
-			if app.Score >= 4.0 && norm != "skip" {
-				count++
-			}
 		case filterQueue:
 			if isQueueStatus(norm) {
-				count++
-			}
-		case filterAction:
-			if needsManualAction(app) {
 				count++
 			}
 		default:
@@ -2142,6 +2139,10 @@ func (m PipelineModel) barSpace(width int) string {
 		return ""
 	}
 	return lipgloss.NewStyle().Background(m.theme.Surface).Render(strings.Repeat(" ", width))
+}
+
+func (m PipelineModel) blankInheritedLine() string {
+	return strings.Repeat(" ", m.width)
 }
 
 func (m PipelineModel) renderBarLine(content string, padding int) string {

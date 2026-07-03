@@ -869,6 +869,22 @@ func (m ViewerModel) renderMetadataLine(key, value string) string {
 	raw := key + ": " + value
 	wrapped := strings.Split(ansi.Wrap(raw, m.textWidth(), ""), "\n")
 
+	if m.isNextStepViewer() {
+		keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
+		valueStyle := lipgloss.NewStyle().Foreground(m.theme.Text)
+
+		rows := make([]string, 0, len(wrapped))
+		for i, row := range wrapped {
+			content := valueStyle.Render(row)
+			prefix := key + ": "
+			if i == 0 && strings.HasPrefix(row, prefix) {
+				content = keyStyle.Render(prefix) + valueStyle.Render(strings.TrimPrefix(row, prefix))
+			}
+			rows = append(rows, m.indentContent(content))
+		}
+		return strings.Join(rows, "\n")
+	}
+
 	panelStyle := lipgloss.NewStyle().Background(m.theme.Panel).Foreground(m.theme.Text).Width(m.fullWidth())
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow).Background(m.theme.Panel)
 	valueStyle := lipgloss.NewStyle().Foreground(m.theme.Text).Background(m.theme.Panel)

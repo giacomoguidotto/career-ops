@@ -246,6 +246,25 @@ func TestViewerMetadataRowsRenderAsFullWidthBriefRows(t *testing.T) {
 	}
 }
 
+func TestNextStepMetadataRowsInheritBackground(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
+		width:  48,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.styleLine("**Decision:** apply")
+	if strings.Contains(rendered, "48;2;") {
+		t.Fatalf("expected next-step metadata text to inherit background, got %q", rendered)
+	}
+	if plain := ansi.Strip(rendered); plain != "  Decision: apply" {
+		t.Fatalf("expected plain inset metadata text, got %q", plain)
+	}
+}
+
 func TestViewerTablesUseContentInset(t *testing.T) {
 	m := ViewerModel{
 		lines: []string{

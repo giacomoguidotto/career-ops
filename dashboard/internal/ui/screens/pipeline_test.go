@@ -54,7 +54,7 @@ func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 		40,
 	)
 	pm.sortMode = sortCompany
-	pm.activeTab = 0
+	pm.activeTab = tabIndexForFilter(t, filterAll)
 	pm.viewMode = "flat"
 	pm.applyFilterAndSort()
 	pm.cursor = 1
@@ -197,7 +197,43 @@ func TestTabsUnderlineSpansFullWidth(t *testing.T) {
 	}
 }
 
+func TestPipelineTabsPutQueueFirstButDefaultToAll(t *testing.T) {
+	apps := []model.CareerApplication{
+		{Company: "Acme", Role: "Pending Engineer", Status: "Pending"},
+		{Company: "Beta", Role: "Backend Engineer", Status: "Evaluated", Score: 4.2},
+	}
+
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
+
+	if pipelineTabs[0].filter != filterQueue {
+		t.Fatalf("first tab = %q, want queue", pipelineTabs[0].filter)
+	}
+	if pipelineTabs[1].filter != filterAll {
+		t.Fatalf("second tab = %q, want all", pipelineTabs[1].filter)
+	}
+	for _, tab := range pipelineTabs {
+		if tab.label == "ACTION" || strings.HasPrefix(tab.label, "TOP") {
+			t.Fatalf("unexpected dropped tab still present: %+v", tab)
+		}
+	}
+	if got := pipelineTabs[pm.activeTab].filter; got != filterAll {
+		t.Fatalf("default active tab = %q, want all", got)
+	}
+	if got := len(pm.filtered); got != len(apps) {
+		t.Fatalf("default all tab filtered %d rows, want %d", got, len(apps))
+	}
+
+	tabs := ansi.Strip(pm.renderTabs())
+	queueIdx := strings.Index(tabs, "QUEUE")
+	allIdx := strings.Index(tabs, "ALL")
+	if queueIdx < 0 || allIdx < 0 || queueIdx > allIdx {
+		t.Fatalf("expected QUEUE before ALL in rendered tabs, got %q", tabs)
+	}
+}
+
 func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
+	useTrueColorRenderer(t)
+
 	apps := []model.CareerApplication{
 		{Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.2},
 		{Company: "Beta", Role: "Platform Engineer", Status: "Applied", Score: 4.6},
@@ -232,6 +268,29 @@ func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 	view := ansi.Strip(pm.View())
 	if count := strings.Count(view, "[Sort:"); count != 1 {
 		t.Fatalf("expected sort summary to render exactly once, got %d occurrences in %q", count, view)
+	}
+
+	viewLines := strings.Split(pm.View(), "\n")
+	metricsIdx := -1
+	for i, line := range viewLines {
+		if strings.Contains(ansi.Strip(line), "[Sort:") {
+			metricsIdx = i
+			break
+		}
+	}
+	if metricsIdx < 0 || metricsIdx+1 >= len(viewLines) {
+		t.Fatalf("expected metrics row plus spacer in rendered view, got %q", ansi.Strip(strings.Join(viewLines, "\n")))
+	}
+	spacer := viewLines[metricsIdx+1]
+	plainSpacer := ansi.Strip(spacer)
+	if strings.TrimSpace(plainSpacer) != "" {
+		t.Fatalf("expected inherited blank spacer after metrics row, got %q", plainSpacer)
+	}
+	if got := ansi.StringWidth(plainSpacer); got < pm.width {
+		t.Fatalf("expected spacer width at least %d, got %d for %q", pm.width, got, plainSpacer)
+	}
+	if strings.Contains(spacer, "48;2;") {
+		t.Fatalf("expected spacer row to inherit background, got %q", spacer)
 	}
 
 	narrow := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, metrics, "..", 56, 40)
@@ -570,26 +629,6 @@ func TestStatusPickerDoesNotOpenForQueueRows(t *testing.T) {
 
 	if pm.statusPicker {
 		t.Fatal("status picker should not open for queue-only rows")
-	}
-}
-
-func TestActionTabFiltersManualNextActions(t *testing.T) {
-	apps := []model.CareerApplication{
-		{Company: "Acme", Role: "AI Engineer", Status: "Evaluated", ActionState: "needs_action", NextAction: "draft_application_pack"},
-		{Company: "Beta", Role: "Platform Engineer", Status: "Applied", ActionState: "waiting", NextAction: "follow_up"},
-		{Company: "Gamma", Role: "Data Engineer", Status: "Failed", ActionState: "blocked", NextAction: "research_gating_questions"},
-		{Company: "Delta", Role: "Backend Engineer", Status: "Rejected", ActionState: "none", NextAction: "none"},
-	}
-
-	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
-	pm.activeTab = tabIndexForFilter(t, filterAction)
-	pm.applyFilterAndSort()
-
-	if len(pm.filtered) != 2 {
-		t.Fatalf("expected action tab to include needs_action and blocked rows, got %+v", pm.filtered)
-	}
-	if pm.filtered[0].Company != "Gamma" || pm.filtered[1].Company != "Acme" {
-		t.Fatalf("expected action tab to keep status-priority ordering, got %+v", pm.filtered)
 	}
 }
 
