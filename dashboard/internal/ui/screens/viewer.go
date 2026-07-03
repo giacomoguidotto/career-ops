@@ -902,6 +902,14 @@ func (m ViewerModel) renderMetadataLine(key, value string) string {
 }
 
 func (m ViewerModel) renderQuestionHeading(content string) string {
+	if m.isNextStepViewer() {
+		style := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
+		wrapped := strings.Split(ansi.Wrap(style.Render(content), m.textWidth(), ""), "\n")
+		for i, line := range wrapped {
+			wrapped[i] = m.indentContent(line)
+		}
+		return strings.Join(wrapped, "\n")
+	}
 	return m.renderHeadingRow(content, m.theme.Yellow, false)
 }
 

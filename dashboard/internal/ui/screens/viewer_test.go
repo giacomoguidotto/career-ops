@@ -265,6 +265,43 @@ func TestNextStepMetadataRowsInheritBackground(t *testing.T) {
 	}
 }
 
+func TestNextStepFormQuestionsAndParagraphsInheritBackground(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"## Likely Form Answers",
+			"",
+			"**Why n8n?**",
+			"",
+			"n8n sits close to the direction I am deliberately building toward.",
+		},
+		title:  "NEXT STEP: Send Application / n8n / Community Software Engineer / Remote",
+		width:  72,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.renderAll()
+	if len(rendered) < 5 {
+		t.Fatalf("expected section, spacer, question, spacer, paragraph; got %d lines: %q", len(rendered), rendered)
+	}
+
+	for _, line := range rendered {
+		plain := ansi.Strip(line)
+		switch {
+		case strings.Contains(plain, "LIKELY FORM ANSWERS"):
+			if !strings.Contains(line, "48;2;") {
+				t.Fatalf("expected section heading to keep title background, got %q", line)
+			}
+		case strings.Contains(plain, "Why n8n?"), strings.Contains(plain, "n8n sits close"):
+			if strings.Contains(line, "48;2;") {
+				t.Fatalf("expected next-step content line to inherit background, got %q", line)
+			}
+		}
+	}
+}
+
 func TestViewerTablesUseContentInset(t *testing.T) {
 	m := ViewerModel{
 		lines: []string{
