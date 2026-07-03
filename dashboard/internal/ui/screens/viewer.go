@@ -387,7 +387,7 @@ func (m ViewerModel) renderAll() []string {
 			para := strings.Join(paraLines, " ")
 			wrapped := m.wrapParagraph(m.renderInlineElements(para), m.textWidth())
 			for _, wl := range wrapped {
-				styled = append(styled, m.indentContent(wl))
+				styled = append(styled, m.renderContentLine(wl))
 			}
 		}
 	}
@@ -477,6 +477,18 @@ func (m ViewerModel) textWidth() int {
 
 func (m ViewerModel) indentContent(content string) string {
 	return m.contentPrefix() + content
+}
+
+func (m ViewerModel) renderContentLine(content string) string {
+	line := m.indentContent(content)
+	if m.isNextStepViewer() {
+		return inheritTerminalBackground(line)
+	}
+	return line
+}
+
+func inheritTerminalBackground(line string) string {
+	return "\x1b[49m" + line + "\x1b[49m\x1b[K"
 }
 
 func isTableLine(line string) bool {
@@ -791,7 +803,7 @@ func (m ViewerModel) styleLine(line string) string {
 	styled := m.renderInlineElementsAs(trimmed, m.theme.Subtext)
 	wrapped := strings.Split(ansi.Wrap(styled, m.textWidth(), ""), "\n")
 	for i, line := range wrapped {
-		wrapped[i] = m.indentContent(line)
+		wrapped[i] = m.renderContentLine(line)
 	}
 	return strings.Join(wrapped, "\n")
 }
@@ -880,7 +892,7 @@ func (m ViewerModel) renderMetadataLine(key, value string) string {
 			if i == 0 && strings.HasPrefix(row, prefix) {
 				content = keyStyle.Render(prefix) + valueStyle.Render(strings.TrimPrefix(row, prefix))
 			}
-			rows = append(rows, m.indentContent(content))
+			rows = append(rows, m.renderContentLine(content))
 		}
 		return strings.Join(rows, "\n")
 	}
@@ -906,7 +918,7 @@ func (m ViewerModel) renderQuestionHeading(content string) string {
 		style := lipgloss.NewStyle().Bold(true).Foreground(m.theme.Yellow)
 		wrapped := strings.Split(ansi.Wrap(style.Render(content), m.textWidth(), ""), "\n")
 		for i, line := range wrapped {
-			wrapped[i] = m.indentContent(line)
+			wrapped[i] = m.renderContentLine(line)
 		}
 		return strings.Join(wrapped, "\n")
 	}
@@ -924,9 +936,9 @@ func (m ViewerModel) renderListItem(marker, content string) string {
 	result := make([]string, 0, len(lines))
 	for i, line := range lines {
 		if i == 0 {
-			result = append(result, m.indentContent(marker+line))
+			result = append(result, m.renderContentLine(marker+line))
 		} else {
-			result = append(result, m.indentContent(strings.Repeat(" ", markerWidth)+line))
+			result = append(result, m.renderContentLine(strings.Repeat(" ", markerWidth)+line))
 		}
 	}
 	return strings.Join(result, "\n")

@@ -257,8 +257,11 @@ func TestNextStepMetadataRowsInheritBackground(t *testing.T) {
 	}
 
 	rendered := m.styleLine("**Decision:** apply")
-	if strings.Contains(rendered, "48;2;") {
+	if hasFillBackground(rendered) {
 		t.Fatalf("expected next-step metadata text to inherit background, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "\x1b[49m") || !strings.Contains(rendered, "\x1b[K") {
+		t.Fatalf("expected next-step metadata row to reset and clear terminal background, got %q", rendered)
 	}
 	if plain := ansi.Strip(rendered); plain != "  Decision: apply" {
 		t.Fatalf("expected plain inset metadata text, got %q", plain)
@@ -291,12 +294,15 @@ func TestNextStepFormQuestionsAndParagraphsInheritBackground(t *testing.T) {
 		plain := ansi.Strip(line)
 		switch {
 		case strings.Contains(plain, "LIKELY FORM ANSWERS"):
-			if !strings.Contains(line, "48;2;") {
+			if !hasFillBackground(line) {
 				t.Fatalf("expected section heading to keep title background, got %q", line)
 			}
 		case strings.Contains(plain, "Why n8n?"), strings.Contains(plain, "n8n sits close"):
-			if strings.Contains(line, "48;2;") {
+			if hasFillBackground(line) {
 				t.Fatalf("expected next-step content line to inherit background, got %q", line)
+			}
+			if !strings.Contains(line, "\x1b[49m") || !strings.Contains(line, "\x1b[K") {
+				t.Fatalf("expected next-step content line to reset and clear terminal background, got %q", line)
 			}
 		}
 	}
@@ -487,4 +493,21 @@ func useTrueColorRenderer(t *testing.T) {
 	t.Cleanup(func() {
 		lipgloss.SetDefaultRenderer(oldRenderer)
 	})
+}
+
+func hasFillBackground(s string) bool {
+	if strings.Contains(s, "\x1b[48;") {
+		return true
+	}
+	for _, code := range []string{
+		"\x1b[40m", "\x1b[41m", "\x1b[42m", "\x1b[43m",
+		"\x1b[44m", "\x1b[45m", "\x1b[46m", "\x1b[47m",
+		"\x1b[100m", "\x1b[101m", "\x1b[102m", "\x1b[103m",
+		"\x1b[104m", "\x1b[105m", "\x1b[106m", "\x1b[107m",
+	} {
+		if strings.Contains(s, code) {
+			return true
+		}
+	}
+	return false
 }
