@@ -44,16 +44,28 @@ function locateStatesFile() {
 let _statesCache = null;
 
 /**
+ * @typedef {object} StateRecord
+ * @property {string} id - Canonical stage id (e.g. `evaluated`).
+ * @property {string} label - Human label (e.g. `Evaluated`).
+ * @property {string} owner - `agent` | `user` | `company` | `none`.
+ * @property {string|null} suggests - The stage's proactive next action, or null.
+ * @property {string[]} nextStates - Allowed successor stage ids.
+ * @property {string} group - dashboard_group.
+ */
+
+/**
  * Load and index the canonical lifecycle state machine from states.yml.
  *
  * Builds a case-insensitive lookup from every label, id, and alias to that
  * state's canonical label, plus the ordered list of labels and a
- * label/id/alias → dashboard_group map. The result is cached; pass
+ * label/id/alias → dashboard_group map. It also exposes the full stage records
+ * (owner/suggests/next_states) so writers that advance stages can derive routing
+ * from the same table the dashboard reads. The result is cached; pass
  * `{ force: true }` to re-read (used by tests that swap fixtures).
  *
  * @param {object} [options]
  * @param {boolean} [options.force] - Re-read the file, bypassing the cache.
- * @returns {{ byKey: Map<string,string>, labels: string[], groupByKey: Map<string,string> }}
+ * @returns {{ byKey: Map<string,string>, labels: string[], groupByKey: Map<string,string>, records: StateRecord[], byId: Map<string,StateRecord>, recordByKey: Map<string,StateRecord> }}
  */
 export function loadStates(options = {}) {
   if (_statesCache && !options.force) return _statesCache;
@@ -64,22 +76,83 @@ export function loadStates(options = {}) {
   const doc = yaml.load(readFileSync(path, 'utf-8'));
   const byKey = new Map(); // lowercased label/id/alias → canonical label
   const groupByKey = new Map(); // same keys → dashboard_group
+  const recordByKey = new Map(); // same keys → StateRecord
+  const byId = new Map(); // lowercased id → StateRecord
+  const records = [];
   const labels = [];
   for (const s of doc?.states || []) {
     if (!s?.label) continue;
     labels.push(s.label);
     const group = s.dashboard_group || '';
+    /** @type {StateRecord} */
+    const record = {
+      id: s.id || '',
+      label: s.label,
+      owner: s.owner || 'none',
+      suggests: s.suggests || null,
+      nextStates: (s.next_states || []).map((v) => String(v)),
+      group,
+    };
+    records.push(record);
+    if (record.id) byId.set(record.id.toLowerCase(), record);
     const register = (k) => {
       const key = String(k).toLowerCase();
       byKey.set(key, s.label);
       groupByKey.set(key, group);
+      recordByKey.set(key, record);
     };
     register(s.label);
     if (s.id) register(s.id);
     for (const alias of s.aliases || []) register(alias);
   }
-  _statesCache = { byKey, labels, groupByKey };
+  _statesCache = { byKey, labels, groupByKey, records, byId, recordByKey };
   return _statesCache;
+}
+
+/**
+ * Resolve a raw status cell to its full canonical stage record.
+ *
+ * Same normalization as {@link canonicalStatus} (strips markdown bold and any
+ * trailing ISO date), but returns the whole {@link StateRecord} so callers can
+ * inspect `owner`/`suggests`/`nextStates`. Returns null for unknown statuses.
+ *
+ * @param {string} raw - Raw status text from a tracker row.
+ * @param {ReturnType<typeof loadStates>} [states] - Preloaded states.
+ * @returns {StateRecord|null}
+ */
+export function resolveState(raw, states = loadStates()) {
+  if (!raw) return null;
+  const cleaned = String(raw)
+    .replace(/\*\*/g, '')
+    .replace(/\(?\d{4}-\d{2}-\d{2}\)?/g, '')
+    .trim()
+    .toLowerCase();
+  return states.recordByKey.get(cleaned) || null;
+}
+
+/**
+ * Given an `agent`-owned stage, return the `_ready` stage it advances to.
+ *
+ * The state machine pairs each agent stage (the automation drafts an artifact)
+ * with exactly one `user`-owned successor (the drafted artifact is re-presented
+ * and the user performs the real-world action): `evaluated → application_ready`,
+ * `responded → interview_ready`, `offer → offer_ready`. The pairing is derived
+ * structurally — the unique `owner: user` entry in the stage's `next_states` —
+ * so it stays correct if the table changes, and never hardcodes the mapping.
+ *
+ * Returns null when the stage is not agent-owned, or when the pairing is not a
+ * single unambiguous user successor (so callers fail loudly instead of guessing).
+ *
+ * @param {StateRecord|null} record - The current stage record.
+ * @param {ReturnType<typeof loadStates>} [states] - Preloaded states.
+ * @returns {StateRecord|null} The paired `_ready` stage record, or null.
+ */
+export function pairedReadyStage(record, states = loadStates()) {
+  if (!record || record.owner !== 'agent') return null;
+  const userSuccessors = record.nextStates
+    .map((id) => states.byId.get(String(id).toLowerCase()))
+    .filter((r) => r && r.owner === 'user');
+  return userSuccessors.length === 1 ? userSuccessors[0] : null;
 }
 
 /**

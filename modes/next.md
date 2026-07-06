@@ -299,8 +299,22 @@ approval without the agent needing to act externally.
 Advance the `stage` in `data/applications.md` only when the transition is allowed
 by the current stage's `next_states` and the owner's required trigger has happened:
 
-- Agent stage: after drafting the `suggests` artifact, advance to the paired
-  `_ready` stage. This is a safe draft-exists write, allowed in `auto`.
+- Agent stage: after saving the `suggests` artifact (step 5), advance to the paired
+  `_ready` stage by running the deterministic advancer rather than hand-editing the
+  tracker:
+
+  ```bash
+  node advance-stage.mjs {tracker_num}
+  ```
+
+  It reads `templates/states.yml`, advances the row (`evaluated → application_ready`,
+  `responded → interview_ready`, `offer → offer_ready`), and syncs the saved pack's
+  `**Stage:**/**Owner:**/**Suggests:**` header to the destination stage so the
+  dashboard keeps the pack openable and shows the right next step (e.g. "Send
+  application"). This is a safe draft-exists write, allowed in `auto`. Never leave a
+  drafted pack on an un-advanced `evaluated`/`responded`/`offer` row. To advance
+  every row that already has a drafted pack in one pass, run
+  `node advance-stage.mjs --reconcile`.
 - User stage: advance only after the user reports the real-world action -- "I sent
   the application" -> `applied`; "I sent the outreach" -> back to `applied`; "I did
   the interview" -> `interview_ready`, `offer`, or `rejected`; "I accepted" ->

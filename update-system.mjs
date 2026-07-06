@@ -135,6 +135,8 @@ const SYSTEM_PATHS = [
   'tracker-aliases.json',
   'set-status.mjs',
   'set-status-tests.mjs',
+  'advance-stage.mjs',
+  'advance-stage.test.mjs',
   'normalize-statuses.mjs',
   'cv-sync-check.mjs',
   'update-system.mjs',
