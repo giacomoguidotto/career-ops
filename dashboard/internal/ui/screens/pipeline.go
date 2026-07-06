@@ -183,7 +183,7 @@ var optionalCols = []colDef{
 	{ColHasReport, "RPT", "✓/—", 4, false},
 	{ColHasPDF, "PDF", "✓/—", 4, false},
 	{ColLastContact, "LAST", "", 10, false},
-	{ColNext, "NEXT STEP", "action", 30, true},
+	{ColNext, "NEXT STEP", "action", 22, true},
 }
 
 var statusOptions = []string{"Evaluated", "Application Ready", "Applied", "Outreach Ready", "Responded", "Interview Ready", "Offer", "Offer Ready", "Accepted", "Rejected", "Discarded", "SKIP"}
@@ -1464,7 +1464,7 @@ func (m PipelineModel) columnWidths() colWidths {
 		c.pay = 16
 	}
 	if m.colVisible(ColNext) {
-		c.next = 30
+		c.next = 22
 	}
 	if m.colVisible(ColHasReport) {
 		c.rpt = 4
