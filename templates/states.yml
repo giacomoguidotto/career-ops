@@ -1,62 +1,209 @@
-# Career-Ops — Canonical States
-# Source of truth for career-ops (writer) and dashboard (reader).
-# Both systems MUST use these exact states.
+# Career-Ops — Canonical Lifecycle State Machine
+# Schema version: 2
 #
-# Rule: The status field in applications.md must contain EXACTLY
-# one of these values (case-insensitive). No markdown bold (**),
-# no dates, no extra text. Dates go in the date column.
+# Single source of truth for the per-application state machine. Both the writer
+# (career-ops modes) and every reader (the Go dashboard, automations) MUST derive
+# routing from THIS table and never re-encode it.
+#
+# This file replaces the old two-layer model (a lifecycle status in
+# applications.md plus an action_state/next_action sidecar). There is now ONE
+# `stage` per application. The stage IS the state machine node; each node declares
+# its owner, and the owner determines how the stage advances.
+#
+# ── Ground rules: owner determines the advancement mechanism ──────────────────
+#
+#   owner: agent    A proactive automation step. An automation (the sink-neutral
+#                   generalization of a scheduled advancer; in this repo that is
+#                   `next` in `auto` mode) generates the `suggests` artifact with
+#                   no human trigger, then advances to the paired `_ready` stage.
+#                   Safe to auto-write: it records that a DRAFT exists, never a
+#                   real-world action.
+#
+#   owner: user     No automated step. Blocked on the user doing the real-world
+#                   action and REPORTING it in conversation ("I sent the
+#                   application", "I sent the outreach", "I did the interview,
+#                   here's what happened"). Only that report advances the stage.
+#                   An automation must never advance a user-owned stage.
+#
+#   owner: company  No task for anyone. A pure wait. Advances only when the user
+#                   reports a company-side event. No automation, no obligation.
+#                   Time-based nudges are reminders (followup-cadence.mjs), not
+#                   tasks and not stage changes.
+#
+#   owner: none     Terminal. No further transitions.
+#
+# The automation invariant that falls out of this: an automation may only ever
+# transition OUT OF an `agent`-owned stage. It must never write a `user`- or
+# `company`-owned advance. This is what tells an automation what to do: find
+# agent-owned stages and run their generation step.
+#
+# ── Fields ────────────────────────────────────────────────────────────────────
+#
+#   id              Machine key. Stored in applications.md (case-insensitive).
+#   label           Display/canonical text written to the tracker Status column.
+#   owner           agent | user | company | none  (see ground rules above).
+#   suggests        The proactive next thing. For agent stages: the artifact the
+#                   automation generates. For user stages: the real-world action
+#                   the user performs and reports. null for company/none.
+#   on_demand       Reactive assists available at this stage but NOT run
+#                   proactively; the user asks for them (e.g. outreach drafting,
+#                   regenerating a cheatsheet for the next round).
+#   next_states     Allowed successor ids.
+#   dashboard_group Coarse funnel bucket. `_ready` and subloop stages map back to
+#                   their world-stage so the 5-stage funnel and status sorting are
+#                   unchanged by the finer vocabulary.
+#   aliases         Legacy/i18n status strings that normalize to this id.
+#
+# ── Tracker rule ──────────────────────────────────────────────────────────────
+# The Status field in applications.md must contain EXACTLY one `label` below
+# (case-insensitive). No markdown bold (**), no dates, no extra text. Dates go in
+# the date column.
+
+version: 2
 
 states:
+  # ── Spine: evaluated → application_ready → applied → responded →
+  #           interview_ready → offer → offer_ready → accepted ──────────────────
+
   - id: evaluated
     label: Evaluated
-    aliases: [evaluada]
-    description: Offer evaluated with report, pending decision
+    owner: agent
+    suggests: generate_application_pack
+    on_demand: []
+    next_states: [application_ready, skip, discarded]
     dashboard_group: evaluated
+    aliases: [evaluada, completed, condicional, hold, evaluar, verificar]
+    description: >
+      Offer evaluated with a report; ready for the automation to draft an
+      application pack. Scoring/strategy policy may route a sub-threshold row to
+      discard/skip instead of drafting — that gate lives in the automation, not
+      in this table.
+
+  - id: application_ready
+    label: Application Ready
+    owner: user
+    suggests: send_application
+    on_demand: []
+    next_states: [applied, discarded]
+    dashboard_group: evaluated
+    aliases: [app_ready, application_drafted]
+    description: >
+      Application pack drafted and waiting for the user to submit it and report
+      "I sent the application". Not yet applied — still an evaluated-group row.
 
   - id: applied
     label: Applied
-    aliases: [aplicado, enviada, aplicada, sent]
-    description: Application submitted
+    owner: company
+    suggests: null
+    on_demand: [draft_outreach, follow_up]
+    next_states: [outreach_ready, responded, rejected, discarded]
     dashboard_group: applied
+    aliases: [aplicado, enviada, aplicada, sent]
+    description: >
+      Application submitted; the ball is with the company. Pure wait — no task
+      for user or agent. The user may on-demand ask to draft outreach; a due
+      follow-up surfaces as a reminder (followup-cadence.mjs), not a task.
+      Advances when the user reports a company event.
+
+  - id: outreach_ready
+    label: Outreach Ready
+    owner: user
+    suggests: send_outreach
+    on_demand: []
+    next_states: [applied, responded, rejected, discarded]
+    dashboard_group: applied
+    aliases: [outreach_drafted]
+    description: >
+      Outreach message drafted (an on-demand subloop off `applied`) and waiting
+      for the user to send it and report "I sent the outreach", which returns the
+      row to the `applied` wait. Still an applied-group row.
 
   - id: responded
     label: Responded
-    aliases: [respondido]
-    description: Company has responded (not yet interview)
+    owner: agent
+    suggests: generate_interview_cheatsheet
+    on_demand: []
+    next_states: [interview_ready, rejected, discarded]
     dashboard_group: responded
+    aliases: [respondido]
+    description: >
+      Company responded (not a rejection); ready for the automation to draft an
+      interview cheatsheet.
 
-  - id: interview
-    label: Interview
-    aliases: [entrevista]
-    description: Active interview process
+  - id: interview_ready
+    label: Interview Ready
+    owner: user
+    suggests: attend_interview_and_report
+    on_demand: [regenerate_cheatsheet]
+    next_states: [interview_ready, offer, rejected, discarded]
     dashboard_group: interview
+    aliases: [interview, entrevista, cheatsheet_ready]
+    description: >
+      Cheatsheet drafted; waiting for the user to interview and report back.
+      "Another round" loops back here — the agent offers to regenerate the
+      cheatsheet on the fly. "Final outcome" advances to offer or rejected.
 
   - id: offer
     label: Offer
-    aliases: [oferta]
-    description: Offer received
+    owner: agent
+    suggests: generate_negotiation_prep
+    on_demand: []
+    next_states: [offer_ready, rejected, discarded]
     dashboard_group: offer
+    aliases: [oferta]
+    description: >
+      Offer received; ready for the automation to draft negotiation prep.
+
+  - id: offer_ready
+    label: Offer Ready
+    owner: user
+    suggests: negotiate_and_report
+    on_demand: []
+    next_states: [accepted, discarded, rejected]
+    dashboard_group: offer
+    aliases: [negotiation_ready]
+    description: >
+      Negotiation prep drafted; waiting for the user to negotiate/decide and
+      report "I accepted" or "I declined".
+
+  # ── Terminals ─────────────────────────────────────────────────────────────
+
+  - id: accepted
+    label: Accepted
+    owner: none
+    suggests: null
+    on_demand: []
+    next_states: []
+    dashboard_group: accepted
+    aliases: [contratado, contratada, hired, accepted, accept, signed]
+    description: Offer accepted. Happy-path terminal (its own funnel group).
 
   - id: rejected
     label: Rejected
-    aliases: [rechazado, rechazada]
-    description: Rejected by company
+    owner: none
+    suggests: null
+    on_demand: []
+    next_states: []
     dashboard_group: rejected
+    aliases: [rechazado, rechazada]
+    description: Rejected by the company.
 
   - id: discarded
     label: Discarded
-    aliases: [descartado, descartada, cerrada, cancelada]
-    description: Discarded by candidate or offer closed
+    owner: none
+    suggests: null
+    on_demand: []
+    next_states: []
     dashboard_group: discarded
+    aliases: [descartado, descartada, cerrada, cancelada]
+    description: Discarded by the candidate, or the opportunity closed.
 
   - id: skip
     label: SKIP
-    aliases: [no_aplicar, no aplicar, skip, monitor]
-    description: Doesn't fit, don't apply
+    owner: none
+    suggests: null
+    on_demand: []
+    next_states: []
     dashboard_group: skip
-
-  - id: hired
-    label: Hired
-    aliases: [contratado, contratada, hired, accepted, accept]
-    description: Offer accepted, job landed!
-    dashboard_group: hired
+    aliases: [no_aplicar, no aplicar, skip, monitor]
+    description: Doesn't fit; never applied. A pre-application terminal.
