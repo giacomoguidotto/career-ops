@@ -278,6 +278,13 @@ Use the tracker number when available so the Go dashboard can find the pack and
 open it from the selected row. If no tracker number exists, use the report
 number. The final response must include the saved path.
 
+**Saving the pack is not the end of the step. The instant an agent-owned pack is
+saved you MUST advance its row (step 6). Producing the pack and advancing the row
+are one inseparable action — never do the first without the second.** A drafted
+pack left on an un-advanced `evaluated`, `responded`, or `offer` row is a bug: the
+dashboard keeps showing "generate pack" and every downstream run (including
+unattended automations that delegate to this mode) re-drafts the same pack forever.
+
 Pack format:
 
 ````markdown
@@ -323,9 +330,12 @@ approval without the agent needing to act externally.
 Advance the `stage` in `data/applications.md` only when the transition is allowed
 by the current stage's `next_states` and the owner's required trigger has happened:
 
-- Agent stage: after saving the `suggests` artifact (step 5), advance to the paired
-  `_ready` stage by running the deterministic advancer rather than hand-editing the
-  tracker:
+- Agent stage — ALWAYS advance, no exceptions: after saving the `suggests` artifact
+  (step 5) you MUST advance the row to its paired `_ready` stage. This is mandatory
+  and unconditional for every agent-owned pack you draft — there is no case where a
+  pack is produced and its row is left unadvanced, and this holds in `auto` and when
+  an unattended automation delegates to this mode. Run the deterministic advancer
+  rather than hand-editing the tracker:
 
   ```bash
   node advance-stage.mjs {tracker_num}
@@ -356,11 +366,23 @@ stage exists in `templates/states.yml`.
 
 ## Output Summary
 
+Before summarizing, run the safety net so no drafted pack is ever left behind:
+
+```bash
+node advance-stage.mjs --reconcile
+```
+
+This advances every agent-owned row that has a drafted pack but was not yet
+advanced. It is idempotent: if step 6 already advanced each row, it reports "No
+changes needed." Never end a run with a drafted pack still sitting on an
+`evaluated`, `responded`, or `offer` row.
+
 End with:
 
 - selected opportunities
 - packs produced and their `output/next-packs/` paths
 - each row's stage, `owner`, and `suggests` action from `templates/states.yml`
+- the stage each drafted row advanced to — confirm none were left un-advanced
 - recommended approvals
 - any writes performed, or "no files changed"
 
