@@ -346,6 +346,7 @@ Verify a posting is still live before applying — using the cheapest check that
 - Report numbering: sequential 3-digit zero-padded, max existing + 1
 - **RULE: After each batch of evaluations, run `node merge-tracker.mjs`** to merge tracker additions and avoid duplications.
 - **RULE: NEVER create new entries in applications.md if company+role already exists.** Update the existing entry.
+- **RULE: After editing any Go source under `dashboard/` (`dashboard/**/*.go`), rebuild the local binary** with `npm run build:dashboard` (or `cd dashboard && go build -o career-dashboard .`) so local runs aren't stale. `dashboard/career-dashboard` is a gitignored local build artifact (`.gitignore`) — do NOT commit it; a stale binary only ships old behavior on this machine's `npm run serve:dashboard`.
 
 ### TSV Format for Tracker Additions
 
