@@ -414,15 +414,21 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 
 ### Canonical States (applications.md)
 
-**Source of truth:** `templates/states.yml`
+**Source of truth:** `templates/states.yml` (full descriptions, owners, and aliases)
+
+Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Subloop off `Applied`: `Outreach Ready`. Terminals: `Rejected` / `Discarded` / `SKIP`.
 
 | State | When to use |
 |-------|-------------|
-| `Evaluated` | Report completed, pending decision |
-| `Applied` | Application sent |
-| `Responded` | Company responded |
-| `Interview` | In interview process |
-| `Offer` | Offer received |
+| `Evaluated` | Report completed; agent drafts the application pack |
+| `Application Ready` | Pack drafted; waiting for the user to submit and report |
+| `Applied` | Application sent; ball is with the company |
+| `Outreach Ready` | Outreach drafted; waiting for the user to send it |
+| `Responded` | Company responded; agent drafts an interview cheatsheet |
+| `Interview Ready` | Cheatsheet drafted; waiting for the user to interview and report |
+| `Offer` | Offer received; agent drafts negotiation prep |
+| `Offer Ready` | Negotiation prep drafted; waiting for the user to negotiate/decide |
+| `Accepted` | Offer accepted (happy-path terminal) |
 | `Rejected` | Rejected by company |
 | `Discarded` | Discarded by candidate or offer closed |
 | `SKIP` | Doesn't fit, don't apply |

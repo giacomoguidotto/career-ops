@@ -38,8 +38,8 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync, statS
 import { createHash } from 'crypto';
 import { dirname, resolve, join, basename } from 'path';
 import { pathToFileURL } from 'url';
-import yaml from 'js-yaml';
 import { resolveColumns } from './tracker-parse.mjs';
+import { loadStates, canonicalStatus } from './tracker-utils.mjs';
 
 const MD_PATH = process.env.CAREER_OPS_TRACKER || 'data/applications.md';
 const DB_PATH = process.env.CAREER_OPS_TRACKER_DB
@@ -51,7 +51,6 @@ if (resolve(MD_PATH) === resolve(DB_PATH)) {
   console.error(`Error: DB path must differ from the markdown path (${MD_PATH}).`);
   process.exit(1);
 }
-const STATES_PATH = 'templates/states.yml';
 const HEADER = '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |';
 const SEPARATOR = '|---|------|---------|------|-------|--------|-----|--------|-------|';
 
@@ -112,37 +111,13 @@ function openDb(DatabaseSync) {
   return db;
 }
 
-// ── Canonical states (templates/states.yml is the source of truth) ──
+// ── Canonical states ────────────────────────────────────────────────
+// The state machine (templates/states.yml) is the single source of truth;
+// `loadStates`/`canonicalStatus` live in tracker-utils.mjs so every tracker
+// script resolves statuses through the same reader. `normalizeStatus` is kept
+// as a local alias to minimize churn at the call sites below.
+const normalizeStatus = canonicalStatus;
 
-function loadStates() {
-  if (!existsSync(STATES_PATH)) {
-    console.error(`Error: ${STATES_PATH} not found — cannot validate statuses. Run from the career-ops root.`);
-    process.exit(1);
-  }
-  const doc = yaml.load(readFileSync(STATES_PATH, 'utf-8'));
-  const byKey = new Map(); // lowercased label/alias → canonical label
-  const labels = [];
-  for (const s of doc?.states || []) {
-    if (!s?.label) continue;
-    labels.push(s.label);
-    byKey.set(s.label.toLowerCase(), s.label);
-    if (s.id) byKey.set(String(s.id).toLowerCase(), s.label);
-    for (const alias of s.aliases || []) byKey.set(String(alias).toLowerCase(), s.label);
-  }
-  return { byKey, labels };
-}
-
-// Strip markdown bold, trailing dates, and surrounding noise, then resolve
-// against canonical labels/aliases. Returns the canonical label or null.
-function normalizeStatus(raw, states) {
-  if (!raw) return null;
-  const cleaned = String(raw)
-    .replace(/\*\*/g, '')
-    .replace(/\(?\d{4}-\d{2}-\d{2}\)?/g, '')
-    .trim()
-    .toLowerCase();
-  return states.byKey.get(cleaned) || null;
-}
 
 const SCORE_RE = /^\*{0,2}(\d+(?:\.\d+)?\/5)\*{0,2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

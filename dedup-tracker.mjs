@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { rebuildRow } from './tracker-utils.mjs';
+import { rebuildRow, dashboardGroup } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
@@ -30,30 +30,23 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // Ensure the target tracker directory exists in both normal and fixture mode.
 mkdirSync(dirname(APPS_FILE), { recursive: true });
 
-// Status advancement order (higher = more advanced in pipeline)
-// Applied > Rejected because active application > terminal state
-const STATUS_RANK = {
-  // English canonicals (states.yml labels)
-  'skip': 0,
-  'discarded': 0,
-  'rejected': 1,
-  'evaluated': 2,
-  'applied': 3,
-  'responded': 4,
-  'interview': 5,
-  'offer': 6,
-  // Legacy aliases kept for backwards compat with existing tracker data
-  'no_aplicar': 0,
-  'no aplicar': 0,
-  'descartado': 0,
-  'descartada': 0,
-  'rechazado': 1,  // Terminal — below active states
-  'rechazada': 1,
-  'evaluada': 2,
-  'aplicado': 3,
-  'respondido': 4,
-  'entrevista': 5,
-  'oferta': 6,
+// Pipeline-advancement order keyed by the state machine's dashboard_group
+// (higher = more advanced). Ranking a group rather than each label means the
+// finer stages inherit the right rank automatically: Application Ready rolls up
+// to `evaluated` (not yet in motion), Outreach Ready to `applied`, Offer Ready to
+// `offer`. Applied ranks above the terminal Rejected because an active
+// application outweighs a closed one. Accepted is the most advanced (happy-path
+// terminal) so it is never dropped by a fuzzy title match.
+const GROUP_RANK = {
+  skip: 0,
+  discarded: 0,
+  rejected: 1,
+  evaluated: 2,
+  applied: 3,
+  responded: 4,
+  interview: 5,
+  offer: 6,
+  accepted: 7,
 };
 
 /**
@@ -76,35 +69,19 @@ function normalizeCompany(name) {
 }
 
 /**
- * Normalize tracker status text before ranking or comparing it.
- *
- * Existing trackers can contain bold Markdown wrappers or legacy dates appended
- * to the status cell. Dedup needs the canonical status word only, in lowercase,
- * so advanced-state protection works the same for old and new tracker rows.
- *
- * @param {string} status - Raw status cell from applications.md.
- * @returns {string} Lowercase status key with Markdown/date noise removed.
- */
-function normalizeStatus(status) {
-  return String(status ?? '')
-    .replace(/\*\*/g, '')
-    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '')
-    .trim()
-    .toLowerCase();
-}
-
-/**
  * Convert a tracker status into its pipeline-advancement rank.
  *
  * Higher ranks represent states that carry more user intent and should not be
- * casually overwritten or removed. Unknown statuses rank as 0 so malformed data
- * is treated conservatively rather than promoted.
+ * casually overwritten or removed. The raw status is resolved to its
+ * dashboard_group via the state machine (tracker-utils), then ranked. Unknown
+ * statuses rank as 0 so malformed data is treated conservatively rather than
+ * promoted.
  *
  * @param {string} status - Raw or normalized status value.
- * @returns {number} Numeric rank from STATUS_RANK, or 0 for unknown statuses.
+ * @returns {number} Numeric rank from GROUP_RANK, or 0 for unknown statuses.
  */
 function statusRank(status) {
-  return STATUS_RANK[normalizeStatus(status)] || 0;
+  return GROUP_RANK[dashboardGroup(status) || ''] || 0;
 }
 
 /**
@@ -115,10 +92,10 @@ function statusRank(status) {
  * matches from silently deleting an active application record.
  *
  * @param {string} status - Raw status value from the tracker row.
- * @returns {boolean} True when the row is Applied, Responded, Interview, or Offer.
+ * @returns {boolean} True when the row is Applied or a later stage (incl. Accepted).
  */
 function isAdvancedStatus(status) {
-  return statusRank(status) >= STATUS_RANK.applied;
+  return statusRank(status) >= GROUP_RANK.applied;
 }
 
 /**

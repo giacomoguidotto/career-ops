@@ -71,7 +71,13 @@ Save hooks in `.claude/settings.json` (Claude Code). OpenCode does not support h
 
 ## States (templates/states.yml)
 
-The canonical states rarely need changing. If you add new states, update:
-1. `templates/states.yml`
-2. `normalize-statuses.mjs` (alias mappings)
-3. `modes/_shared.md` (any references)
+The canonical states are the single source of truth in `templates/states.yml`.
+To add or rename a state, edit that file only — every reader derives from it:
+
+1. `templates/states.yml` — add the state (with `id`, `label`, `owner`,
+   `suggests`, `next_states`, `dashboard_group`, and any legacy `aliases`).
+2. Nothing else needs a status list. The Go dashboard and the Node tracker
+   scripts (`tracker.mjs`, `normalize-statuses.mjs`, `merge-tracker.mjs`,
+   `dedup-tracker.mjs`, `followup-cadence.mjs`) all read `states.yml` at runtime
+   via the shared reader in `tracker-utils.mjs`, so they pick up the change with
+   no code edits.

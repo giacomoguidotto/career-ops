@@ -212,6 +212,7 @@ const SYSTEM_PATHS = [
   'CONTRIBUTING.md',
   'MAINTAINERS.md',
   'ARCHITECTURE.md',
+  'CONTEXT.md',
   'README.md',
   'README.ar.md',
   'README.cn.md',

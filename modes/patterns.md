@@ -17,7 +17,7 @@ When interview sessions are available, it also reads *what the candidate actuall
 
 ## Minimum Threshold
 
-Before running analysis, check: does `data/applications.md` have at least 5 entries with status beyond "Evaluated" (i.e., Applied, Responded, Interview, Offer, Rejected, Discarded, SKIP)?
+Before running analysis, check: does `data/applications.md` have at least 5 entries with status beyond "Evaluated" (i.e., Application Ready, Applied, Outreach Ready, Responded, Interview Ready, Offer, Offer Ready, Accepted, Rejected, Discarded, SKIP)?
 
 If not, tell the user:
 > "Not enough data yet -- {N}/5 applications have progressed beyond evaluation. Keep applying and come back when you have more outcomes to analyze."
@@ -233,7 +233,7 @@ For reference, outcomes are classified as:
 
 | Status | Outcome |
 |--------|---------|
-| Interview, Offer, Responded, Applied | **Positive** (invested effort or got traction) |
+| Accepted, Offer, Offer Ready, Interview Ready, Responded, Applied, Outreach Ready, Application Ready | **Positive** (invested effort or got traction) |
 | Rejected, Discarded | **Negative** (company said no or offer closed) |
 | SKIP (legacy alias: NO APLICAR) | **Self-filtered** (user decided not to apply) |
 | Evaluated | **Pending** (no action taken yet) |

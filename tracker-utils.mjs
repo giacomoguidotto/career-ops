@@ -6,13 +6,125 @@
  * `set-status.mjs`). Keeping the row-rewrite, path-resolution, locking, and
  * atomic-write logic here means a fix lands once instead of drifting between
  * copies — and every writer excludes every other writer through the same lock.
+ *
+ * This module is also the single Node-side reader of the canonical state machine
+ * (`templates/states.yml`). Every tracker script that needs to validate or
+ * normalize a status resolves it through `loadStates()`/`canonicalStatus()` here,
+ * so the lifecycle vocabulary is defined once (in states.yml) and never
+ * re-encoded as a hardcoded list in each script.
  */
 
 import { readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, statSync, existsSync, realpathSync } from 'fs';
 import { join, dirname, basename, resolve, relative, isAbsolute, sep } from 'path';
+import { fileURLToPath } from 'url';
 import { createHash, randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import yaml from 'js-yaml';
+
+const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Locate the canonical states file regardless of repo layout.
+ *
+ * The boilerplate ships it at `templates/states.yml`; a flattened/original
+ * layout keeps it at the repo root as `states.yml`. Resolving relative to this
+ * module's own directory (not the process cwd) means every caller finds the same
+ * file no matter where it was launched from.
+ *
+ * @returns {string|null} Absolute path to states.yml, or null when absent.
+ */
+function locateStatesFile() {
+  const templated = join(CAREER_OPS, 'templates/states.yml');
+  if (existsSync(templated)) return templated;
+  const flat = join(CAREER_OPS, 'states.yml');
+  if (existsSync(flat)) return flat;
+  return null;
+}
+
+let _statesCache = null;
+
+/**
+ * Load and index the canonical lifecycle state machine from states.yml.
+ *
+ * Builds a case-insensitive lookup from every label, id, and alias to that
+ * state's canonical label, plus the ordered list of labels and a
+ * label/id/alias → dashboard_group map. The result is cached; pass
+ * `{ force: true }` to re-read (used by tests that swap fixtures).
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.force] - Re-read the file, bypassing the cache.
+ * @returns {{ byKey: Map<string,string>, labels: string[], groupByKey: Map<string,string> }}
+ */
+export function loadStates(options = {}) {
+  if (_statesCache && !options.force) return _statesCache;
+  const path = locateStatesFile();
+  if (!path) {
+    throw new Error('states.yml not found (looked for templates/states.yml and states.yml).');
+  }
+  const doc = yaml.load(readFileSync(path, 'utf-8'));
+  const byKey = new Map(); // lowercased label/id/alias → canonical label
+  const groupByKey = new Map(); // same keys → dashboard_group
+  const labels = [];
+  for (const s of doc?.states || []) {
+    if (!s?.label) continue;
+    labels.push(s.label);
+    const group = s.dashboard_group || '';
+    const register = (k) => {
+      const key = String(k).toLowerCase();
+      byKey.set(key, s.label);
+      groupByKey.set(key, group);
+    };
+    register(s.label);
+    if (s.id) register(s.id);
+    for (const alias of s.aliases || []) register(alias);
+  }
+  _statesCache = { byKey, labels, groupByKey };
+  return _statesCache;
+}
+
+/**
+ * Resolve a raw status cell to its canonical states.yml label.
+ *
+ * Strips Markdown bold and any trailing ISO date noise, lowercases, then looks
+ * the value up against every known label, id, and alias. Returns null for
+ * unknown statuses so each caller can decide how to treat unrecognized input
+ * (flag it, default it, or reject it).
+ *
+ * @param {string} raw - Raw status text from a tracker row or TSV addition.
+ * @param {{ byKey: Map<string,string> }} [states] - Preloaded states (defaults to loadStates()).
+ * @returns {string|null} Canonical label, or null when unrecognized.
+ */
+export function canonicalStatus(raw, states = loadStates()) {
+  if (!raw) return null;
+  const cleaned = String(raw)
+    .replace(/\*\*/g, '')
+    .replace(/\(?\d{4}-\d{2}-\d{2}\)?/g, '')
+    .trim()
+    .toLowerCase();
+  return states.byKey.get(cleaned) || null;
+}
+
+/**
+ * Resolve a raw status cell to its coarse dashboard_group per states.yml.
+ *
+ * The `_ready` and subloop stages roll up onto their world-stage group
+ * (e.g. `Interview Ready` → `interview`, `Outreach Ready` → `applied`), which is
+ * the bucket readers use for funnels, follow-up cadence, and dedup ranking.
+ * Returns null for unrecognized statuses.
+ *
+ * @param {string} raw - Raw status text from a tracker row or TSV addition.
+ * @param {{ groupByKey: Map<string,string> }} [states] - Preloaded states (defaults to loadStates()).
+ * @returns {string|null} dashboard_group, or null when unrecognized.
+ */
+export function dashboardGroup(raw, states = loadStates()) {
+  if (!raw) return null;
+  const cleaned = String(raw)
+    .replace(/\*\*/g, '')
+    .replace(/\(?\d{4}-\d{2}-\d{2}\)?/g, '')
+    .trim()
+    .toLowerCase();
+  return states.groupByKey.get(cleaned) || null;
+}
 
 /**
  * Rebuild a markdown table row from the cells produced by `line.split('|')`.

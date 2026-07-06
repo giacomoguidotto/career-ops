@@ -18,16 +18,28 @@ With the optional Via column (intermediary channel, #1596) after Company:
 - **Unknown end employer** (recruiter hasn't named the client yet): Company = `?` (the structural marker — never the word "Confidential", which is locale-dependent and collides with real firm names), Via = the agency, and a distinguishing descriptor in Notes (e.g. `fintech, Leeds`). Display it to the user as "Confidential (via {Via})".
 - The row's identity is its `#` (report number) — Company is display data and changes at most once, at reveal.
 
-Possible states: `Evaluated` → `Applied` → `Responded` → `Interview` → `Offer` / `Rejected` / `Discarded` / `SKIP`
+Possible states (single source of truth: `templates/states.yml`):
 
-- `Evaluated` = offer evaluated with report, pending decision
-- `Applied` = the candidate submitted their application
-- `Responded` = Company has responded (not yet interview)
-- `Interview` = active interview process
-- `Offer` = job offer received
+Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`
+Subloop off `Applied`: `Outreach Ready`. Terminals: `Rejected` / `Discarded` / `SKIP`.
+
+- `Evaluated` = offer evaluated with report; agent drafts the application pack
+- `Application Ready` = pack drafted; waiting for the user to submit and report
+- `Applied` = the candidate submitted their application; ball is with the company
+- `Outreach Ready` = outreach drafted; waiting for the user to send it
+- `Responded` = company responded (not yet interview); agent drafts a cheatsheet
+- `Interview Ready` = cheatsheet drafted; waiting for the user to interview and report (loops for extra rounds)
+- `Offer` = job offer received; agent drafts negotiation prep
+- `Offer Ready` = negotiation prep drafted; waiting for the user to negotiate/decide
+- `Accepted` = offer accepted (happy-path terminal)
 - `Rejected` = rejected by company
 - `Discarded` = discarded by candidate or offer closed
 - `SKIP` = doesn't fit, don't apply
+
+Each state declares an `owner` in `states.yml`: `agent` stages are drafted by
+automation; `user` stages wait on the user reporting a real-world action;
+`company` stages are a pure wait. Write EXACTLY one label above into the Status
+column (no bold, no dates, no extra text).
 
 If the user asks to update a state, edit the corresponding row.
 
