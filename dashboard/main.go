@@ -114,7 +114,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case screens.ViewerUpdateStatusMsg:
 		normalized := data.NormalizeStatus(msg.NewStatus)
-		if normalized == "hired" {
+		if normalized == "accepted" {
 			err := data.UpdateApplicationStatus(m.careerOpsPath, msg.App, msg.NewStatus)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "WARN: status update failed: %v\n", err)

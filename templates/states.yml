@@ -195,7 +195,7 @@ states:
     on_demand: []
     next_states: []
     dashboard_group: discarded
-    aliases: [descartado, descartada, cerrada, cancelada]
+    aliases: [descartado, descartada, cerrada, cancelada, duplicado, dup]
     description: Discarded by the candidate, or the opportunity closed.
 
   - id: skip
@@ -205,5 +205,5 @@ states:
     on_demand: []
     next_states: []
     dashboard_group: skip
-    aliases: [no_aplicar, no aplicar, skip, monitor]
+    aliases: [no_aplicar, no aplicar, skip, monitor, skipped, geo blocker]
     description: Doesn't fit; never applied. A pre-application terminal.

@@ -649,7 +649,7 @@ func TestRenderAppLineIncludesNextColumn(t *testing.T) {
 		Status:      "Evaluated",
 		Score:       4.2,
 		ActionState: "needs_action",
-		NextAction:  "draft_application_pack",
+		NextAction:  "generate_application_pack",
 	}, false))
 
 	if !strings.Contains(line, "Generate application") {
@@ -671,10 +671,10 @@ func TestRenderAppLineShowsReadyArtifactAsHumanStep(t *testing.T) {
 		Number:       42,
 		Company:      "Acme",
 		Role:         "AI Engineer",
-		Status:       "Evaluated",
+		Status:       "Application Ready",
 		Score:        4.2,
 		ActionState:  "needs_action",
-		NextAction:   "draft_application_pack",
+		NextAction:   "send_application",
 		NextPackPath: "output/next-packs/042-acme.md",
 	}, false))
 
@@ -691,22 +691,22 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 	}{
 		{
 			name: "application generation",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_application_pack"},
-			want: "Generate application",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_application_pack"},
+			want: "Generate application pack",
 		},
 		{
 			name: "application send after artifact",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_application_pack", NextPackPath: "output/next-packs/042-acme.md"},
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_application", NextPackPath: "output/next-packs/042-acme.md"},
 			want: "Send application",
 		},
 		{
 			name: "interview cheatsheet generation",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "prep_interview"},
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet"},
 			want: "Generate interview cheatsheet",
 		},
 		{
 			name: "interview after cheatsheet",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "prep_interview", NextPackPath: "output/next-packs/042-acme.md"},
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "attend_interview_and_report", NextPackPath: "output/next-packs/042-acme.md"},
 			want: "Interview",
 		},
 		{
@@ -729,9 +729,9 @@ func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
 	pm := previewModelWith(t, model.CareerApplication{
 		Company:      "Acme",
 		Role:         "AI Engineer",
-		Status:       "Evaluated",
+		Status:       "Application Ready",
 		ActionState:  "needs_action",
-		NextAction:   "draft_application_pack",
+		NextAction:   "send_application",
 		NextPackPath: "output/next-packs/042-acme.md",
 		NextCommand:  "/career-ops next 42",
 	})
@@ -753,9 +753,9 @@ func TestNextKeyOpensExistingPack(t *testing.T) {
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
-			Status:       "Evaluated",
+			Status:       "Application Ready",
 			ActionState:  "needs_action",
-			NextAction:   "draft_application_pack",
+			NextAction:   "send_application",
 			NextPackPath: "output/next-packs/042-acme.md",
 		},
 	}
@@ -808,9 +808,9 @@ func TestNextKeyUsesHumanNextStepTitle(t *testing.T) {
 		{
 			Company:      "n8n",
 			Role:         "Community Software Engineer / Remote / Europe",
-			Status:       "Evaluated",
+			Status:       "Application Ready",
 			ActionState:  "needs_action",
-			NextAction:   "draft_application_pack",
+			NextAction:   "send_application",
 			NextPackPath: "output/next-packs/042-n8n.md",
 			WorkMode:     "Remote",
 			Location:     "Europe",
@@ -840,7 +840,7 @@ func TestNextKeyDoesNotOpenAgentGenerationStep(t *testing.T) {
 			Role:         "AI Engineer",
 			Status:       "Evaluated",
 			ActionState:  "needs_action",
-			NextAction:   "draft_application_pack",
+			NextAction:   "generate_application_pack",
 			NextCommand:  "/career-ops next 42",
 			NextPackPath: "",
 		},
@@ -861,9 +861,9 @@ func TestCopyKeyOpensStatusPickerEvenWhenArtifactIsReady(t *testing.T) {
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
-			Status:       "Evaluated",
+			Status:       "Application Ready",
 			ActionState:  "needs_action",
-			NextAction:   "draft_application_pack",
+			NextAction:   "send_application",
 			NextPackPath: "output/next-packs/missing.md",
 		},
 	}
@@ -883,9 +883,9 @@ func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
-			Status:       "Evaluated",
+			Status:       "Application Ready",
 			ActionState:  "needs_action",
-			NextAction:   "draft_application_pack",
+			NextAction:   "send_application",
 			NextPackPath: "output/next-packs/042-acme.md",
 		},
 	}

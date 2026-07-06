@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/santifer/career-ops/dashboard/internal/model"
 )
 
 // Regression for #1180: a status word appearing as a substring of an earlier
@@ -462,25 +465,11 @@ func TestParseApplicationsEnrichesNextActionsAndPacks(t *testing.T) {
 			t.Fatalf("failed to write report %s: %v", name, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n\n**Action:** draft_application_pack\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n\n**Suggests:** generate_application_pack\n"), 0o644); err != nil {
 		t.Fatalf("failed to write next pack: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "043-beta.md"), []byte("# Old Next Pack\n\n**Action:** draft_application_pack\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "043-beta.md"), []byte("# Old Next Pack\n\n**Suggests:** generate_application_pack\n"), 0o644); err != nil {
 		t.Fatalf("failed to write stale next pack: %v", err)
-	}
-
-	sidecar := `version: 1
-applications:
-  "43":
-    action_state: waiting
-    next_action: follow_up
-    due_after: 2099-01-01
-    owner: company
-    waiting_on: recruiter response
-    reason: Fresh application; wait.
-`
-	if err := os.WriteFile(filepath.Join(tempDir, "data", "application-actions.yml"), []byte(sidecar), 0o644); err != nil {
-		t.Fatalf("failed to write action sidecar: %v", err)
 	}
 
 	apps := ParseApplications(tempDir)
@@ -488,8 +477,13 @@ applications:
 		t.Fatalf("expected 3 parsed apps, got %d", len(apps))
 	}
 
-	if apps[0].ActionState != "needs_action" || apps[0].NextAction != "draft_application_pack" {
-		t.Fatalf("evaluated high-fit row next action = %q/%q", apps[0].ActionState, apps[0].NextAction)
+	// Row 42: Evaluated is agent-owned, so the automation drafts an application
+	// pack; the matching generated pack is surfaced for the row.
+	if apps[0].ActionState != "needs_action" || apps[0].NextAction != "generate_application_pack" {
+		t.Fatalf("evaluated row next action = %q/%q", apps[0].ActionState, apps[0].NextAction)
+	}
+	if apps[0].ActionOwner != "agent" {
+		t.Fatalf("evaluated row owner = %q, want agent", apps[0].ActionOwner)
 	}
 	if apps[0].NextPackPath != filepath.Join("output", "next-packs", "042-acme.md") {
 		t.Fatalf("next pack path = %q", apps[0].NextPackPath)
@@ -498,13 +492,19 @@ applications:
 		t.Fatalf("next command = %q", apps[0].NextCommand)
 	}
 
-	if apps[1].ActionState != "waiting" || apps[1].ActionDue != "2099-01-01" || apps[1].WaitingOn != "recruiter response" {
-		t.Fatalf("sidecar override not applied: %+v", apps[1])
+	// Row 43: Applied is company-owned and its application date is past the default
+	// follow-up cadence, so the dashboard surfaces a follow-up reminder. The stale
+	// pack (a mismatched action) must not be surfaced.
+	if apps[1].ActionState != "needs_action" || apps[1].NextAction != "follow_up" {
+		t.Fatalf("applied row next action = %q/%q", apps[1].ActionState, apps[1].NextAction)
 	}
 	if apps[1].NextPackPath != "" {
 		t.Fatalf("stale next pack with mismatched action should not be surfaced, got %q", apps[1].NextPackPath)
 	}
-	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "close_or_discard" {
+
+	// Row 44: Evaluated regardless of score -- the apply/discard gate is automation
+	// policy, not a dashboard decision, so the dashboard still routes to drafting.
+	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "generate_application_pack" {
 		t.Fatalf("low-score evaluated row next action = %q/%q", apps[2].ActionState, apps[2].NextAction)
 	}
 }
@@ -561,5 +561,76 @@ Comp score: 4.0/5.
 	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "hume.md"))
 	if comp != "USD 180K-230K" {
 		t.Fatalf("comp = %q, want USD 180K-230K", comp)
+	}
+}
+
+// TestNormalizeStatusMapsStagesToDashboardGroups asserts that every lifecycle
+// stage in templates/states.yml (including the fine-grained _ready stages and the
+// new accepted terminal) collapses to its dashboard_group, and that the
+// pipeline-synthesized batch statuses stay outside the state machine.
+func TestNormalizeStatusMapsStagesToDashboardGroups(t *testing.T) {
+	cases := map[string]string{
+		"Evaluated":         "evaluated",
+		"Application Ready": "evaluated",
+		"Applied":           "applied",
+		"Outreach Ready":    "applied",
+		"Responded":         "responded",
+		"Interview Ready":   "interview",
+		"Interview":         "interview", // legacy alias
+		"Offer":             "offer",
+		"Offer Ready":       "offer",
+		"Accepted":          "accepted",
+		"Rejected":          "rejected",
+		"Discarded":         "discarded",
+		"SKIP":              "skip",
+		"aplicado":          "applied", // legacy Spanish alias
+		"processing":        "processing",
+		"pending":           "pending",
+		"failed":            "failed",
+	}
+	for raw, want := range cases {
+		if got := NormalizeStatus(raw); got != want {
+			t.Errorf("NormalizeStatus(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// TestDeriveNextActionByOwner asserts the dashboard's next-action view-model is
+// driven purely by the stage's owner/suggests from templates/states.yml.
+func TestDeriveNextActionByOwner(t *testing.T) {
+	sm := states()
+	now := time.Now()
+	cases := []struct {
+		status     string
+		wantState  string
+		wantAction string
+		wantOwner  string
+	}{
+		{"Evaluated", "needs_action", "generate_application_pack", "agent"},
+		{"Application Ready", "needs_action", "send_application", "user"},
+		{"Responded", "needs_action", "generate_interview_cheatsheet", "agent"},
+		{"Interview Ready", "needs_action", "attend_interview_and_report", "user"},
+		{"Offer", "needs_action", "generate_negotiation_prep", "agent"},
+		{"Accepted", "none", "none", "none"},
+		{"SKIP", "none", "none", "none"},
+	}
+	for _, tc := range cases {
+		rec := deriveNextAction(model.CareerApplication{Status: tc.status}, now, sm)
+		if rec.ActionState != tc.wantState || rec.NextAction != tc.wantAction || rec.Owner != tc.wantOwner {
+			t.Errorf("deriveNextAction(%q) = %q/%q/%q, want %q/%q/%q",
+				tc.status, rec.ActionState, rec.NextAction, rec.Owner,
+				tc.wantState, tc.wantAction, tc.wantOwner)
+		}
+	}
+}
+
+// TestStatusPriorityRanksAcceptedAsPositiveTerminal asserts the accepted group
+// sorts after the active pipeline but ahead of the negative terminals.
+func TestStatusPriorityRanksAcceptedAsPositiveTerminal(t *testing.T) {
+	if !(StatusPriority("Evaluated") < StatusPriority("Accepted")) {
+		t.Errorf("accepted should sort after evaluated")
+	}
+	if !(StatusPriority("Accepted") < StatusPriority("SKIP")) {
+		t.Errorf("accepted should sort ahead of skip")
 	}
 }

@@ -28,9 +28,7 @@ var (
 	reBatchID        = regexp.MustCompile(`(?m)^\*\*Batch ID:\*\*\s*(\d+)`)
 	reDiscardReasons = regexp.MustCompile(`(?s)discard_reasons:\s*\n((?:\s*-\s*.+?\n)+)`)
 	reDiscardItem    = regexp.MustCompile(`\s*-\s*([^\n]+)`)
-	reActionAppID    = regexp.MustCompile(`^\s{2}['"]?([^'":]+)['"]?:\s*$`)
-	reActionField    = regexp.MustCompile(`^\s{4}([A-Za-z_]+):\s*(.*)$`)
-	reNextPackAction = regexp.MustCompile(`(?m)^\*\*Action:\*\*\s*([A-Za-z_]+)\s*$`)
+	reNextPackAction = regexp.MustCompile(`(?m)^\*\*(?:Suggests|Action):\*\*\s*([A-Za-z_]+)\s*$`)
 )
 
 // resolveReportPath converts a report link from the tracker into a path
@@ -55,6 +53,8 @@ func resolveReportPath(careerOpsPath, trackerPath, link string) string {
 // ParseApplications reads applications.md and returns parsed applications.
 // It tries both {path}/applications.md and {path}/data/applications.md for compatibility.
 func ParseApplications(careerOpsPath string) []model.CareerApplication {
+	setStatesRoot(careerOpsPath)
+
 	filePath := filepath.Join(careerOpsPath, "applications.md")
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -909,7 +909,6 @@ type applicationActionRecord struct {
 	Owner       string
 	WaitingOn   string
 	Reason      string
-	Report      string
 }
 
 type nextPackRecord struct {
@@ -918,116 +917,22 @@ type nextPackRecord struct {
 }
 
 func enrichNextActions(careerOpsPath string, apps []model.CareerApplication) {
-	records := loadApplicationActionRecords(careerOpsPath)
+	sm := states()
 	packs := loadNextPackPaths(careerOpsPath)
 	now := time.Now()
 
 	for i := range apps {
-		inferred := inferApplicationAction(apps[i], now)
-		if explicit, ok := lookupApplicationActionRecord(records, apps[i]); ok {
-			inferred = mergeApplicationAction(inferred, explicit)
-		}
+		rec := deriveNextAction(apps[i], now, sm)
 
-		apps[i].ActionState = inferred.ActionState
-		apps[i].NextAction = inferred.NextAction
-		apps[i].ActionOwner = inferred.Owner
-		apps[i].ActionDue = inferred.DueAfter
-		apps[i].WaitingOn = inferred.WaitingOn
-		apps[i].ActionReason = inferred.Reason
+		apps[i].ActionState = rec.ActionState
+		apps[i].NextAction = rec.NextAction
+		apps[i].ActionOwner = rec.Owner
+		apps[i].ActionDue = rec.DueAfter
+		apps[i].WaitingOn = rec.WaitingOn
+		apps[i].ActionReason = rec.Reason
 		apps[i].NextPackPath = lookupNextPackPath(packs, apps[i])
 		apps[i].NextCommand = nextCommandFor(apps[i])
 	}
-}
-
-func loadApplicationActionRecords(careerOpsPath string) map[string]applicationActionRecord {
-	path := filepath.Join(careerOpsPath, "data", "application-actions.yml")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-
-	records := make(map[string]applicationActionRecord)
-	inApplications := false
-	currentID := ""
-
-	for _, raw := range strings.Split(string(content), "\n") {
-		line := strings.TrimRight(raw, "\r")
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if trimmed == "applications:" {
-			inApplications = true
-			currentID = ""
-			continue
-		}
-		if !inApplications {
-			continue
-		}
-		if !strings.HasPrefix(line, " ") && strings.HasSuffix(trimmed, ":") {
-			inApplications = false
-			currentID = ""
-			continue
-		}
-		if m := reActionAppID.FindStringSubmatch(line); m != nil {
-			currentID = cleanActionValue(m[1])
-			if _, ok := records[currentID]; !ok {
-				records[currentID] = applicationActionRecord{}
-			}
-			continue
-		}
-		if currentID == "" {
-			continue
-		}
-		if m := reActionField.FindStringSubmatch(line); m != nil {
-			rec := records[currentID]
-			value := cleanActionValue(m[2])
-			switch m[1] {
-			case "action_state":
-				rec.ActionState = value
-			case "next_action":
-				rec.NextAction = value
-			case "due_after":
-				rec.DueAfter = value
-			case "owner":
-				rec.Owner = value
-			case "waiting_on":
-				rec.WaitingOn = value
-			case "reason":
-				rec.Reason = value
-			case "report":
-				rec.Report = value
-			}
-			records[currentID] = rec
-		}
-	}
-
-	return records
-}
-
-func cleanActionValue(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "null" || value == "~" {
-		return ""
-	}
-	if idx := strings.Index(value, " #"); idx >= 0 {
-		value = strings.TrimSpace(value[:idx])
-	}
-	value = strings.Trim(value, `"'`)
-	return strings.TrimSpace(value)
-}
-
-func lookupApplicationActionRecord(records map[string]applicationActionRecord, app model.CareerApplication) (applicationActionRecord, bool) {
-	if len(records) == 0 {
-		return applicationActionRecord{}, false
-	}
-
-	for _, key := range applicationActionKeys(app) {
-		if rec, ok := records[key]; ok {
-			return rec, true
-		}
-	}
-	return applicationActionRecord{}, false
 }
 
 func applicationActionKeys(app model.CareerApplication) []string {
@@ -1056,49 +961,58 @@ func applicationActionKeys(app model.CareerApplication) []string {
 	return keys
 }
 
-func mergeApplicationAction(inferred, explicit applicationActionRecord) applicationActionRecord {
-	if explicit.ActionState != "" {
-		inferred.ActionState = explicit.ActionState
-	}
-	if explicit.NextAction != "" {
-		inferred.NextAction = explicit.NextAction
-	}
-	if explicit.DueAfter != "" {
-		inferred.DueAfter = explicit.DueAfter
-	}
-	if explicit.Owner != "" {
-		inferred.Owner = explicit.Owner
-	}
-	if explicit.WaitingOn != "" {
-		inferred.WaitingOn = explicit.WaitingOn
-	}
-	if explicit.Reason != "" {
-		inferred.Reason = explicit.Reason
-	}
-	if explicit.Report != "" {
-		inferred.Report = explicit.Report
-	}
-	return inferred
-}
-
-func inferApplicationAction(app model.CareerApplication, now time.Time) applicationActionRecord {
+// deriveNextAction computes the dashboard's next-action view-model for an
+// application purely from its stage in templates/states.yml. The stage's owner
+// determines the affordance (ground rules in states.yml): an agent stage is a
+// draft the automation should generate; a user stage is blocked on a real-world
+// action the user must take and report; a company stage is a pure wait with a
+// follow-up reminder when the cadence is due; a terminal stage has no action.
+// Pre-evaluation batch statuses are synthesized by the pipeline and handled up
+// front. This replaces the old hand-maintained status->action table.
+func deriveNextAction(app model.CareerApplication, now time.Time, sm *stateMachine) applicationActionRecord {
 	switch NormalizeStatus(app.Status) {
-	case "evaluated":
-		if app.Score > 0 && app.Score < 3.5 {
-			return applicationActionRecord{
-				ActionState: "needs_action",
-				NextAction:  "close_or_discard",
-				Owner:       "user",
-				Reason:      "Score is below the default application threshold; decide whether to discard or override.",
-			}
+	case "failed", "rate_limited", "paused":
+		return applicationActionRecord{
+			ActionState: "blocked",
+			NextAction:  "none",
+			Owner:       "user",
+			Reason:      "Evaluation did not complete cleanly; inspect the pipeline state before advancing.",
 		}
+	case "pending", "processing":
+		return applicationActionRecord{
+			ActionState: "waiting",
+			NextAction:  "none",
+			Owner:       "agent",
+			WaitingOn:   "evaluation",
+			Reason:      "Opportunity is still queued or processing.",
+		}
+	}
+
+	st, ok := sm.lookupStage(app.Status)
+	if !ok {
+		return applicationActionRecord{ActionState: "none", NextAction: "none", Owner: "user"}
+	}
+	reason := collapseWhitespace(st.Description)
+
+	switch st.Owner {
+	case "agent":
+		// The automation generates the suggested artifact, then auto-advances.
 		return applicationActionRecord{
 			ActionState: "needs_action",
-			NextAction:  "draft_application_pack",
-			Owner:       "agent-draft",
-			Reason:      "Evaluated opportunity is ready for an application and outreach pack.",
+			NextAction:  st.Suggests,
+			Owner:       "agent",
+			Reason:      reason,
 		}
-	case "applied":
+	case "user":
+		// Artifact drafted; blocked on the user's real-world action and report.
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  st.Suggests,
+			Owner:       "user",
+			Reason:      reason,
+		}
+	case "company":
+		// Pure wait; surface a follow-up reminder once the cadence is due.
 		anchor := app.LastContact
 		if anchor == "" {
 			anchor = app.Date
@@ -1108,7 +1022,7 @@ func inferApplicationAction(app model.CareerApplication, now time.Time) applicat
 			return applicationActionRecord{
 				ActionState: "needs_action",
 				NextAction:  "follow_up",
-				Owner:       "agent-draft",
+				Owner:       "user",
 				DueAfter:    due,
 				Reason:      "Application is past the default follow-up cadence.",
 			}
@@ -1119,51 +1033,17 @@ func inferApplicationAction(app model.CareerApplication, now time.Time) applicat
 			Owner:       "company",
 			DueAfter:    due,
 			WaitingOn:   "company response",
-			Reason:      "Application was sent; follow-up cadence is not due yet.",
+			Reason:      reason,
 		}
-	case "responded":
-		return applicationActionRecord{
-			ActionState: "needs_action",
-			NextAction:  "reply_recruiter",
-			Owner:       "user",
-			Reason:      "Company responded; draft a reply and recruiter-screen prep.",
-		}
-	case "interview":
-		return applicationActionRecord{
-			ActionState: "needs_action",
-			NextAction:  "prep_interview",
-			Owner:       "agent-draft",
-			Reason:      "Interview-stage opportunity needs a cheatsheet and post-interview draft material.",
-		}
-	case "offer":
-		return applicationActionRecord{
-			ActionState: "needs_action",
-			NextAction:  "negotiation_prep",
-			Owner:       "agent-draft",
-			Reason:      "Offer-stage opportunity needs negotiation prep.",
-		}
-	case "failed", "rate_limited", "paused":
-		return applicationActionRecord{
-			ActionState: "blocked",
-			NextAction:  "research_gating_questions",
-			Owner:       "user",
-			Reason:      "Evaluation did not complete cleanly; inspect the pipeline state before advancing.",
-		}
-	case "pending", "processing":
-		return applicationActionRecord{
-			ActionState: "waiting",
-			NextAction:  "none",
-			Owner:       "agent-draft",
-			WaitingOn:   "evaluation",
-			Reason:      "Opportunity is still queued or processing.",
-		}
-	default:
-		return applicationActionRecord{
-			ActionState: "none",
-			NextAction:  "none",
-			Owner:       "user",
-		}
+	default: // owner: none -- terminal
+		return applicationActionRecord{ActionState: "none", NextAction: "none", Owner: "none"}
 	}
+}
+
+// collapseWhitespace flattens the multi-line stage description from states.yml
+// into a single reason line.
+func collapseWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func addDays(date string, days int) string {
@@ -1281,7 +1161,7 @@ func ComputeMetrics(apps []model.CareerApplication) model.PipelineMetrics {
 		if app.HasPDF {
 			m.WithPDF++
 		}
-		if status != "skip" && status != "rejected" && status != "discarded" {
+		if status != "skip" && status != "rejected" && status != "discarded" && status != "accepted" {
 			m.Actionable++
 		}
 	}
@@ -1293,55 +1173,32 @@ func ComputeMetrics(apps []model.CareerApplication) model.PipelineMetrics {
 	return m
 }
 
-// NormalizeStatus normalizes raw status text to a canonical form.
-// Aliases match states.yml -- keep in sync with career-ops/states.yml
+// NormalizeStatus normalizes raw status text to a canonical dashboard group.
+// Lifecycle stages are resolved through templates/states.yml (via the state
+// machine) and collapsed to their dashboard_group, so the finer stage vocabulary
+// (application_ready, interview_ready, ...) maps back onto the coarse funnel
+// buckets the dashboard renders. Pre-evaluation batch statuses are synthesized by
+// the pipeline and are not part of the state machine, so they are handled here.
 func NormalizeStatus(raw string) string {
-	// Strip markdown bold and trailing dates
-	s := strings.ReplaceAll(raw, "**", "")
-	s = strings.TrimSpace(strings.ToLower(s))
-	// Strip trailing date (e.g., "aplicado 2026-03-12")
-	if idx := strings.Index(s, " 202"); idx > 0 {
-		s = strings.TrimSpace(s[:idx])
+	s := stripStatusDecorations(raw)
+
+	switch s {
+	case "processing":
+		return "processing"
+	case "pending":
+		return "pending"
+	case "failed":
+		return "failed"
+	case "rate limited", "rate_limited":
+		return "rate_limited"
+	case "paused", "paused_rate_limit":
+		return "paused"
 	}
 
-	switch {
-	// Most restrictive first — accepts both English and Spanish
-	case strings.Contains(s, "hired") || strings.Contains(s, "contratado") || strings.Contains(s, "contratada") || strings.Contains(s, "accepted") || s == "accept":
-		return "hired"
-	case strings.Contains(s, "no aplicar") || strings.Contains(s, "no_aplicar") || s == "skip" || strings.Contains(s, "geo blocker"):
-		return "skip"
-	case s == "processing":
-		return "processing"
-	case s == "pending":
-		return "pending"
-	case s == "completed":
-		return "evaluated"
-	case s == "failed":
-		return "failed"
-	case s == "skipped":
-		return "skip"
-	case s == "rate limited" || s == "rate_limited":
-		return "rate_limited"
-	case s == "paused" || s == "paused_rate_limit":
-		return "paused"
-	case strings.Contains(s, "interview") || strings.Contains(s, "entrevista"):
-		return "interview"
-	case s == "offer" || strings.Contains(s, "oferta"):
-		return "offer"
-	case strings.Contains(s, "responded") || strings.Contains(s, "respondido"):
-		return "responded"
-	case strings.Contains(s, "applied") || strings.Contains(s, "aplicado") || s == "enviada" || s == "aplicada" || s == "sent":
-		return "applied"
-	case strings.Contains(s, "rejected") || strings.Contains(s, "rechazado") || s == "rechazada":
-		return "rejected"
-	case strings.Contains(s, "discarded") || strings.Contains(s, "descartado") || s == "descartada" || s == "cerrada" || s == "cancelada" ||
-		strings.HasPrefix(s, "duplicado") || strings.HasPrefix(s, "dup"):
-		return "discarded"
-	case strings.Contains(s, "evaluated") || strings.Contains(s, "evaluada") || s == "condicional" || s == "hold" || s == "monitor" || s == "evaluar" || s == "verificar":
-		return "evaluated"
-	default:
-		return s
+	if st, ok := states().lookupStage(raw); ok {
+		return st.DashboardGroup
 	}
+	return s
 }
 
 // LoadReportSummary extracts key fields from a report file.
@@ -1726,23 +1583,23 @@ func cleanTableCell(s string) string {
 // StatusPriority returns the sort priority for a status (lower = higher priority).
 func StatusPriority(status string) int {
 	switch NormalizeStatus(status) {
-	case "hired":
-		return 0
 	case "processing":
-		return 1
+		return 0
 	case "pending":
-		return 2
+		return 1
 	case "failed", "rate_limited", "paused":
-		return 3
+		return 2
 	case "interview":
-		return 4
+		return 3
 	case "offer":
-		return 5
+		return 4
 	case "responded":
-		return 6
+		return 5
 	case "applied":
-		return 7
+		return 6
 	case "evaluated":
+		return 7
+	case "accepted":
 		return 8
 	case "skip":
 		return 9
@@ -1776,10 +1633,10 @@ func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetric
 			}
 		}
 
-		if norm == "offer" {
+		if norm == "offer" || norm == "accepted" {
 			pm.TotalOffers++
 		}
-		if norm != "skip" && norm != "rejected" && norm != "discarded" {
+		if norm != "skip" && norm != "rejected" && norm != "discarded" && norm != "accepted" {
 			pm.ActiveApps++
 		}
 	}
@@ -1789,12 +1646,16 @@ func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetric
 	}
 
 	// Funnel: each stage counts all apps that reached at least that stage.
-	// An app in "interview" has passed through evaluated -> applied -> responded -> interview.
+	// An app in "interview" has passed through evaluated -> applied -> responded ->
+	// interview; an "accepted" app also passed through offer. Stages map back to
+	// their dashboard_group via NormalizeStatus, so the finer stage vocabulary
+	// (application_ready, interview_ready, ...) rolls up into these buckets.
 	total := len(apps)
-	applied := statusCounts["applied"] + statusCounts["responded"] + statusCounts["interview"] + statusCounts["offer"] + statusCounts["rejected"]
-	responded := statusCounts["responded"] + statusCounts["interview"] + statusCounts["offer"]
-	interview := statusCounts["interview"] + statusCounts["offer"]
-	offer := statusCounts["offer"]
+	accepted := statusCounts["accepted"]
+	offer := statusCounts["offer"] + accepted
+	interview := statusCounts["interview"] + offer
+	responded := statusCounts["responded"] + interview
+	applied := statusCounts["applied"] + responded + statusCounts["rejected"]
 
 	pm.FunnelStages = []model.FunnelStage{
 		{Label: "Evaluated", Count: total, Pct: 100.0},
@@ -1802,6 +1663,7 @@ func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetric
 		{Label: "Responded", Count: responded, Pct: safePct(responded, applied)},
 		{Label: "Interview", Count: interview, Pct: safePct(interview, applied)},
 		{Label: "Offer", Count: offer, Pct: safePct(offer, applied)},
+		{Label: "Accepted", Count: accepted, Pct: safePct(accepted, applied)},
 	}
 
 	// Rates (relative to applied)

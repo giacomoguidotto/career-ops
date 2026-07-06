@@ -29,11 +29,11 @@ type CareerApplication struct {
 	// Source identifies where this dashboard row came from. Empty is treated as
 	// "tracker" for older tests/fixtures.
 	Source string
-	// Next-action state powers the dashboard's manual-advancement surface.
-	ActionState  string // needs_action | waiting | blocked | snoozed | none
-	NextAction   string // draft_application_pack | follow_up | prep_interview | ...
-	ActionOwner  string // user | company | agent-draft
-	ActionDue    string // YYYY-MM-DD when a waiting/snoozed action becomes relevant
+	// Next-action view-model, derived from the row's stage in templates/states.yml.
+	ActionState  string // needs_action | waiting | blocked | none
+	NextAction   string // the stage's suggests action, e.g. generate_application_pack | send_application | follow_up | none
+	ActionOwner  string // agent | user | company | none
+	ActionDue    string // YYYY-MM-DD when a waiting action becomes relevant
 	WaitingOn    string
 	ActionReason string
 	NextPackPath string // output/next-packs/... when a generated pack exists

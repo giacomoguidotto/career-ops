@@ -111,6 +111,7 @@ const (
 	filterEvaluated = "evaluated"
 	filterApplied   = "applied"
 	filterInterview = "interview"
+	filterAccepted  = "accepted"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
 	filterDiscarded = "discarded"
@@ -128,6 +129,7 @@ var pipelineTabs = []pipelineTab{
 	{filterEvaluated, "EVALUATED"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
+	{filterAccepted, "ACCEPTED"},
 	{filterSkip, "SKIP"},
 	{filterRejected, "REJECTED"},
 	{filterDiscarded, "DISCARDED"},
@@ -184,10 +186,10 @@ var optionalCols = []colDef{
 	{ColNext, "NEXT STEP", "action", 30, true},
 }
 
-var statusOptions = []string{"Evaluated", "Applied", "Responded", "Interview", "Offer", "Hired", "Rejected", "Discarded", "SKIP"}
+var statusOptions = []string{"Evaluated", "Application Ready", "Applied", "Outreach Ready", "Responded", "Interview Ready", "Offer", "Offer Ready", "Accepted", "Rejected", "Discarded", "SKIP"}
 
 // statusGroupOrder defines display order for grouped view.
-var statusGroupOrder = []string{"hired", "processing", "pending", "failed", "rate_limited", "paused", "interview", "offer", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
+var statusGroupOrder = []string{"processing", "pending", "failed", "rate_limited", "paused", "interview", "offer", "accepted", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
 
 // PipelineModel implements the career pipeline dashboard screen.
 type PipelineModel struct {
@@ -712,7 +714,7 @@ func (m PipelineModel) handleStatusPicker(msg tea.KeyMsg) (PipelineModel, tea.Cm
 		if app, ok := m.CurrentApp(); ok {
 			newStatus := statusOptions[m.statusCursor]
 			norm := data.NormalizeStatus(newStatus)
-			if norm == "hired" {
+			if norm == "accepted" {
 				m.hiredApp = app
 				m.hiredStep = 1
 				return m, func() tea.Msg {
@@ -1843,19 +1845,11 @@ func canOpenNextArtifact(app model.CareerApplication) bool {
 	return app.NextPackPath != "" && needsManualAction(app) && artifactBackedNextAction(app.NextAction)
 }
 
+// artifactBackedNextAction reports whether a suggested action produces or uses a
+// copy-paste pack the user can open. Every real suggests value from
+// templates/states.yml is pack-backed; only the empty/"none" terminal case is not.
 func artifactBackedNextAction(action string) bool {
-	switch action {
-	case "draft_application_pack",
-		"draft_outreach",
-		"follow_up",
-		"reply_recruiter",
-		"send_thank_you",
-		"prep_interview",
-		"negotiation_prep":
-		return true
-	default:
-		return false
-	}
+	return action != "" && action != "none"
 }
 
 func nextActionLabel(app model.CareerApplication) string {
@@ -1866,34 +1860,27 @@ func nextActionLabel(app model.CareerApplication) string {
 		return "-"
 	}
 
-	if canOpenNextArtifact(app) {
-		switch app.NextAction {
-		case "draft_application_pack":
-			return "Send application"
-		case "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you":
-			return "Send outreach messages"
-		case "prep_interview":
-			return "Interview"
-		case "negotiation_prep":
-			return "Negotiate offer"
-		default:
-			return "Use generated pack"
-		}
-	}
-
 	switch app.NextAction {
-	case "draft_application_pack":
-		return "Generate application"
-	case "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you":
-		return "Generate outreach messages"
-	case "prep_interview":
+	case "generate_application_pack":
+		return "Generate application pack"
+	case "send_application":
+		return "Send application"
+	case "draft_outreach":
+		return "Draft outreach"
+	case "send_outreach":
+		return "Send outreach"
+	case "follow_up":
+		return "Follow up"
+	case "generate_interview_cheatsheet":
 		return "Generate interview cheatsheet"
-	case "research_gating_questions":
-		return "Research blockers"
-	case "negotiation_prep":
+	case "regenerate_cheatsheet":
+		return "Regenerate cheatsheet"
+	case "attend_interview_and_report":
+		return "Interview"
+	case "generate_negotiation_prep":
 		return "Generate negotiation prep"
-	case "close_or_discard":
-		return "Close opportunity"
+	case "negotiate_and_report":
+		return "Negotiate offer"
 	default:
 		return app.NextAction
 	}
@@ -1986,11 +1973,8 @@ func (m PipelineModel) nextActionColor(app model.CareerApplication) lipgloss.Col
 	if actionStateIs(app, "waiting", "snoozed") {
 		return m.theme.Subtext
 	}
-	switch app.NextAction {
-	case "draft_application_pack", "draft_outreach", "follow_up", "reply_recruiter", "send_thank_you", "prep_interview", "negotiation_prep":
+	if app.NextAction != "" && app.NextAction != "none" {
 		return m.theme.Yellow
-	case "close_or_discard":
-		return m.theme.Red
 	}
 	switch strings.ToLower(strings.TrimSpace(app.ActionState)) {
 	case "needs_action":
@@ -2399,9 +2383,9 @@ func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
 		"failed":       m.theme.Red,
 		"rate_limited": m.theme.Yellow,
 		"paused":       m.theme.Yellow,
-		"hired":        m.theme.Green,
 		"interview":    m.theme.Green,
 		"offer":        m.theme.Green,
+		"accepted":     m.theme.Pink,
 		"applied":      m.theme.Sky,
 		"responded":    m.theme.Blue,
 		"evaluated":    m.theme.Text,
@@ -2473,8 +2457,6 @@ func truncateRunes(s string, maxRunes int) string {
 
 func statusLabel(norm string) string {
 	switch norm {
-	case "hired":
-		return "Hired"
 	case "processing":
 		return "Processing"
 	case "pending":
@@ -2489,6 +2471,8 @@ func statusLabel(norm string) string {
 		return "Interview"
 	case "offer":
 		return "Offer"
+	case "accepted":
+		return "Accepted"
 	case "responded":
 		return "Responded"
 	case "applied":
