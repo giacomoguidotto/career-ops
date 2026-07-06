@@ -156,6 +156,26 @@ function parsePositiveIntFlag(args, name) {
   return value;
 }
 
+function parseScanPriority(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Higher-priority sources should survive scan caps first. Equal priorities keep
+ * the existing arrival order so configs without `scan_priority` behave the same.
+ * @param {Array<{scanPriority?: number}>} offers
+ */
+export function prioritizeScanOffers(offers) {
+  return offers
+    .map((offer, index) => ({ offer, index }))
+    .sort((a, b) => {
+      const diff = parseScanPriority(b.offer?.scanPriority) - parseScanPriority(a.offer?.scanPriority);
+      return diff || a.index - b.index;
+    })
+    .map(item => item.offer);
+}
+
 /**
  * @param {Array<{company?: string}>} offers
  * @param {{maxNew?: number|null, maxPerCompany?: number|null}} caps
@@ -1219,6 +1239,7 @@ async function main() {
         newOffers.push({
           ...job,
           source: sourceName,
+          scanPriority: parseScanPriority(company.scan_priority ?? company.scanPriority),
           tracked: Boolean(careersUrlDomain),
           careersUrlDomain,
         });
@@ -1234,9 +1255,9 @@ async function main() {
 
   await parallelFetch(tasks, CONCURRENCY);
 
-  let offersToVerify = newOffers;
+  let offersToVerify = prioritizeScanOffers(newOffers);
   if (maxNew != null || maxPerCompany != null) {
-    const capped = capNewOffers(newOffers, { maxNew, maxPerCompany });
+    const capped = capNewOffers(offersToVerify, { maxNew, maxPerCompany });
     offersToVerify = capped.offers;
     totalDeferredByRunCap = capped.deferredByRunCap;
     totalDeferredByCompanyCap = capped.deferredByCompanyCap;

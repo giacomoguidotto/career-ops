@@ -26,6 +26,7 @@ Read `portals.yml` which contains:
 - `search_queries`: List of WebSearch queries with `site:` filters per portal (broad discovery)
 - `tracked_companies`: Specific companies with `careers_url` for direct navigation
 - `tracked_companies[].parser`: Optional local parser for SSR pages or stable HTML
+- `scan_priority` on a company or job board: Optional numeric preference. Higher numbers are processed first when `--max-new` / `--max-per-company` caps are active; default is 0.
 - `title_filter`: Keywords (positive/negative/seniority_boost) for filtering job titles
 
 ## Discovery Strategy (4 Levels)
@@ -231,6 +232,11 @@ Levels are additive — they are executed in order, and results are merged and d
    - A near-identical body seen within 90 days under a **different company** is flagged in the scan summary — the usual cause is an agency re-posting a direct listing with the employer name stripped, which URL and company+role dedup both miss.
    - Nothing is dropped automatically. If one side is an agency, apply through ONE channel only (see the Via channel workflow, #1596) — a double submission burns the candidate with both parties.
    - Offers without a usable description get no fingerprint and are never flagged (no body → no signal, no false positives).
+
+7.25. **Prioritize before caps**:
+   - Sort surviving offers by their source entry's numeric `scan_priority` descending.
+   - Keep original arrival order for equal priorities.
+   - Then apply `--max-new` and `--max-per-company` so preferred sources survive bounded scans first.
 
 7.5. **Verify Liveness of WebSearch Results (Level 3)** — BEFORE adding to pipeline:
 

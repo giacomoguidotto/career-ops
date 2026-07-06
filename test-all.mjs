@@ -2791,6 +2791,7 @@ try {
     buildLocationFilter,
     buildContentFilter,
     capNewOffers,
+    prioritizeScanOffers,
     shouldDedupScanHistoryRow,
     formatPipelineOffer,
     formatScanHistoryRow,
@@ -2935,6 +2936,22 @@ try {
     pass('scan caps bound first-run batches by run and company');
   } else {
     fail(`scan caps returned unexpected result: ${JSON.stringify(capped)}`);
+  }
+
+  const priorityCapped = capNewOffers(prioritizeScanOffers([
+    { company: 'EnterpriseCo', title: 'E1' },
+    { company: 'YC Startup', title: 'S1', scanPriority: 100 },
+    { company: 'PortfolioCo', title: 'S2', scanPriority: 100 },
+    { company: 'EnterpriseCo', title: 'E2' },
+  ]), { maxNew: 2 });
+  if (
+    priorityCapped.offers.length === 2 &&
+    priorityCapped.offers.map(o => o.title).join(',') === 'S1,S2' &&
+    priorityCapped.deferredByRunCap === 2
+  ) {
+    pass('scan priority feeds high-priority sources into run caps first');
+  } else {
+    fail(`scan priority cap ordering wrong: ${JSON.stringify(priorityCapped)}`);
   }
 
   // Case 14: non-string location (number/object/null) → pass without throwing
