@@ -95,7 +95,6 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | File | Function |
 |------|----------|
 | `data/applications.md` | Application tracker |
-| `data/application-actions.yml` | Optional post-evaluation action-state sidecar |
 | `data/pipeline.md` | Inbox of pending URLs |
 | `data/scan-history.tsv` | Scanner dedup history |
 | `portals.yml` | Query and company config |
