@@ -3,7 +3,7 @@
  * ollama-eval.mjs — Ollama-powered Job Offer Evaluator for career-ops
  *
  * Local, free, private alternative to the Claude-based pipeline.
- * Reads evaluation logic from modes/oferta.md + modes/_shared.md,
+ * Reads evaluation logic from modes/offer.md + modes/_shared.md,
  * reads the user's resume from cv.md, and evaluates a Job Description
  * passed as a CLI argument or file.
  *
@@ -38,7 +38,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------------------
 const PATHS = {
   shared:  join(ROOT, 'modes', '_shared.md'),
-  oferta:  join(ROOT, 'modes', 'oferta.md'),
+  offer:   join(ROOT, 'modes', 'offer.md'),
   cv:      join(ROOT, 'cv.md'),
   reports: join(ROOT, 'reports'),
 };
@@ -203,7 +203,7 @@ try {
 console.log('\n📂  Loading context files...');
 
 const sharedContext = readFile(PATHS.shared, 'modes/_shared.md');
-const ofertaLogic   = readFile(PATHS.oferta, 'modes/oferta.md');
+const offerLogic    = readFile(PATHS.offer, 'modes/offer.md');
 const cvContent     = readFile(PATHS.cv,     'cv.md');
 
 // ---------------------------------------------------------------------------
@@ -220,9 +220,9 @@ SYSTEM CONTEXT (_shared.md)
 ${sharedContext}
 
 ═══════════════════════════════════════════════════════
-EVALUATION MODE (oferta.md)
+EVALUATION MODE (offer.md)
 ═══════════════════════════════════════════════════════
-${ofertaLogic}
+${offerLogic}
 
 ═══════════════════════════════════════════════════════
 CANDIDATE RESUME (cv.md)

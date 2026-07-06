@@ -575,7 +575,7 @@ async function cmdScan() {
 
 // -- EVALUATE --
 async function cmdEvaluate(input, ctx) {
-  const modeContent = readFile('modes/oferta.md') ?? readFile('modes/auto-pipeline.md') ?? '';
+  const modeContent = readFile('modes/offer.md') ?? readFile('modes/auto-pipeline.md') ?? '';
 
   let jdText = input;
 

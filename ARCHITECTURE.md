@@ -46,8 +46,8 @@ AI coding CLI  ─┐
 ### Discovery — `scan.mjs` + `providers/`
 Finds jobs from **open, no-auth public sources**. `scan.mjs` is zero-token: it calls public ATS APIs (Greenhouse, Ashby, Lever, BambooHR, Teamtailor, Workday, Breezy) and RSS/JSON boards via per-board modules in `providers/`. Auth-gated/login-required sources are intentionally out of core (they belong in the plugin layer). Results land in `data/pipeline.md`.
 
-### Evaluation — `modes/oferta.md` + `modes/_shared.md`
-The heart of the tool. `oferta.md` defines the A–G evaluation blocks; `_shared.md` defines the 1–5 scoring system, archetype detection, posting-legitimacy signals, and global rules. The AI reads these plus your `cv.md` and produces a structured report.
+### Evaluation — `modes/offer.md` + `modes/_shared.md`
+The heart of the tool. `offer.md` defines the A–G evaluation blocks; `_shared.md` defines the 1–5 scoring system, archetype detection, posting-legitimacy signals, and global rules. The AI reads these plus your `cv.md` and produces a structured report.
 
 **Standalone evaluators** let you run the same scoring without an interactive CLI, against cheaper/local models: `gemini-eval.mjs` (Google free tier), `ollama-eval.mjs` (fully local), and `openai-eval.mjs` (any OpenAI-compatible endpoint).
 
@@ -88,6 +88,6 @@ scan ──► data/pipeline.md ──► evaluate (oferta + cv) ──► repor
 ## Where to start reading
 
 - The boundary → `DATA_CONTRACT.md`
-- The scoring → `modes/_shared.md` + `modes/oferta.md`
+- The scoring → `modes/_shared.md` + `modes/offer.md`
 - Adding a job source → an existing module in `providers/` (mirror it)
 - The updater → `update-system.mjs`

@@ -42,7 +42,7 @@ Denne første iteration dækker de fire modes med størst effekt:
 | Fil | Oversat fra | Rolle |
 |-----|-------------|-------|
 | `_shared.md` | `modes/_shared.md` (EN) | Delt kontekst, arketyper, globale regler, særtræk ved det danske marked |
-| `oferta.md` | `modes/oferta.md` (ES) | Fuld evaluering af et opslag (Blok A-F) |
+| `oferta.md` | `modes/offer.md` (EN) | Fuld evaluering af et opslag (Blok A-F) |
 | `apply.md` | `modes/apply.md` (EN) | Live-assistent til udfyldelse af ansøgningsformularer |
 | `pipeline.md` | `modes/pipeline.md` (ES) | URL-indbakke / Second Brain til indsamlede opslag |
 

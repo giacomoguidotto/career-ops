@@ -7,7 +7,7 @@
  * Fireworks, and local servers that speak the OpenAI API (LM Studio, llama.cpp,
  * vLLM, Ollama's /v1). Point it at a base URL + model + key and go.
  *
- * Reads evaluation logic from modes/oferta.md + modes/_shared.md, reads the
+ * Reads evaluation logic from modes/offer.md + modes/_shared.md, reads the
  * user's resume from cv.md, and evaluates a Job Description passed inline or
  * via --file. Mirrors ollama-eval.mjs / gemini-eval.mjs.
  *
@@ -43,7 +43,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------------------
 const PATHS = {
   shared:  join(ROOT, 'modes', '_shared.md'),
-  oferta:  join(ROOT, 'modes', 'oferta.md'),
+  offer:   join(ROOT, 'modes', 'offer.md'),
   cv:      join(ROOT, 'cv.md'),
   reports: join(ROOT, 'reports'),
 };
@@ -213,7 +213,7 @@ function nextReportNumber() {
 console.log('\n📂  Loading context files...');
 
 const sharedContext = readFile(PATHS.shared, 'modes/_shared.md');
-const ofertaLogic   = readFile(PATHS.oferta, 'modes/oferta.md');
+const offerLogic    = readFile(PATHS.offer, 'modes/offer.md');
 const cvContent     = readFile(PATHS.cv,     'cv.md');
 
 // ---------------------------------------------------------------------------
@@ -230,9 +230,9 @@ SYSTEM CONTEXT (_shared.md)
 ${sharedContext}
 
 ═══════════════════════════════════════════════════════
-EVALUATION MODE (oferta.md)
+EVALUATION MODE (offer.md)
 ═══════════════════════════════════════════════════════
-${ofertaLogic}
+${offerLogic}
 
 ═══════════════════════════════════════════════════════
 CANDIDATE RESUME (cv.md)

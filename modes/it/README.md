@@ -42,7 +42,7 @@ Questa prima iterazione copre le quattro modalità a più alto impatto:
 | File | Tradotto da | Ruolo |
 |------|-------------|-------|
 | `_shared.md` | `modes/_shared.md` (EN) | Contesto condiviso, archetipi, regole globali, specificità del mercato italiano |
-| `annuncio.md` | `modes/oferta.md` (ES) | Valutazione completa di un annuncio di lavoro (Blocchi A-F) |
+| `annuncio.md` | `modes/offer.md` (EN) | Valutazione completa di un annuncio di lavoro (Blocchi A-F) |
 | `candidarsi.md` | `modes/apply.md` (EN) | Assistente live per compilare i moduli di candidatura |
 | `pipeline.md` | `modes/pipeline.md` (ES) | Inbox di URL / Second Brain per gli annunci raccolti |
 

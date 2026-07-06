@@ -42,7 +42,7 @@ Ta pierwsza iteracja obejmuje cztery tryby o najwyższym wpływie:
 | Plik | Przetłumaczony z | Rola |
 |---------|----------------|------|
 | `_shared.md` | `modes/_shared.md` (EN) | Wspólny kontekst, archetypy, reguły globalne, specyfika polskiego rynku |
-| `oferta.md` | `modes/oferta.md` (ES) | Pełna ocena oferty (Bloki A-F) |
+| `oferta.md` | `modes/offer.md` (EN) | Pełna ocena oferty (Bloki A-F) |
 | `aplikuj.md` | `modes/apply.md` (EN) | Asystent na żywo do wypełniania formularzy aplikacyjnych |
 | `pipeline.md` | `modes/pipeline.md` (ES) | Inbox URL-i / Second Brain dla zebranych ofert |
 

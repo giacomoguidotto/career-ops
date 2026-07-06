@@ -42,7 +42,7 @@ Esta primera iteración cubre los cuatro modos de mayor impacto:
 | Archivo | Traducido desde | Rol |
 |---------|-----------------|-----|
 | `_shared.md` | `modes/_shared.md` (EN) | Contexto compartido, arquetipos, reglas globales, especificidades del mercado hispanohablante |
-| `oferta.md` | `modes/oferta.md` (ES) | Evaluación completa de una oferta (Bloques A-F) |
+| `oferta.md` | `modes/offer.md` (EN) | Evaluación completa de una oferta (Bloques A-F) |
 | `aplicar.md` | `modes/apply.md` (EN) | Asistente en vivo para rellenar formularios de candidatura |
 | `pipeline.md` | `modes/pipeline.md` (ES) | Bandeja de URLs / Second Brain para las ofertas recopiladas |
 
