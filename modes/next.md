@@ -12,23 +12,45 @@ record real-world actions without confirmation.
 
 ## Ready Block Contract
 
-Every output must be usable without scavenger-hunting through reports.
+Every output must be usable without scavenger-hunting through reports, and
+without a second research step before the user can act.
 
 - Put the decision and next human action at the top.
 - Include a quick-reference block with the role, score, report, blocker, and the
   exact next step.
+- **Include a `Where To Send It` block.** Anything the pack asks the user to send
+  must first say *where it goes*: the apply channel (ATS/form URL) and the human
+  destination for each drafted message. A message with no destination is an
+  unfinished pack.
 - Include copy-paste blocks for anything the user might send or paste into a
   form: email, LinkedIn message, recruiter reply, thank-you note, cover-letter
   paragraph, or application answer.
+- **Every sendable draft needs a real, discovered destination.** An email draft
+  MUST carry a deliverable address in its `To:` line; a LinkedIn or DM draft MUST
+  name a real person and link their profile. Run contact discovery
+  (`modes/contact.md` step 1: WebSearch for the recruiter, hiring manager, and
+  team peers) to find it. Never address a message to a faceless "{Company} team"
+  when a named contact is findable.
+- **Never fabricate or guess a destination.** Use only an address or profile you
+  actually found; do not build `first.last@company.com` from a pattern and do not
+  invent a recruiter. If no reliable email exists — common for ATS-only roles —
+  do not ship a dangling email draft: drop it, route through the channel that
+  works (the ATS form plus a named LinkedIn contact), and say plainly that no
+  email address was found. If contact discovery cannot run (headless or no web
+  access), say so and mark the destination unresolved instead of shipping a
+  generic draft.
 - Keep sendable drafts clean: no markdown tables, no analysis inside the draft,
   no placeholders unless a fact truly needs confirmation.
-- Put notes, risks, and rationale outside the copy-paste block.
+- Keep the whole pack lean: the sendable content, where to send it, and what to
+  confirm are the body. Fold rationale (why this row, scoring, strategy) into a
+  single footer line and do not restate the report.
 - Flag legal, salary, visa, demographic, relocation, sponsorship, background
   check, and self-identification answers as confirmation-needed unless already
   present in `config/profile.yml`.
 
-Completion criterion: the user can copy the sendable text directly, or can see
-exactly which missing fact blocks direct use.
+Completion criterion: the user can copy the sendable text and knows exactly who
+to send it to, or can see exactly which missing fact — a destination or a gating
+answer — blocks direct use.
 
 ## Inputs
 
@@ -187,24 +209,40 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 | `generate_negotiation_prep` | report, `config/profile.yml`, `modes/_profile.md`, and current market research |
 | `negotiate_and_report` | the drafted negotiation prep in `output/next-packs/` |
 
+Loading a behavior owner means running its relevant steps, not just reading its
+file. In particular, `generate_application_pack` and any `draft_outreach`,
+`send_outreach`, or `follow_up` action MUST run `modes/contact.md` step 1
+(contact discovery) so the `Where To Send It` block names a real recruiter or
+hiring manager, links their profile, and — when the pack includes an email —
+carries a real, deliverable address. Do not emit an email draft you have no
+address to send to. If the report flags gating questions, run `modes/deep.md`
+first.
+
 Pack contents by `suggests` artifact (agent stages draft these; the paired user
 `_ready` stage re-presents the already-drafted artifact plus the exact real-world
 action and what to confirm, it does not invent a new pack):
 
 - `generate_application_pack` (at `evaluated`) -> application pack:
+  - where-to-send block: the apply/ATS URL, the named recruiter or hiring manager
+    with their LinkedIn URL, and a deliverable email address whenever the pack
+    includes an email draft (run contact discovery to populate this)
   - apply/no-apply recommendation (deep-research gating first if flagged)
   - tailored CV/PDF reference
   - "why this role" or cover-letter paragraph
   - copy-paste answers for likely form questions
-  - recruiter, hiring manager, and peer outreach drafts when useful
-  - risk notes and questions to confirm before applying
+  - recruiter, hiring manager, and peer outreach drafts when useful, each
+    addressed to the real named contact found in discovery
+  - a short line of what to confirm before applying
 - `draft_outreach` (on-demand at `applied`) -> outreach pack:
-  - recruiter, hiring manager, and peer outreach drafts
-  - contact-finding suggestion
+  - where-to-send block: the named contact(s) and their LinkedIn URLs from
+    contact discovery
+  - recruiter, hiring manager, and peer outreach drafts, each addressed to a real
+    named contact
 - `follow_up` (reminder at `applied`) -> follow-up pack:
-  - follow-up email
-  - LinkedIn follow-up if no email contact exists
-  - contact-finding suggestion
+  - where-to-send block: the follow-up destination — the address the application
+    thread already uses, or the recruiter's email/LinkedIn found in discovery
+  - follow-up email, only when a real deliverable address exists; otherwise a
+    LinkedIn follow-up to the named contact
   - close/deprioritize note if the cadence is cold
 - `generate_interview_cheatsheet` / `regenerate_cheatsheet` (at `responded`,
   on-demand at `interview_ready`) -> interview cheatsheet pack:
@@ -246,21 +284,18 @@ Pack format:
 **Stage:** {current stage id}
 **Owner:** {agent / user / company / none}
 **Suggests:** {suggests action}
-**Score:** {score}
-**Report:** {report path}
+**Score:** {score} | **Report:** {report path}
 
-### Quick Reference
-- **Company:** ...
-- **Role:** ...
-- **Why it matters:** ...
-- **Main blocker:** ...
-- **What to confirm:** ...
-- **Deadline or cadence:** ...
+### Where To Send It
+- **Apply:** {ATS/form URL, or the exact submit channel}
+- **Contact:** {name} -- {title} | {LinkedIn URL}   (alternates on their own lines)
+- **Email:** {deliverable address found in discovery, or `none found -- apply via ATS + LinkedIn`}
 
 ### Copy-Paste: {Email / LinkedIn / Form Answer / Script}
+To: {recipient email or LinkedIn profile -- required for any message with a destination}
 Subject: ...
 
-Hi ...,
+Hi {name},
 
 ...
 
@@ -270,25 +305,10 @@ Best,
 ### Copy-Paste: {Second Sendable Item, if useful}
 ...
 
-### Cheatsheet
-- ...
+### Before You Send
+- {facts to confirm, blockers, and gating answers -- a few bullets, no report restatement}
 
-### Risks And Confirmations
-- ...
-
-### Why This Was Selected
-- ...
-
-### Recommended Approvals
-- ...
-
-### Suggested Stage Update
-```yaml
-# Only if the transition is allowed by the current stage's next_states.
-applications:
-  "{tracker_num}":
-    stage: {next stage id}
-```
+_Selected: {one-line why}. Suggested stage: {next stage id} — allowed by the current stage's next_states; apply only after you approve._
 ````
 
 Completion criterion: the user can review the pack and decide the next human
