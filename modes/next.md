@@ -41,6 +41,10 @@ without a second research step before the user can act.
   generic draft.
 - Keep sendable drafts clean: no markdown tables, no analysis inside the draft,
   no placeholders unless a fact truly needs confirmation.
+- Make every sendable message read like the user typed it, not a template. Apply
+  `voice-dna.md` Tier 2 through `modes/contact.md`: warm human opener,
+  contractions, natural flow, no keyword dumps, no em dashes. A pre-apply question
+  stays warm and focused on the question itself -- no proof-point dump.
 - Keep the whole pack lean: the sendable content, where to send it, and what to
   confirm are the body. Fold rationale (why this row, scoring, strategy) into a
   single footer line and do not restate the report.

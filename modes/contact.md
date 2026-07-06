@@ -31,29 +31,49 @@ short message; otherwise run the LinkedIn power move below.
 
 3. **Select primary target**: the person who would benefit most from the candidate being there
 
-4. **Generate message** with a 3-sentence framework adapted to the contact type:
+4. **Classify the message intent, then write it like a human.** Intent decides
+   how much to say:
+
+   - **Pre-apply question** (eligibility, location, visa/EOR, logistics, "one
+     quick thing before I apply"): warm and focused on the question. Do NOT pitch
+     fit or list proof points -- you're asking, not selling. A friendly opener,
+     one line of personal context only if the question needs it, then the
+     question itself. This is the intent for a "can you consider an EU-based
+     candidate?" message.
+   - **Fit pitch** (first-touch to earn a conversation): use the persona
+     checklist below.
+   - **Referral**: see Peer below.
+
+   **Voice (non-negotiable):** the message must read like the candidate typed it,
+   not like a filled-in template. Apply `voice-dna.md` Tier 2 (see `_shared.md` →
+   Voice DNA): a warm human opener ("Hi Carolina, pleasure to meet"), contractions,
+   direct "I"/"you", natural connective tissue ("before I do that though", "I just
+   had a small question"), and varied rhythm. NO em dashes, NO keyword dumps (a
+   message is not a CV). The persona notes below are a checklist of what to
+   *cover* -- never three labelled sentences stitched together.
 
    ### Recruiter
-   - **Sentence 1 (Fit)**: Direct match criteria -- role, relevant experience, availability, or location
-   - **Sentence 2 (Proof)**: Data that answers their screening questions before they ask them (e.g., "5 years building ML pipelines, currently in Berlin, available immediately")
-   - **Sentence 3 (CTA)**: "Happy to share my CV if this aligns with what you're looking for"
+   - Cover: the direct match (role, relevant experience, availability, location),
+     one proof that answers a screening question before they ask it, and an easy
+     CTA ("happy to share my CV if this looks aligned"). Woven into natural
+     sentences, not a spec sheet.
 
    ### Hiring Manager
-   - **Sentence 1 (Hook)**: Specific challenge their team is facing (extracted from the JD, company blog, or news)
-   - **Sentence 2 (Proof)**: Candidate's greatest quantifiable achievement showing they have solved similar problems
-   - **Sentence 3 (CTA)**: "Would love to hear how your team is approaching [specific challenge]"
+   - Cover: a specific challenge their team is facing (from the JD, blog, or news),
+     one concrete result where you solved something similar, and a low-friction
+     CTA ("would love to hear how your team is approaching {challenge}").
 
    ### Peer (referral)
-   - **Sentence 1 (Interest)**: Genuine reference to their work -- blog post, talk, open-source project, or publication
-   - **Sentence 2 (Connection)**: Something the candidate is doing in the same space (NOT a job pitch)
-   - **Sentence 3 (CTA)**: "I've been working on similar problems at [company], would love to hear your take on [topic]"
-   - **Note**: DO NOT ask for a job. The referral happens naturally if the conversation flows.
+   - Cover: a genuine reference to their work (post, talk, open-source project,
+     publication), what you're doing in the same space (NOT a job pitch), and a
+     curious CTA ("I've been working on similar problems at {company}, would love
+     your take on {topic}"). DO NOT ask for a job; the referral happens naturally
+     if the conversation flows.
 
    ### Interviewer (pre-interview)
-   - **Sentence 1 (Research)**: Reference to something specific from their work or trajectory
-   - **Sentence 2 (Context)**: Light connection to the candidate's experience in that area
-   - **Sentence 3 (CTA)**: "Looking forward to our conversation on [date]"
-   - **Note**: Light tone, not desperate. The goal is to show that you prepared.
+   - Cover: something specific from their work or trajectory, a light connection
+     to the candidate's experience, and a warm sign-off ("looking forward to our
+     conversation on {date}"). Light, prepared, never desperate.
 
 5. **Versions**:
    - EN (default)
@@ -75,12 +95,20 @@ the CTA phrasing (e.g. "screens unknown numbers" → prefer email wording) but d
 not quote the note verbatim in a public-facing message.
 
 **Message rules:**
-- Maximum 300 characters (LinkedIn connection request limit)
+- **Length by channel:** the 300-character cap applies only to a LinkedIn
+  *connection request note*. A direct message, InMail, email, or in-form question
+  has no such limit -- keep it concise but let it breathe (a few short sentences).
+  Never sacrifice a warm, natural read just to hit a character count. When the
+  channel is a 300-char connection note, say so and trim to fit without going
+  robotic.
 - NO corporate-speak
 - NO "I'm passionate about..."
+- NO keyword dumps -- a message is not a CV
+- Write like a person: warm opener, contractions, natural flow, NO em dashes (see
+  Voice above)
 - Something that makes them want to respond
 - NEVER share phone number
-- The contact type changes the EMPHASIS, not the structure
+- The contact type and intent change the EMPHASIS and length, not the honesty
 
 ---
 
