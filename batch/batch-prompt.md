@@ -438,7 +438,7 @@ TSV format (single line, no header, 9 tab-separated columns):
 
 **Optional fields (column >= 10):** if the offer came through an agency/recruiter (#1596), append a tagged field `via={Agency}` (for example, `via=Hays`) — never positional; the tag is mandatory. A single untagged extra field keeps its legacy meaning as location. If the end employer is unknown, use `?` as company and add the descriptor in notes (for example, `fintech, Leeds`). `merge-tracker.mjs` rejects ambiguous extras (two untagged fields, or two `via=` fields).
 
-**Valid canonical statuses:** `Evaluated`, `Applied`, `Responded`, `Interview`, `Offer`, `Rejected`, `Discarded`, `SKIP`
+**Valid canonical statuses** (source of truth: `templates/states.yml`): `Evaluated`, `Application Ready`, `Applied`, `Outreach Ready`, `Responded`, `Interview Ready`, `Offer`, `Offer Ready`, `Accepted`, `Rejected`, `Discarded`, `SKIP`. A fresh batch evaluation only ever emits `Evaluated`, `SKIP`, or `Discarded`.
 
 Calculate `{next_num}` by reading the last line of `data/applications.md`.
 
