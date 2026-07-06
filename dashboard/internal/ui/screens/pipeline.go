@@ -1862,7 +1862,7 @@ func nextActionLabel(app model.CareerApplication) string {
 
 	switch app.NextAction {
 	case "generate_application_pack":
-		return "Generate application pack"
+		return "Generate application"
 	case "send_application":
 		return "Send application"
 	case "draft_outreach":

@@ -692,7 +692,7 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 		{
 			name: "application generation",
 			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_application_pack"},
-			want: "Generate application pack",
+			want: "Generate application",
 		},
 		{
 			name: "application send after artifact",
