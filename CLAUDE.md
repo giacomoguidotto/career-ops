@@ -385,7 +385,7 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 
 ### Canonical States (applications.md)
 
-**Source of truth (full descriptions, owners + aliases):** `templates/states.yml`. The 12 canonical states (use exactly one): `Evaluated` · `Application Ready` · `Applied` · `Outreach Ready` · `Responded` · `Interview Ready` · `Offer` · `Offer Ready` · `Accepted` · `Rejected` · `Discarded` · `SKIP`. Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`; subloop `Outreach Ready` off `Applied`; terminals `Rejected` / `Discarded` / `SKIP`.
+**Source of truth (full descriptions, owners + aliases):** `templates/states.yml`. The 14 canonical states (use exactly one): `Evaluated` · `Application Ready` · `Qualifying Ready` · `Qualifying Sent` · `Applied` · `Outreach Ready` · `Responded` · `Interview Ready` · `Offer` · `Offer Ready` · `Accepted` · `Rejected` · `Discarded` · `SKIP`. Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`; subloops `Qualifying Ready` → `Qualifying Sent` off `Evaluated` (opt-in gating-question check before applying) and `Outreach Ready` off `Applied`; terminals `Rejected` / `Discarded` / `SKIP`.
 
 **RULES:** no markdown bold (`**`), no dates (those go in the date column), no extra text (use the notes column) in the status field.
 @AGENTS.md

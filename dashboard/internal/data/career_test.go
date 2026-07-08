@@ -537,7 +537,7 @@ func TestLoadReportSummaryExtractsCompensationRange(t *testing.T) {
 	}
 }
 
-func TestLoadReportSummaryExtractsCurrencyCodeCompensationRange(t *testing.T) {
+func TestLoadReportSummaryNormalizesCurrencyCodeToSymbol(t *testing.T) {
 	tempDir := t.TempDir()
 	reportsDir := filepath.Join(tempDir, "reports")
 	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
@@ -559,8 +559,8 @@ Comp score: 4.0/5.
 	}
 
 	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "hume.md"))
-	if comp != "USD 180K-230K" {
-		t.Fatalf("comp = %q, want USD 180K-230K", comp)
+	if comp != "$180K-230K" {
+		t.Fatalf("comp = %q, want $180K-230K", comp)
 	}
 }
 
@@ -572,6 +572,8 @@ func TestNormalizeStatusMapsStagesToDashboardGroups(t *testing.T) {
 	cases := map[string]string{
 		"Evaluated":         "evaluated",
 		"Application Ready": "evaluated",
+		"Qualifying Ready":  "evaluated",
+		"Qualifying Sent":   "evaluated",
 		"Applied":           "applied",
 		"Outreach Ready":    "applied",
 		"Responded":         "responded",
@@ -608,6 +610,7 @@ func TestDeriveNextActionByOwner(t *testing.T) {
 	}{
 		{"Evaluated", "needs_action", "generate_application_pack", "agent"},
 		{"Application Ready", "needs_action", "send_application", "user"},
+		{"Qualifying Ready", "needs_action", "send_qualifying_questions", "user"},
 		{"Responded", "needs_action", "generate_interview_cheatsheet", "agent"},
 		{"Interview Ready", "needs_action", "attend_interview_and_report", "user"},
 		{"Offer", "needs_action", "generate_negotiation_prep", "agent"},

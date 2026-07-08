@@ -25,6 +25,20 @@ without a second research step before the user can act.
 - Include copy-paste blocks for anything the user might send or paste into a
   form: email, LinkedIn message, recruiter reply, thank-you note, cover-letter
   paragraph, or application answer.
+- **Honor the posting's explicit application instructions.** Read the report's
+  `## Application Instructions` section and Machine Summary `application_instructions`
+  (re-read the live JD too when the channel is interactive). Every literal ask the
+  posting makes — a "short blurb", "your favorite ice cream flavor", "answer this
+  one question", "put X in the subject line", "email us at ...", "do NOT apply via
+  LinkedIn" — is **mandatory**, including quirky or personal culture-fit prompts.
+  A pack that drops an explicit ask (e.g. omits the ice cream flavor) is a defect,
+  not a stylistic choice. If an ask needs a fact only the user has, leave a clearly
+  labelled `[your answer]` slot rather than silently skipping it.
+- **Match the posting's register.** Read `apply_tone` (or infer the JD's register)
+  and write the blurb and free-text answers to match it. A casual, playful ask from
+  a tiny founder-led team gets a warm, human, first-person note — not a formal
+  cover-letter register. A formal enterprise JD gets a composed one. Mirror the
+  room; never default every pack to the same corporate voice.
 - **Every sendable draft needs a real, discovered destination.** An email draft
   MUST carry a deliverable address in its `To:` line; a LinkedIn or DM draft MUST
   name a real person and link their profile. Run contact discovery
@@ -161,7 +175,15 @@ For an unattended `auto` run, honor the automation invariant: select only
 `agent`-owned stages ready for their generation step, highest-value first:
 
 1. `evaluated` rows (draft the application pack), sorted by score and boosted by
-   report/tracker `APPLY` or strong `Research first` signals.
+   report/tracker `APPLY` or strong `Research first` signals. **Routing:** when
+   the report's `final_decision` is `Research first` and the row has NOT already
+   qualified (no `[qualifying-sent …]` marker in its notes), draft a qualifying
+   question (`draft_qualifying_questions`) and advance it into the qualifying
+   subloop instead of drafting the application pack. Otherwise draft the
+   application pack as usual. This gate is automation policy, like the
+   sub-threshold routing below — the loop-guard (skip qualifying when the marker
+   already exists) is what keeps a returned `qualifying_sent → evaluated` row
+   from re-qualifying forever.
 2. `responded` rows (draft the interview cheatsheet).
 3. `offer` rows (draft negotiation prep).
 
@@ -170,8 +192,10 @@ policy instead of being drafted; that gate is automation policy, not a stage.
 
 For an interactive run with no target, additionally surface the smallest useful
 next step for active non-agent rows: `applied` rows with an overdue follow-up
-reminder, and user-owned `_ready` rows whose waiting artifact and blocker should
-be re-presented. Cap the whole set at three.
+reminder, `qualifying_sent` rows whose gating question is stale (past
+`qualifying_stale_days`, surfaced by `followup-cadence.mjs` as an
+apply-or-discard decision), and user-owned `_ready` rows whose waiting artifact
+and blocker should be re-presented. Cap the whole set at three.
 
 Do not select `skip`, `rejected`, or `discarded` rows, and never advance a `user`-
 or `company`-owned stage in `auto`, unless the user explicitly asks.
@@ -190,6 +214,12 @@ table:
   re-present the waiting artifact and the blocker, but do not advance the stage.
 - `company` stage (`applied`) -> no action. If the follow-up cadence is due, surface
   a follow-up reminder; the user may on-demand request `draft_outreach`.
+- `company` stage (`qualifying_sent`) -> no action; a pre-application wait on the
+  recruiter's answer. If `followup-cadence.mjs` flags it stale (past
+  `qualifying_stale_days`), surface an apply-or-discard decision: recommend
+  applying anyway when the gate was marginal (comp/level curiosity), or
+  discarding when it was a hard blocker (work authorization, relocation) still
+  unanswered. Read the report's `final_decision`/gating notes to judge which.
 - `none` stage -> nothing to do.
 
 Use report `Machine Summary`, tracker notes, and follow-up cadence as supporting
@@ -204,7 +234,9 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 
 | `suggests` action | Load |
 |-------------------|------|
-| `generate_application_pack` | `modes/apply.md`, `modes/contact.md`, optionally `modes/cover.md`; run `modes/deep.md` first if the report flags gating questions |
+| `generate_application_pack` | `modes/apply.md`, `modes/contact.md`, optionally `modes/cover.md` |
+| `draft_qualifying_questions` | `modes/contact.md` (recruiter discovery) + the report's `final_decision`/gating notes — draft ONE tight qualifying question |
+| `send_qualifying_questions` | the drafted qualifying pack in `output/next-packs/` (verify it is ready to send) |
 | `send_application` | the drafted pack in `output/next-packs/` (verify it is ready to send) |
 | `draft_outreach`, `send_outreach` | `modes/contact.md` |
 | `follow_up` | `modes/followup.md` |
@@ -214,13 +246,16 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 | `negotiate_and_report` | the drafted negotiation prep in `output/next-packs/` |
 
 Loading a behavior owner means running its relevant steps, not just reading its
-file. In particular, `generate_application_pack` and any `draft_outreach`,
-`send_outreach`, or `follow_up` action MUST run `modes/contact.md` step 1
-(contact discovery) so the `Where To Send It` block names a real recruiter or
-hiring manager, links their profile, and — when the pack includes an email —
-carries a real, deliverable address. Do not emit an email draft you have no
-address to send to. If the report flags gating questions, run `modes/deep.md`
-first.
+file. In particular, `generate_application_pack`, `draft_qualifying_questions`,
+and any `draft_outreach`, `send_outreach`, or `follow_up` action MUST run
+`modes/contact.md` step 1 (contact discovery) so the `Where To Send It` block
+names a real recruiter or hiring manager, links their profile, and — when the
+pack includes an email — carries a real, deliverable address. Do not emit an
+email draft you have no address to send to. When the report's `final_decision`
+is `Research first` and the row has not already qualified, draft
+`draft_qualifying_questions` instead of the application pack (the pre-application
+qualifying subloop), so the user clears the gate before investing in a full
+application.
 
 Pack contents by `suggests` artifact (agent stages draft these; the paired user
 `_ready` stage re-presents the already-drafted artifact plus the exact real-world
@@ -230,18 +265,35 @@ action and what to confirm, it does not invent a new pack):
   - where-to-send block: the apply/ATS URL, the named recruiter or hiring manager
     with their LinkedIn URL, and a deliverable email address whenever the pack
     includes an email draft (run contact discovery to populate this)
-  - apply/no-apply recommendation (deep-research gating first if flagged)
+  - apply/no-apply recommendation
   - tailored CV/PDF reference
   - "why this role" or cover-letter paragraph
-  - copy-paste answers for likely form questions
+  - copy-paste answers for likely form questions, plus a dedicated answer for
+    every explicit application instruction the posting made (including quirky or
+    personal culture-fit asks), written in the posting's register
   - recruiter, hiring manager, and peer outreach drafts when useful, each
-    addressed to the real named contact found in discovery
+    addressed to the real named contact found in discovery. For a founder-led
+    startup with no recruiter and multiple visible founders, draft one tailored
+    message per relevant founder (typically the CEO plus the technical/eng
+    founder for an engineering role) — individually written to each person, never
+    the same text repeated — and present them as alternatives the user picks from.
   - a short line of what to confirm before applying
+- `draft_qualifying_questions` (at `evaluated`, when `final_decision` is
+  `Research first`) -> qualifying pack:
+  - where-to-send block: the named recruiter/hiring manager and their LinkedIn
+    URL from contact discovery (the question rides the best available channel —
+    a LinkedIn DM, or the ATS "additional info" field when no email exists)
+  - ONE tight qualifying/gating question, warm and focused on the question
+    itself (work authorization, relocation, seniority calibration, comp floor) —
+    no proof-point dump and no application answers yet
+  - a one-line note on which answer clears the gate versus kills the application
 - `draft_outreach` (on-demand at `applied`) -> outreach pack:
   - where-to-send block: the named contact(s) and their LinkedIn URLs from
     contact discovery
   - recruiter, hiring manager, and peer outreach drafts, each addressed to a real
-    named contact
+    named contact. For a founder-led startup with no recruiter and multiple
+    visible founders, draft one tailored message per relevant founder, each
+    individually written, presented as alternatives.
 - `follow_up` (reminder at `applied`) -> follow-up pack:
   - where-to-send block: the follow-up destination — the address the application
     thread already uses, or the recruiter's email/LinkedIn found in discovery
@@ -317,6 +369,7 @@ Best,
 ...
 
 ### Before You Send
+- **Explicit asks covered:** {tick off each instruction from the report's `## Application Instructions` — e.g. "blurb ✅ · favorite ice cream flavor ✅ · subject line keyword ✅". Flag any that need the user's own input.}
 - {facts to confirm, blockers, and gating answers -- a few bullets, no report restatement}
 
 _Selected: {one-line why}. Suggested stage: {next stage id} — allowed by the current stage's next_states; apply only after you approve._
@@ -341,19 +394,29 @@ by the current stage's `next_states` and the owner's required trigger has happen
   node advance-stage.mjs {tracker_num}
   ```
 
-  It reads `templates/states.yml`, advances the row (`evaluated → application_ready`,
-  `responded → interview_ready`, `offer → offer_ready`), and syncs the saved pack's
+  It reads `templates/states.yml`, advances the row (`evaluated → application_ready`
+  or, for a drafted qualifying question, `evaluated → qualifying_ready`;
+  `responded → interview_ready`; `offer → offer_ready`), and syncs the saved pack's
   `**Stage:**/**Owner:**/**Suggests:**` header to the destination stage so the
   dashboard keeps the pack openable and shows the right next step (e.g. "Send
-  application"). This is a safe draft-exists write, allowed in `auto`. Never leave a
-  drafted pack on an un-advanced `evaluated`/`responded`/`offer` row. To advance
-  every row that already has a drafted pack in one pass, run
+  application"). The advancer routes an `evaluated` row by the drafted pack's
+  `**Suggests:**` artifact — `generate_application_pack` → `application_ready`,
+  `draft_qualifying_questions` → `qualifying_ready` — so write that header to match
+  the artifact you drafted. This is a safe draft-exists write, allowed in `auto`.
+  Never leave a drafted pack on an un-advanced `evaluated`/`responded`/`offer` row.
+  To advance every row that already has a drafted pack in one pass, run
   `node advance-stage.mjs --reconcile`.
 - User stage: advance only after the user reports the real-world action -- "I sent
-  the application" -> `applied`; "I sent the outreach" -> back to `applied`; "I did
-  the interview" -> `interview_ready`, `offer`, or `rejected`; "I accepted" ->
-  `accepted`. Record the date in the date column.
+  the application" -> `applied`; "I sent the qualifying questions" -> `qualifying_sent`
+  (also append a `[qualifying-sent YYYY-MM-DD]` marker to the row's notes — it
+  anchors the staleness nudge in `followup-cadence.mjs`); "I sent the outreach" ->
+  back to `applied`; "I did the interview" -> `interview_ready`, `offer`, or
+  `rejected`; "I accepted" -> `accepted`. Record the date in the date column.
 - Company stage (`applied`): advance only when the user reports a company event.
+- Company stage (`qualifying_sent`): advance only when the user reports the
+  recruiter's answer -- a cleared gate -> `evaluated` (now draft the application
+  pack; the `[qualifying-sent …]` marker keeps it from re-qualifying), a dealbreaker
+  -> `skip` or `discarded`.
 - If the user sent a follow-up, append `data/follow-ups.md`.
 - If the user discards an opportunity, set the stage to `discarded` or `skip` only
   when they ask.
@@ -366,7 +429,11 @@ stage exists in `templates/states.yml`.
 
 ## Output Summary
 
-Before summarizing, run the safety net so no drafted pack is ever left behind:
+Before summarizing, run the mandatory reconcile so no drafted pack is ever left
+behind. **This is not optional and not a "safety net" you may skip when step 6
+looks done — the run is INCOMPLETE until this command has been executed and its
+output shown.** It is the single unconditional close of every `next` run,
+including `auto` runs and unattended automations that delegate to this mode:
 
 ```bash
 node advance-stage.mjs --reconcile
@@ -376,6 +443,13 @@ This advances every agent-owned row that has a drafted pack but was not yet
 advanced. It is idempotent: if step 6 already advanced each row, it reports "No
 changes needed." Never end a run with a drafted pack still sitting on an
 `evaluated`, `responded`, or `offer` row.
+
+The reconcile is also enforced deterministically: `node verify-pipeline.mjs`
+runs a **stranded-pack check** that flags any next-pack whose row is still in an
+agent source stage. If you skip the reconcile, that check fails loudly on the
+next health run — so there is no silent way to leave a pack behind. If you are
+unsure whether a run advanced cleanly, run `verify-pipeline.mjs` and confirm it
+reports "No stranded packs."
 
 End with:
 

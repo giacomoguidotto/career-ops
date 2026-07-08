@@ -21,10 +21,12 @@ With the optional Via column (intermediary channel, #1596) after Company:
 Possible states (single source of truth: `templates/states.yml`):
 
 Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`
-Subloop off `Applied`: `Outreach Ready`. Terminals: `Rejected` / `Discarded` / `SKIP`.
+Subloops: `Qualifying Ready` → `Qualifying Sent` off `Evaluated`; `Outreach Ready` off `Applied`. Terminals: `Rejected` / `Discarded` / `SKIP`.
 
-- `Evaluated` = offer evaluated with report; agent drafts the application pack
+- `Evaluated` = offer evaluated with report; agent drafts the application pack (or a qualifying question when the report says `Research first`)
 - `Application Ready` = pack drafted; waiting for the user to submit and report
+- `Qualifying Ready` = gating question drafted; waiting for the user to send it to the recruiter
+- `Qualifying Sent` = gating question sent; pre-application wait on the recruiter (stale after `qualifying_stale_days`, default 7, → apply-or-discard nudge)
 - `Applied` = the candidate submitted their application; ball is with the company
 - `Outreach Ready` = outreach drafted; waiting for the user to send it
 - `Responded` = company responded (not yet interview); agent drafts a cheatsheet

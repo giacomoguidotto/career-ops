@@ -43,12 +43,13 @@ never may.
 
 **Company-owned stage**:
 A pure wait — no task for user or agent. It advances only when the user reports a
-company-side event. Time-based nudges are a Reminder, not a task. (applied.)
+company-side event. Time-based nudges are a Reminder, not a task. (applied,
+qualifying_sent.)
 
 **Ready stage**:
 The User-owned stage paired with an Agent-owned stage: the artifact is drafted and
 waiting for the user to act and report. Named with a `_ready` suffix
-(application_ready, outreach_ready, interview_ready, offer_ready).
+(application_ready, qualifying_ready, outreach_ready, interview_ready, offer_ready).
 _Avoid_: drafted, generated, pending.
 
 **World stage**:
@@ -61,8 +62,9 @@ A Stage with Owner `none` and no successors: accepted, rejected, discarded, skip
 
 **Subloop**:
 A reactive, user-initiated detour off a Stage that drafts an optional artifact and
-then returns to the Spine — never a Spine stage itself. Outreach off `applied` and
-cheatsheet regeneration off `interview_ready` are Subloops.
+then returns to the Spine — never a Spine stage itself. Qualifying (a gating
+question) off `evaluated`, Outreach off `applied`, and cheatsheet regeneration off
+`interview_ready` are Subloops.
 _Avoid_: side quest, branch, detour.
 
 **Automation**:

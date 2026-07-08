@@ -416,12 +416,14 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 
 **Source of truth:** `templates/states.yml` (full descriptions, owners, and aliases)
 
-Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Subloop off `Applied`: `Outreach Ready`. Terminals: `Rejected` / `Discarded` / `SKIP`.
+Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Subloops: `Qualifying Ready` → `Qualifying Sent` off `Evaluated` (opt-in gating-question check before applying); `Outreach Ready` off `Applied`. Terminals: `Rejected` / `Discarded` / `SKIP`.
 
 | State | When to use |
 |-------|-------------|
-| `Evaluated` | Report completed; agent drafts the application pack |
+| `Evaluated` | Report completed; agent drafts the application pack (or, when the report's `final_decision` is `Research first`, a qualifying question) |
 | `Application Ready` | Pack drafted; waiting for the user to submit and report |
+| `Qualifying Ready` | Gating question drafted; waiting for the user to send it to the recruiter |
+| `Qualifying Sent` | Gating question sent; pre-application wait on the recruiter. Stale after `qualifying_stale_days` (default 7) → apply-or-discard nudge |
 | `Applied` | Application sent; ball is with the company |
 | `Outreach Ready` | Outreach drafted; waiting for the user to send it |
 | `Responded` | Company responded; agent drafts an interview cheatsheet |

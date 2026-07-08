@@ -32,11 +32,12 @@ mkdirSync(dirname(APPS_FILE), { recursive: true });
 
 // Pipeline-advancement order keyed by the state machine's dashboard_group
 // (higher = more advanced). Ranking a group rather than each label means the
-// finer stages inherit the right rank automatically: Application Ready rolls up
-// to `evaluated` (not yet in motion), Outreach Ready to `applied`, Offer Ready to
-// `offer`. Applied ranks above the terminal Rejected because an active
-// application outweighs a closed one. Accepted is the most advanced (happy-path
-// terminal) so it is never dropped by a fuzzy title match.
+// finer stages inherit the right rank automatically: Application Ready and the
+// Qualifying Ready/Sent pre-application subloop roll up to `evaluated` (not yet
+// in motion), Outreach Ready to `applied`, Offer Ready to `offer`. Applied ranks
+// above the terminal Rejected because an active application outweighs a closed
+// one. Accepted is the most advanced (happy-path terminal) so it is never dropped
+// by a fuzzy title match.
 const GROUP_RANK = {
   skip: 0,
   discarded: 0,

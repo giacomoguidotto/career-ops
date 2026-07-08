@@ -70,8 +70,9 @@ const MIN_VENDOR_N = (() => {
 // The funnel and outcome buckets work at the coarse dashboard_group level, so
 // each raw status is resolved to its group via the state machine (tracker-utils).
 // The finer stages roll up correctly: Interview Ready → interview, Offer Ready →
-// offer, Outreach Ready → applied, Application Ready → evaluated. Unknown
-// statuses fall back to their cleaned lowercase word.
+// offer, Outreach Ready → applied, Application Ready / Qualifying Ready /
+// Qualifying Sent → evaluated. Unknown statuses fall back to their cleaned
+// lowercase word.
 function normalizeStatus(raw) {
   const clean = String(raw ?? '').replace(/\*\*/g, '').trim().toLowerCase()
     .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
