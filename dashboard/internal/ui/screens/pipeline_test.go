@@ -914,6 +914,54 @@ func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
 	}
 }
 
+func TestShortPipelineListPinsFooterToViewportBottom(t *testing.T) {
+	apps := []model.CareerApplication{
+		{
+			Number:      98,
+			Date:        "2026-06-26",
+			Company:     "Fin",
+			Role:        "Senior Engineer, AI Developer",
+			Status:      "Discarded",
+			Score:       3.9,
+			Location:    "Dublin, Ireland",
+			WorkMode:    "Full",
+			PayRange:    "EUR 97K-117K",
+			LastContact: "2026-07-01",
+			Notes:       "Discarded 2026-07-01: posting removed/expired.",
+		},
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 220, 24)
+	pm.activeTab = tabIndexForFilter(t, filterDiscarded)
+	pm.viewMode = "grouped"
+	pm.applyFilterAndSort()
+
+	view := pm.View()
+	lines := strings.Split(view, "\n")
+	if got := lipgloss.Height(view); got != pm.height {
+		t.Fatalf("view height = %d, want %d:\n%s", got, pm.height, ansi.Strip(view))
+	}
+	if got := ansi.Strip(lines[len(lines)-1]); !strings.Contains(got, "q quit") {
+		t.Fatalf("expected footer on final viewport row, got %q", got)
+	}
+	if got := ansi.Strip(lines[len(lines)-2]); !strings.Contains(got, "Outcome:") {
+		t.Fatalf("expected preview footer directly above help footer, got %q", got)
+	}
+
+	locIdx := -1
+	for i, line := range lines {
+		if strings.Contains(ansi.Strip(line), "Loc:") {
+			locIdx = i
+			break
+		}
+	}
+	if locIdx < 2 {
+		t.Fatalf("expected preview footer with location details, got:\n%s", ansi.Strip(view))
+	}
+	if got := strings.TrimSpace(ansi.Strip(lines[locIdx-2])); got != "" {
+		t.Fatalf("expected blank spacer above preview footer for a short list, got %q", got)
+	}
+}
+
 // Regression: with no committed search query, Esc must NOT close the screen.
 // The help bar advertises only `q quit`, so Esc quitting silently was a bug
 // that surfaced as accidental exits when users hit Esc to "back out" of the UI.

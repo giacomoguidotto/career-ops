@@ -1223,7 +1223,10 @@ func (m PipelineModel) View() string {
 	}
 
 	// Calculate available height for body
-	previewLines := strings.Count(preview, "\n") + 1
+	previewLines := 0
+	if preview != "" {
+		previewLines = lipgloss.Height(preview)
+	}
 	availHeight := m.height - m.chromeRowsFixed() - previewLines
 	if availHeight < 3 {
 		availHeight = 3
@@ -1257,7 +1260,18 @@ func (m PipelineModel) View() string {
 	if searchBar != "" {
 		sections = append(sections, searchBar)
 	}
-	sections = append(sections, m.renderColumnHeader(), body, preview, help)
+	sections = append(sections, m.renderColumnHeader(), body)
+
+	footerSections := []string{}
+	if preview != "" {
+		footerSections = append(footerSections, preview)
+	}
+	footerSections = append(footerSections, help)
+
+	if spacerRows := m.footerSpacerRows(sections, footerSections...); spacerRows > 0 {
+		sections = append(sections, m.blankInheritedLines(spacerRows))
+	}
+	sections = append(sections, footerSections...)
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
@@ -2127,6 +2141,34 @@ func (m PipelineModel) barSpace(width int) string {
 
 func (m PipelineModel) blankInheritedLine() string {
 	return strings.Repeat(" ", m.width)
+}
+
+func (m PipelineModel) blankInheritedLines(rows int) string {
+	if rows <= 0 {
+		return ""
+	}
+	lines := make([]string, rows)
+	for i := range lines {
+		lines[i] = m.blankInheritedLine()
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m PipelineModel) footerSpacerRows(sections []string, footerSections ...string) int {
+	if m.height <= 0 {
+		return 0
+	}
+	rows := 0
+	for _, section := range sections {
+		rows += lipgloss.Height(section)
+	}
+	for _, section := range footerSections {
+		rows += lipgloss.Height(section)
+	}
+	if rows >= m.height {
+		return 0
+	}
+	return m.height - rows
 }
 
 func (m PipelineModel) renderBarLine(content string, padding int) string {
