@@ -2,6 +2,8 @@ package screens
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"github.com/santifer/career-ops/dashboard/internal/model"
 	"github.com/santifer/career-ops/dashboard/internal/theme"
 )
 
@@ -468,6 +471,82 @@ func TestViewerFooterBackgroundCoversHelpText(t *testing.T) {
 	}
 	if count := strings.Count(footer, "48;2;"); count < 8 {
 		t.Fatalf("expected footer background across styled help spans, got %d background spans in %q", count, footer)
+	}
+}
+
+func TestNextStepViewerFooterIncludesLinkShortcuts(t *testing.T) {
+	m := ViewerModel{
+		title:     "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
+		app:       model.CareerApplication{JobURL: "https://jobs.example.com/acme"},
+		cvPDFPath: "/tmp/career-ops/output/cv-jane-doe-acme-2026-07-08.pdf",
+		width:     120,
+		height:    20,
+		theme:     theme.NewTheme("catppuccin-mocha"),
+	}
+
+	plain := ansi.Strip(m.renderFooter())
+	for _, want := range []string{"o URL", "d PDF", "c status", "Esc back"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected footer to include %q, got %q", want, plain)
+		}
+	}
+}
+
+func TestNextStepViewerOpenURLShortcut(t *testing.T) {
+	m := ViewerModel{
+		title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
+		app:    model.CareerApplication{JobURL: "https://jobs.example.com/acme"},
+		width:  80,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("expected o to emit an open-URL command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(PipelineOpenURLMsg)
+	if !ok {
+		t.Fatalf("expected PipelineOpenURLMsg, got %T", msg)
+	}
+	if openMsg.URL != "https://jobs.example.com/acme" {
+		t.Fatalf("opened URL = %q", openMsg.URL)
+	}
+}
+
+func TestNextStepViewerOpenPDFShortcut(t *testing.T) {
+	root := t.TempDir()
+	writePDFFixture(t, root, "output/cv-jane-doe-globex-2026-06-05.pdf")
+	nextPackPath := filepath.Join(root, "output", "next-packs", "042-globex.md")
+	if err := os.MkdirAll(filepath.Dir(nextPackPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	if err := os.WriteFile(nextPackPath, []byte("## Next: Globex -- Engineer"), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+
+	m := NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		nextPackPath,
+		"NEXT STEP: Send Application / Globex / Engineer",
+		80,
+		20,
+		model.CareerApplication{Company: "Globex", Role: "Engineer"},
+	)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if cmd == nil {
+		t.Fatal("expected d to emit an open-PDF command")
+	}
+	msg := cmd()
+	openMsg, ok := msg.(PipelineOpenPDFMsg)
+	if !ok {
+		t.Fatalf("expected PipelineOpenPDFMsg, got %T", msg)
+	}
+	if !strings.HasSuffix(openMsg.Path, "cv-jane-doe-globex-2026-06-05.pdf") {
+		t.Fatalf("opened PDF path = %q", openMsg.Path)
 	}
 }
 

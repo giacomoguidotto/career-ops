@@ -40,6 +40,7 @@ type ViewerModel struct {
 	app             model.CareerApplication
 	careerOpsPath   string
 	coverLetterPath string
+	cvPDFPath       string
 	statusPicker    bool
 	statusCursor    int
 }
@@ -65,6 +66,7 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 		app:             app,
 		careerOpsPath:   careerOpsPath,
 		coverLetterPath: parseCoverLetterPath(lines, careerOpsPath),
+		cvPDFPath:       resolveViewerPDFPath(careerOpsPath, app),
 	}
 	m.rebuildRender()
 	return m
@@ -94,6 +96,18 @@ func parseCoverLetterPath(lines []string, careerOpsPath string) string {
 		}
 	}
 	return ""
+}
+
+func resolveViewerPDFPath(careerOpsPath string, app model.CareerApplication) string {
+	if careerOpsPath == "" {
+		return ""
+	}
+	manifest := data.LoadPDFManifest(careerOpsPath)
+	candidates := data.ResolvePDFs(careerOpsPath, app, manifest)
+	if len(candidates) == 0 {
+		return ""
+	}
+	return filepath.Join(careerOpsPath, filepath.FromSlash(candidates[0]))
 }
 
 // rebuildRender recomputes renderedLines from raw lines using the current width.
@@ -221,6 +235,16 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			if m.coverLetterPath != "" {
 				fullPath := filepath.Join(m.careerOpsPath, filepath.FromSlash(m.coverLetterPath))
 				return m, func() tea.Msg { return ViewerOpenCoverLetterMsg{Path: fullPath} }
+			}
+
+		case "o":
+			if m.app.JobURL != "" {
+				return m, func() tea.Msg { return PipelineOpenURLMsg{URL: m.app.JobURL} }
+			}
+
+		case "d":
+			if m.cvPDFPath != "" {
+				return m, func() tea.Msg { return PipelineOpenPDFMsg{Path: m.cvPDFPath} }
 			}
 		}
 
@@ -971,18 +995,45 @@ func (m ViewerModel) renderFooter() string {
 				keyStyle.Render("Esc/q") + descStyle.Render(" cancel"))
 	}
 
-	footer := keyStyle.Render("jk") + descStyle.Render(" scroll  ") +
-		keyStyle.Render("^D/^U") + descStyle.Render(" half  ") +
-		keyStyle.Render("Space/b") + descStyle.Render(" page  ") +
-		keyStyle.Render("g/G") + descStyle.Render(" top/end  ") +
-		keyStyle.Render("c") + descStyle.Render(" status  ") +
-		keyStyle.Render("Esc") + descStyle.Render(" back")
-
-	if m.coverLetterPath != "" {
-		footer += "  " + keyStyle.Render("L") + descStyle.Render(" cover letter")
+	segments := m.footerSegments(keyStyle, descStyle, false)
+	footer := strings.Join(segments, "  ")
+	budget := m.width - 2
+	if budget < 1 {
+		budget = 1
+	}
+	if lipgloss.Width(footer) > budget {
+		footer = strings.Join(m.footerSegments(keyStyle, descStyle, true), "  ")
+	}
+	if lipgloss.Width(footer) > budget {
+		footer = ansi.Truncate(footer, budget, "")
 	}
 
 	return style.Render(footer)
+}
+
+func (m ViewerModel) footerSegments(keyStyle, descStyle lipgloss.Style, compact bool) []string {
+	segments := []string{
+		keyStyle.Render("jk") + descStyle.Render(" scroll"),
+	}
+	if !compact {
+		segments = append(segments,
+			keyStyle.Render("^D/^U")+descStyle.Render(" half"),
+			keyStyle.Render("Space/b")+descStyle.Render(" page"),
+			keyStyle.Render("g/G")+descStyle.Render(" top/end"),
+		)
+	}
+	if m.app.JobURL != "" {
+		segments = append(segments, keyStyle.Render("o")+descStyle.Render(" URL"))
+	}
+	if m.cvPDFPath != "" {
+		segments = append(segments, keyStyle.Render("d")+descStyle.Render(" PDF"))
+	}
+	segments = append(segments, keyStyle.Render("c")+descStyle.Render(" status"))
+	if m.coverLetterPath != "" {
+		segments = append(segments, keyStyle.Render("L")+descStyle.Render(" cover letter"))
+	}
+	segments = append(segments, keyStyle.Render("Esc")+descStyle.Render(" back"))
+	return segments
 }
 
 func (m ViewerModel) handleStatusPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
