@@ -62,6 +62,17 @@ On contradiction, add exactly one flag line at the top of Block B in the report,
 
 The flag is an additive line only — Block B's existing content stays unchanged below it, and no flag line appears when there is no contradiction.
 
+### Application instructions capture
+
+Scan the JD (and any linked application page) for **explicit application instructions** — anything the posting literally tells the applicant to do or include. These are captured here so the downstream `next`/`apply` pack cannot lose them:
+
+- **Content asks:** "tell us about X", "include your favorite Y", "send a short blurb about Z", "answer this one question", "share a link to ...".
+- **Channel asks:** "email us at ...", "apply via ...", "do NOT apply through LinkedIn", "put [keyword] in the subject line".
+- **Personality / culture asks:** quirky or personal prompts (a favorite ice-cream flavor, a fun fact, a hot take, a meme). These are deliberate culture-fit filters — treat them as **required**, never optional or decorative.
+- **Tone signal:** note the JD's register in one word (formal / direct / casual / playful) and whether it comes from a tiny founder-led team. This drives how the pack's blurb should read.
+
+Record every instruction **verbatim** in the report — never paraphrase a specific ask into a generic one (do not collapse "a short blurb about yourself and your favorite ice cream flavor" into "application blurb request"). If the posting gives no special instructions, capture `None (standard form)`.
+
 ## Block B — Match with CV
 
 Read `cv.md`. Create a table with each JD requirement mapped to exact lines in the CV.
@@ -381,6 +392,9 @@ Save full evaluation in `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
 
 ## G) Posting Legitimacy
 (full content of block G)
+
+## Application Instructions
+(verbatim explicit application instructions captured in Block A — content asks, channel asks, personality/culture asks, and the one-word tone/register signal. Write `None (standard form)` if the posting has none. The `next`/`apply` pack MUST satisfy every ask listed here.)
 
 ## H) Draft Application Answers
 (only if score >= 4.5 — draft answers for the application form)

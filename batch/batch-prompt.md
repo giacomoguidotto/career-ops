@@ -127,6 +127,15 @@ Make "builder" sound like a professional signal, not a hobbyist label. The frami
 
 Create a table with: detected archetype, domain, function, seniority, remote setup, team size, and TL;DR.
 
+**Application instructions capture:** Scan the JD for **explicit application instructions** — anything the posting literally tells the applicant to do or include. Capture them verbatim so the downstream `next`/`apply` pack cannot lose them:
+
+- **Content asks:** "tell us about X", "include your favorite Y", "send a short blurb about Z", "answer this one question".
+- **Channel asks:** "email us at ...", "apply via ...", "do NOT apply through LinkedIn", "put [keyword] in the subject line".
+- **Personality / culture asks:** quirky or personal prompts (a favorite ice-cream flavor, a fun fact, a hot take). These are deliberate culture-fit filters — **required**, never optional.
+- **Tone signal:** the JD's register in one word (formal / direct / casual / playful) and whether it comes from a tiny founder-led team.
+
+Never paraphrase a specific ask into a generic one. If the posting has no special instructions, capture `None (standard form)`.
+
 #### Block B -- CV Match
 
 Read `cv.md`. Create a table mapping each JD requirement to exact CV lines or `i18n.ts` keys.
@@ -231,6 +240,9 @@ next_action: "{one concrete next step}"
 via: {agency/recruiter firm as a quoted string, or null for direct applications}
 company_confidential: {true when the end employer is unknown (company is "?"), else false}
 advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"), or null when the JD states nothing}
+application_instructions:
+  - "{verbatim explicit ask from the JD, or omit the list (use []) if none}"
+apply_tone: "{formal | direct | casual | playful}"
 ```
 
 Rules:
@@ -240,6 +252,7 @@ Rules:
 - `final_decision` must reflect the full evaluation, not only the CV match.
 - `advertised_comp` is the JD's **own** figure, verbatim; `null` when the JD states nothing — never estimate it and never substitute researched market data (Block D research stays in Block D). Batch workers never write `data/salary-observations.tsv` — the report itself is the advertised observation (`salary-gap.mjs` reads it).
 - Do not invent missing data. If confidence is limited, set `confidence: "Low"` and explain the limitation in the human-readable sections.
+- `application_instructions` lists every explicit application ask **verbatim** (content, channel, and personality/culture asks like "your favorite ice cream flavor"). Use `[]` only when the posting truly has none. `apply_tone` is the JD's one-word register and drives how the `next`/`apply` blurb should read.
 
 ### Step 3 -- Save Report `.md`
 
@@ -287,6 +300,9 @@ next_action: "{one concrete next step}"
 via: {agency/recruiter firm as a quoted string, or null for direct applications}
 company_confidential: {true when the end employer is unknown (company is "?"), else false}
 advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"), or null when the JD states nothing}
+application_instructions:
+  - "{verbatim explicit ask from the JD, or [] if none}"
+apply_tone: "{formal | direct | casual | playful}"
 ```
 
 ## A) Role Summary
@@ -309,6 +325,9 @@ advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"
 
 ## G) Posting Legitimacy
 (complete content)
+
+## Application Instructions
+(verbatim explicit application asks captured in Block A — content, channel, and personality/culture asks, plus the one-word tone signal. Write `None (standard form)` if the posting has none. The `next`/`apply` pack MUST satisfy every ask listed here.)
 
 ---
 

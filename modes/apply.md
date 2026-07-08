@@ -19,7 +19,8 @@ Interactive mode for when the candidate is filling out an application form in Ch
 5. PREFLIGHT   → Confirm posting liveness + company/role match before drafting
 5b. PRE-SCAN   → Scan page for knock-out questions (degree, experience, work authorization/visa, sponsorship, salary floors)
 6. ANALYZE     → Identify ALL visible form questions
-7. GENERATE    → For each question, generate a personalized response
+6b. INSTRUCTIONS → Capture + honor the posting's explicit application asks (blurb, favorite X, subject-line keyword, channel)
+7. GENERATE    → For each question, generate a personalized response in the posting's register
 8. PRESENT     → Show formatted responses for copy-paste
 9. PERSIST     → Save the final filled/submitted answers into the report
 ```
@@ -113,6 +114,20 @@ For each field, preserve the application form contract:
 Never invent answers for legal, demographic, work-authorization, visa/sponsorship, salary, disability, veteran, background-check, relocation, or self-identification fields. If the answer is not present in `config/profile.yml` or visible context, mark it as needing candidate confirmation and provide the safest question to ask the candidate.
 
 
+## Step 6b — Honor explicit application instructions
+
+Some postings tell the applicant exactly what to send. These override the generic form-filling logic and are **mandatory** — a submission that ignores them reads as "didn't read the posting" and is often an intentional filter.
+
+1. Gather the explicit instructions from every source available:
+   - the matched report's `## Application Instructions` section and Machine Summary `application_instructions` / `apply_tone` (when driving from `next`/a report),
+   - the live page/JD in front of you (a "Message to the team", "Anything else?", or free-text box often restates the ask).
+2. Treat each of these as a required item, not a nice-to-have:
+   - **Content asks:** "send a short blurb about yourself", "tell us why", "share a link to something you built".
+   - **Channel asks:** "email us at ...", "put [keyword] in the subject", "apply here, not via LinkedIn".
+   - **Personality / culture asks:** quirky or personal prompts — "your favorite ice cream flavor", a fun fact, a hot take. Answer them for real and in good humour; these are deliberate culture-fit filters. Never drop them because they feel unprofessional, and never fabricate a fact the candidate hasn't given — if it's a genuine personal preference (favorite flavor, etc.), leave a clearly labelled `[your answer]` slot for the candidate to fill.
+3. Before presenting responses, verify every captured instruction maps to a drafted answer. If any is unaddressed, either draft it or flag it as needing the candidate's input. A pack that silently omits an explicit ask is incomplete.
+
+
 ## Step 7 — Generate responses
 
 For each question, generate the response following:
@@ -120,10 +135,11 @@ For each question, generate the response following:
 1. **Report context**: Use proof points from block B, STAR stories from block F
 2. **Previous Section H / Application Answers**: If a draft or final response exists, use it as a base and refine
 3. **"I'm choosing you" tone**: Same auto-pipeline framework
-4. **Specificity**: Reference something specific from the JD visible on screen
-5. **career-ops proof point**: Include in "Additional info" if there is a field for it
-6. **Recruiter-side risk map**: Use `modes/heuristics/recruiter-side.md` to identify what doubt the question is trying to resolve (motivation, stack fit, logistics, comp, work-auth, availability, seniority) and answer that doubt directly.
-7. **Disclosure discipline**: Answer logistics questions truthfully when asked, but do not volunteer sensitive or HR-only details in unrelated motivation/fit answers.
+4. **Match the posting's register**: Read the JD's tone (`apply_tone` from the report, or infer it from the page) and mirror it. A casual, playful ask from a tiny founder-led team gets a warm, human, first-person note — short sentences, contractions, real personality — not a formal cover-letter register. A formal enterprise JD gets a composed, professional register. Never default every answer to the same corporate voice; read the room the posting sets.
+5. **Specificity**: Reference something specific from the JD visible on screen
+6. **career-ops proof point**: Include in "Additional info" if there is a field for it
+7. **Recruiter-side risk map**: Use `modes/heuristics/recruiter-side.md` to identify what doubt the question is trying to resolve (motivation, stack fit, logistics, comp, work-auth, availability, seniority) and answer that doubt directly.
+8. **Disclosure discipline**: Answer logistics questions truthfully when asked, but do not volunteer sensitive or HR-only details in unrelated motivation/fit answers.
 
 **Output format:**
 

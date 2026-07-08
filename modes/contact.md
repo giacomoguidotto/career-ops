@@ -20,16 +20,27 @@ short message; otherwise run the LinkedIn power move below.
 1. **Identify targets** via WebSearch:
    - Hiring manager of the team
    - Assigned recruiter
+   - Founders (for an early-stage startup — check the company page/JD; a small team is often founder-led with no recruiter)
    - 2-3 team peers (people with similar roles)
    - Interviewer (if the candidate already has a scheduled interview)
 
 2. **Classify contact type** -- ask the candidate or infer from context:
    - **Recruiter** -- person whose role is talent acquisition, sourcing, or recruiting
    - **Hiring Manager** -- the person who leads the hiring team
+   - **Founder** -- a co-founder of an early-stage company; at a tiny startup the founders ARE the hiring team (treat like a Hiring Manager: impact/vision emphasis)
    - **Peer** -- someone with a similar role in the team (indirect referral)
    - **Interviewer** -- someone who will interview the candidate (known date)
 
-3. **Select primary target**: the person who would benefit most from the candidate being there
+3. **Select primary target**: the person who would benefit most from the candidate being there.
+
+   **Founder-led startup exception (multiple decision-makers):** when the company
+   is a small startup with no recruiter and several visible founders, there is no
+   single gatekeeper — the founders share hiring. Do not force one "primary". Draft
+   **one message per relevant founder** (typically the CEO plus the technical/eng
+   founder for an engineering role, or all of them if the team is tiny), each
+   **individually tailored** to that person's background and what they own — never
+   the same text repeated with the name swapped. Present them as alternatives the
+   candidate picks from, and say so, so it never reads as a mass blast.
 
 4. **Classify the message intent, then write it like a human.** Intent decides
    how much to say:
