@@ -532,12 +532,12 @@ func TestLoadReportSummaryExtractsCompensationRange(t *testing.T) {
 	}
 
 	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "runpod.md"))
-	if comp != "$150K-200K" {
-		t.Fatalf("comp = %q, want $150K-200K", comp)
+	if comp != "USD 150K-200K" {
+		t.Fatalf("comp = %q, want USD 150K-200K", comp)
 	}
 }
 
-func TestLoadReportSummaryNormalizesCurrencyCodeToSymbol(t *testing.T) {
+func TestLoadReportSummaryNormalizesCurrencyToISOCode(t *testing.T) {
 	tempDir := t.TempDir()
 	reportsDir := filepath.Join(tempDir, "reports")
 	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
@@ -559,8 +559,8 @@ Comp score: 4.0/5.
 	}
 
 	_, _, _, comp := LoadReportSummary(tempDir, filepath.Join("reports", "hume.md"))
-	if comp != "$180K-230K" {
-		t.Fatalf("comp = %q, want $180K-230K", comp)
+	if comp != "USD 180K-230K" {
+		t.Fatalf("comp = %q, want USD 180K-230K", comp)
 	}
 }
 

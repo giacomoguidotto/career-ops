@@ -1364,20 +1364,20 @@ func extractCompRangeFromLine(line string) string {
 		return ""
 	}
 
-	if currency == "$" || currency == "€" || currency == "£" {
-		return currency + low + "-" + high
-	}
+	// Uniform ISO-code prefix (e.g. "USD 150K-200K") so every PAY cell starts
+	// the same way and the column reads cleanly. formatCompCurrency maps the
+	// $/€/£ symbols to USD/EUR/GBP, so the prefix is always a 3-letter code.
 	return currency + " " + low + "-" + high
 }
 
 func formatCompCurrency(raw string) string {
 	switch strings.ToUpper(raw) {
 	case "$", "USD":
-		return "$"
+		return "USD"
 	case "€", "EUR":
-		return "€"
+		return "EUR"
 	case "£", "GBP":
-		return "£"
+		return "GBP"
 	default:
 		return strings.ToUpper(raw)
 	}
