@@ -1879,6 +1879,10 @@ func nextActionLabel(app model.CareerApplication) string {
 		return "Generate application"
 	case "send_application":
 		return "Send application"
+	case "draft_qualifying_questions":
+		return "Draft gating question"
+	case "send_qualifying_questions":
+		return "Send gating question"
 	case "draft_outreach":
 		return "Draft outreach"
 	case "send_outreach":

@@ -963,11 +963,14 @@ func applicationActionKeys(app model.CareerApplication) []string {
 }
 
 // deriveNextAction computes the dashboard's next-action view-model for an
-// application purely from its stage in templates/states.yml. The stage's owner
+// application from its stage in templates/states.yml. The stage's owner
 // determines the affordance (ground rules in states.yml): an agent stage is a
 // draft the automation should generate; a user stage is blocked on a real-world
 // action the user must take and report; a company stage is a pure wait with a
 // follow-up reminder when the cadence is due; a terminal stage has no action.
+// The one policy-aware exception is the Research-first preview at `evaluated`
+// (see the agent case), which mirrors modes/next.md so the displayed next step
+// matches what the automation will actually draft.
 // Pre-evaluation batch statuses are synthesized by the pipeline and handled up
 // front. This replaces the old hand-maintained status->action table.
 func deriveNextAction(app model.CareerApplication, now time.Time, sm *stateMachine) applicationActionRecord {
@@ -998,9 +1001,20 @@ func deriveNextAction(app model.CareerApplication, now time.Time, sm *stateMachi
 	switch st.Owner {
 	case "agent":
 		// The automation generates the suggested artifact, then auto-advances.
+		// Preview exception — Research-first routing (mirrors modes/next.md): at
+		// `evaluated`, a row whose report decided "Research first" (encoded in the
+		// tracker note prefix) and that has not already qualified (no
+		// [qualifying-sent] marker) will have the agent draft a qualifying question,
+		// not an application pack. Showing generate_application_pack there would
+		// mislabel the real next step. The loop-guard (marker present) keeps a
+		// cleared gate showing the application draft.
+		action := st.Suggests
+		if st.ID == "evaluated" && isResearchFirstNote(app.Notes) && !hasQualifyingSentMarker(app.Notes) {
+			action = "draft_qualifying_questions"
+		}
 		return applicationActionRecord{
 			ActionState: "needs_action",
-			NextAction:  st.Suggests,
+			NextAction:  action,
 			Owner:       "agent",
 			Reason:      reason,
 		}
@@ -1045,6 +1059,24 @@ func deriveNextAction(app model.CareerApplication, now time.Time, sm *stateMachi
 // into a single reason line.
 func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// isResearchFirstNote reports whether a tracker row's note carries the
+// "Research first" decision prefix that the evaluator/batch writes for gating-
+// question rows (e.g. "Research first: strong fit, but visa/relocation ..."). It
+// is the zero-IO signal the dashboard uses to preview the qualifying subloop for
+// an evaluated row without re-reading the report file.
+func isResearchFirstNote(notes string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(notes)), "research first")
+}
+
+// hasQualifyingSentMarker reports whether the note carries the
+// [qualifying-sent YYYY-MM-DD] marker written when a row enters Qualifying Sent.
+// Its presence means the row already went through the subloop, so an evaluated
+// row that returned with a cleared gate drafts the application, not another
+// question (the loop-guard from modes/next.md).
+func hasQualifyingSentMarker(notes string) bool {
+	return strings.Contains(strings.ToLower(notes), "[qualifying-sent")
 }
 
 func addDays(date string, days int) string {

@@ -700,6 +700,16 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 			want: "Send application",
 		},
 		{
+			name: "qualifying question draft",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_qualifying_questions"},
+			want: "Draft gating question",
+		},
+		{
+			name: "qualifying question send after artifact",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_qualifying_questions", NextPackPath: "output/next-packs/084-vercel.md"},
+			want: "Send gating question",
+		},
+		{
 			name: "interview cheatsheet generation",
 			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet"},
 			want: "Generate interview cheatsheet",

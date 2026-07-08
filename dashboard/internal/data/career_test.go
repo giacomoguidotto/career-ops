@@ -637,3 +637,30 @@ func TestStatusPriorityRanksAcceptedAsPositiveTerminal(t *testing.T) {
 		t.Errorf("accepted should sort ahead of skip")
 	}
 }
+
+// TestDeriveNextActionResearchFirstPreview asserts that an evaluated row whose
+// note carries the "Research first" decision previews the qualifying-question
+// draft (mirroring modes/next.md routing), while a normal note keeps the
+// application draft and a row that already qualified (loop-guard marker) reverts
+// to the application draft.
+func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
+	sm := states()
+	now := time.Now()
+	cases := []struct {
+		name       string
+		notes      string
+		wantAction string
+	}{
+		{"research-first previews the gating question", "Research first: strong fit, but visa/relocation needs confirmation.", "draft_qualifying_questions"},
+		{"normal evaluated row drafts the application", "APPLY: strong remote Europe fit.", "generate_application_pack"},
+		{"already-qualified row reverts to the application", "Research first: ... [qualifying-sent 2026-07-08]", "generate_application_pack"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := deriveNextAction(model.CareerApplication{Status: "Evaluated", Notes: tc.notes}, now, sm)
+			if rec.NextAction != tc.wantAction || rec.Owner != "agent" {
+				t.Errorf("deriveNextAction = %q/%q, want %q/agent", rec.NextAction, rec.Owner, tc.wantAction)
+			}
+		})
+	}
+}
