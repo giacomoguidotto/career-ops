@@ -235,6 +235,25 @@ function scaffold() {
   rmSync(dir, { recursive: true, force: true });
 }
 
+// 4h. a qualifying pack routes evaluated → Qualifying Ready (not Application Ready)
+{
+  const { dir, appsFile, packsDir } = scaffold();
+  // #84's pack is a qualifying question, not an application pack.
+  writeFileSync(
+    join(packsDir, '084-vercel.md'),
+    '## Next (#84)\n\n**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** draft_qualifying_questions  \n\nbody\n',
+    'utf-8',
+  );
+  const { results } = advanceApplications({ appsFile, packsDir, nums: [84, 93], states });
+  eq('4h: #84 (qualifying pack) → Qualifying Ready', results.find((r) => r.num === 84)?.to, 'Qualifying Ready');
+  eq('4h: #93 (app pack) → Application Ready', results.find((r) => r.num === 93)?.to, 'Application Ready');
+  const tracker = readFileSync(appsFile, 'utf-8');
+  ok('4h: tracker shows Qualifying Ready for #84', /\| 84 \|.*\| Qualifying Ready \|/.test(tracker));
+  const pack84 = readFileSync(join(packsDir, '084-vercel.md'), 'utf-8');
+  ok('4h: pack #84 synced to send_qualifying_questions', /\*\*Suggests:\*\* send_qualifying_questions/.test(pack84) && /\*\*Stage:\*\* qualifying_ready/.test(pack84));
+  rmSync(dir, { recursive: true, force: true });
+}
+
 // ============================================================================
 // Summary
 // ============================================================================

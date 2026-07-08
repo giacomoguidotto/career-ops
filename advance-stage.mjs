@@ -71,15 +71,33 @@ export function findPack(num, dir = packsDir()) {
 }
 
 /**
+ * Extract the drafted artifact from a next-pack's `**Suggests:**` (or legacy
+ * `**Action:**`) header. This is the action the agent just performed, and it is
+ * what disambiguates which `_ready` stage an evaluated row advances to when the
+ * source stage can draft more than one artifact (application pack vs qualifying
+ * question). Returns null when the pack carries no such header.
+ *
+ * @param {string} packContent - Full pack file content.
+ * @returns {string|null}
+ */
+export function packArtifact(packContent) {
+  const m = String(packContent).match(/^\*\*(?:Suggests|Action):\*\*[ \t]*([A-Za-z_]+)[ \t]*$/m);
+  return m ? m[1] : null;
+}
+
+/**
  * Decide the advance for a raw status cell, deriving routing purely from
  * states.yml. Only `agent`-owned stages advance (to their paired `_ready`
  * stage); everything else is reported with a reason so callers never guess.
+ * When the agent stage can draft more than one artifact, `artifact` (the drafted
+ * action, e.g. read from the pack header) selects the correct `_ready` stage.
  *
  * @param {string} statusRaw - Raw status cell text.
  * @param {ReturnType<typeof loadStates>} [states]
+ * @param {string|null} [artifact] - The draft action just performed, when known.
  * @returns {{ ok: boolean, reason?: string, fromLabel?: string, toLabel?: string, readyRecord?: import('./tracker-utils.mjs').StateRecord }}
  */
-export function computeAdvance(statusRaw, states = loadStates()) {
+export function computeAdvance(statusRaw, states = loadStates(), artifact = null) {
   const cur = resolveState(statusRaw, states);
   if (!cur) return { ok: false, reason: 'unknown-status' };
   if (cur.owner !== 'agent') {
@@ -87,7 +105,7 @@ export function computeAdvance(statusRaw, states = loadStates()) {
       cur.owner === 'user' || cur.owner === 'company' ? 'already-advanced' : 'terminal';
     return { ok: false, reason, fromLabel: cur.label };
   }
-  const ready = pairedReadyStage(cur, states);
+  const ready = pairedReadyStage(cur, states, artifact);
   if (!ready) return { ok: false, reason: 'no-pairing', fromLabel: cur.label };
   return { ok: true, fromLabel: cur.label, toLabel: ready.label, readyRecord: ready };
 }
@@ -189,12 +207,21 @@ export function advanceApplications(opts) {
       results.push({ num, ok: false, reason: 'not-in-tracker' });
       continue;
     }
-    const adv = computeAdvance(entry.row.status, states);
+    // Read the drafted pack first: its `**Suggests:**` header names the artifact
+    // just produced, which routes multi-artifact agent stages (evaluated →
+    // application_ready vs qualifying_ready) to the right `_ready` stage.
+    const pack = findPack(num, dir);
+    let packContent = null;
+    let artifact = null;
+    if (pack) {
+      packContent = readFileSync(pack.abs, 'utf-8');
+      artifact = packArtifact(packContent);
+    }
+    const adv = computeAdvance(entry.row.status, states, artifact);
     if (!adv.ok) {
       results.push({ num, ok: false, reason: adv.reason, from: adv.fromLabel });
       continue;
     }
-    const pack = findPack(num, dir);
     if (!pack && !force) {
       results.push({ num, ok: false, reason: 'no-pack', from: adv.fromLabel });
       continue;
@@ -205,7 +232,7 @@ export function advanceApplications(opts) {
 
     let packSynced = false;
     if (pack) {
-      const synced = syncPackHeader(readFileSync(pack.abs, 'utf-8'), adv.readyRecord);
+      const synced = syncPackHeader(packContent, adv.readyRecord);
       if (synced.changed) {
         packWrites.push({ abs: pack.abs, content: synced.content });
         packSynced = true;
@@ -248,8 +275,18 @@ function selfTest() {
   ok('Offer → Offer Ready', computeAdvance('Offer', states).toLabel === 'Offer Ready');
   ok('bold/date noise tolerated', computeAdvance('**Evaluated** 2026-01-01', states).toLabel === 'Application Ready');
 
+  // Multi-artifact evaluated stage disambiguates by the drafted artifact.
+  ok('Evaluated default → Application Ready', computeAdvance('Evaluated', states, null).toLabel === 'Application Ready');
+  ok('Evaluated + app artifact → Application Ready', computeAdvance('Evaluated', states, 'generate_application_pack').toLabel === 'Application Ready');
+  ok('Evaluated + qualifying artifact → Qualifying Ready', computeAdvance('Evaluated', states, 'draft_qualifying_questions').toLabel === 'Qualifying Ready');
+  ok('Evaluated + synced qualifying suggests → Qualifying Ready', computeAdvance('Evaluated', states, 'send_qualifying_questions').toLabel === 'Qualifying Ready');
+  ok('packArtifact reads Suggests header', packArtifact('**Suggests:** draft_qualifying_questions  \n') === 'draft_qualifying_questions');
+  ok('packArtifact null when absent', packArtifact('no header here') === null);
+
   // Non-agent stages never advance.
   ok('Application Ready is already advanced', computeAdvance('Application Ready', states).reason === 'already-advanced');
+  ok('Qualifying Ready is already advanced', computeAdvance('Qualifying Ready', states).reason === 'already-advanced');
+  ok('Qualifying Sent does not advance', computeAdvance('Qualifying Sent', states).ok === false);
   ok('Applied does not advance', computeAdvance('Applied', states).ok === false);
   ok('Accepted is terminal', computeAdvance('Accepted', states).reason === 'terminal');
   ok('unknown status flagged', computeAdvance('Nonsense', states).reason === 'unknown-status');
@@ -264,6 +301,13 @@ function selfTest() {
   ok('pack header hard-break preserved', first.content.includes('send_application  \n'));
   ok('pack header sync reports change', first.changed === true);
   ok('pack header sync is idempotent', syncPackHeader(first.content, ready).changed === false);
+
+  // Qualifying pack header sync.
+  const qReady = computeAdvance('Evaluated', states, 'draft_qualifying_questions').readyRecord;
+  const qRaw = '**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** draft_qualifying_questions  \n';
+  const qSynced = syncPackHeader(qRaw, qReady);
+  ok('qualifying pack → qualifying_ready', /\*\*Stage:\*\* qualifying_ready/.test(qSynced.content));
+  ok('qualifying pack → send_qualifying_questions', /\*\*Suggests:\*\* send_qualifying_questions/.test(qSynced.content));
 
   // Header-aware status rewrite.
   const line = '| 93 | 2026-06-24 | Deepgram | Backend Engineer | 3.85/5 | Evaluated | ✅ | [112](../reports/112.md) | note |';

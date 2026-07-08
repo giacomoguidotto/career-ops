@@ -45,6 +45,14 @@
 #   suggests        The proactive next thing. For agent stages: the artifact the
 #                   automation generates. For user stages: the real-world action
 #                   the user performs and reports. null for company/none.
+#   produced_by     Only on a `_ready` stage reachable from an agent stage that
+#                   can draft MORE THAN ONE artifact (today just `evaluated`,
+#                   which drafts an application pack OR — when the report's
+#                   final_decision is "Research first" — a qualifying question).
+#                   Names the draft action that yields this stage, so the
+#                   deterministic advancer (advance-stage.mjs) routes to the
+#                   correct `_ready` stage by the artifact it just drafted.
+#                   Omitted wherever the agent→_ready pairing is unambiguous.
 #   on_demand       Reactive assists available at this stage but NOT run
 #                   proactively; the user asks for them (e.g. outreach drafting,
 #                   regenerating a cheatsheet for the next round).
@@ -64,25 +72,30 @@ version: 2
 states:
   # ── Spine: evaluated → application_ready → applied → responded →
   #           interview_ready → offer → offer_ready → accepted ──────────────────
+  # Pre-application subloop off `evaluated`: qualifying_ready → qualifying_sent
+  # (opt-in gating-question check before applying).
 
   - id: evaluated
     label: Evaluated
     owner: agent
     suggests: generate_application_pack
-    on_demand: []
-    next_states: [application_ready, skip, discarded]
+    on_demand: [draft_qualifying_questions]
+    next_states: [application_ready, qualifying_ready, skip, discarded]
     dashboard_group: evaluated
     aliases: [evaluada, completed, condicional, hold, evaluar, verificar]
     description: >
       Offer evaluated with a report; ready for the automation to draft an
-      application pack. Scoring/strategy policy may route a sub-threshold row to
-      discard/skip instead of drafting — that gate lives in the automation, not
-      in this table.
+      application pack. Scoring/strategy policy may route a row somewhere other
+      than the default draft — a sub-threshold row to discard/skip, or a report
+      whose final_decision is "Research first" into the qualifying subloop
+      (draft_qualifying_questions) to clear a gating question before investing in
+      an application. Those gates live in the automation, not in this table.
 
   - id: application_ready
     label: Application Ready
     owner: user
     suggests: send_application
+    produced_by: generate_application_pack
     on_demand: []
     next_states: [applied, discarded]
     dashboard_group: evaluated
@@ -90,6 +103,44 @@ states:
     description: >
       Application pack drafted and waiting for the user to submit it and report
       "I sent the application". Not yet applied — still an evaluated-group row.
+
+  # ── Pre-application subloop off `evaluated`: qualify the role with a gating
+  #    question (work authorization, relocation, seniority, comp floor) before
+  #    investing in a full application. Opt-in and skippable — the default spine
+  #    (evaluated → application_ready) is untouched. ──────────────────────────
+
+  - id: qualifying_ready
+    label: Qualifying Ready
+    owner: user
+    suggests: send_qualifying_questions
+    produced_by: draft_qualifying_questions
+    on_demand: []
+    next_states: [qualifying_sent, evaluated, skip, discarded]
+    dashboard_group: evaluated
+    aliases: [qualifying_drafted]
+    description: >
+      A gating/qualifying question has been drafted for the recruiter — an opt-in
+      subloop off `evaluated`, taken when the report's final_decision is "Research
+      first" or on request. Waiting for the user to send it and report "I sent the
+      questions", which moves the row to `qualifying_sent`. Abandoning the subloop
+      returns to `evaluated` to draft the application. Still an evaluated-group row.
+
+  - id: qualifying_sent
+    label: Qualifying Sent
+    owner: company
+    suggests: null
+    on_demand: []
+    next_states: [evaluated, application_ready, skip, discarded]
+    dashboard_group: evaluated
+    aliases: [qualifying_awaiting]
+    description: >
+      Qualifying question sent to the recruiter; a pure pre-application wait. No
+      task for user or agent. followup-cadence.mjs nudges after
+      `qualifying_stale_days` (default 7) with an apply-or-discard decision: if the
+      gate was marginal, apply anyway; if it was a hard blocker still unanswered,
+      discard. Advances only when the user reports the recruiter's answer — a
+      cleared gate returns to `evaluated` to draft the application, a dealbreaker
+      goes to skip/discarded. Still an evaluated-group row.
 
   - id: applied
     label: Applied

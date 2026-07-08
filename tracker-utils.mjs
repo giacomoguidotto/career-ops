@@ -49,6 +49,9 @@ let _statesCache = null;
  * @property {string} label - Human label (e.g. `Evaluated`).
  * @property {string} owner - `agent` | `user` | `company` | `none`.
  * @property {string|null} suggests - The stage's proactive next action, or null.
+ * @property {string|null} producedBy - For a `_ready` stage reachable from an
+ *   agent stage that can draft more than one artifact, the draft action that
+ *   yields it (states.yml `produced_by`); null when the pairing is unambiguous.
  * @property {string[]} nextStates - Allowed successor stage ids.
  * @property {string} group - dashboard_group.
  */
@@ -90,6 +93,7 @@ export function loadStates(options = {}) {
       label: s.label,
       owner: s.owner || 'none',
       suggests: s.suggests || null,
+      producedBy: s.produced_by || null,
       nextStates: (s.next_states || []).map((v) => String(v)),
       group,
     };
@@ -134,25 +138,36 @@ export function resolveState(raw, states = loadStates()) {
  * Given an `agent`-owned stage, return the `_ready` stage it advances to.
  *
  * The state machine pairs each agent stage (the automation drafts an artifact)
- * with exactly one `user`-owned successor (the drafted artifact is re-presented
- * and the user performs the real-world action): `evaluated → application_ready`,
- * `responded → interview_ready`, `offer → offer_ready`. The pairing is derived
- * structurally — the unique `owner: user` entry in the stage's `next_states` —
- * so it stays correct if the table changes, and never hardcodes the mapping.
+ * with a `user`-owned successor (the drafted artifact is re-presented and the
+ * user performs the real-world action): `evaluated → application_ready`,
+ * `responded → interview_ready`, `offer → offer_ready`.
  *
- * Returns null when the stage is not agent-owned, or when the pairing is not a
- * single unambiguous user successor (so callers fail loudly instead of guessing).
+ * When the agent stage has exactly ONE user successor the pairing is that
+ * successor. When it has several — `evaluated` can draft an application pack
+ * (→ application_ready) OR a qualifying question (→ qualifying_ready) — the
+ * caller passes the `artifact` it just drafted and the pairing is the successor
+ * whose `produced_by` (or own `suggests`, so an already-synced pack still
+ * resolves) matches it, falling back to the stage's default `suggests`. This
+ * stays derived from the table, never hardcoding the mapping.
+ *
+ * Returns null when the stage is not agent-owned, or when a multi-successor
+ * stage cannot be disambiguated (so callers fail loudly instead of guessing).
  *
  * @param {StateRecord|null} record - The current stage record.
  * @param {ReturnType<typeof loadStates>} [states] - Preloaded states.
+ * @param {string|null} [artifact] - The draft action just performed, when known.
  * @returns {StateRecord|null} The paired `_ready` stage record, or null.
  */
-export function pairedReadyStage(record, states = loadStates()) {
+export function pairedReadyStage(record, states = loadStates(), artifact = null) {
   if (!record || record.owner !== 'agent') return null;
   const userSuccessors = record.nextStates
     .map((id) => states.byId.get(String(id).toLowerCase()))
     .filter((r) => r && r.owner === 'user');
-  return userSuccessors.length === 1 ? userSuccessors[0] : null;
+  if (userSuccessors.length === 0) return null;
+  if (userSuccessors.length === 1) return userSuccessors[0];
+  const matchKey = (key) =>
+    key ? userSuccessors.find((r) => r.producedBy === key || r.suggests === key) : null;
+  return matchKey(artifact) || matchKey(record.suggests) || null;
 }
 
 /**
