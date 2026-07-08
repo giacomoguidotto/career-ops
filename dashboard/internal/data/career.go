@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1370,9 +1371,13 @@ func extractCompRangeFromLine(line string) string {
 }
 
 func formatCompCurrency(raw string) string {
-	switch raw {
-	case "$", "€", "£":
-		return raw
+	switch strings.ToUpper(raw) {
+	case "$", "USD":
+		return "$"
+	case "€", "EUR":
+		return "€"
+	case "£", "GBP":
+		return "£"
 	default:
 		return strings.ToUpper(raw)
 	}
@@ -1386,7 +1391,7 @@ func formatCompAmount(raw, suffix string) string {
 
 	switch strings.ToUpper(suffix) {
 	case "K":
-		return compactNumber(v) + "K"
+		return compactWhole(v) + "K"
 	case "M":
 		return compactNumber(v) + "M"
 	}
@@ -1395,7 +1400,7 @@ func formatCompAmount(raw, suffix string) string {
 	case v >= 1_000_000:
 		return compactNumber(v/1_000_000) + "M"
 	case v >= 1_000:
-		return compactNumber(v/1_000) + "K"
+		return compactWhole(v/1_000) + "K"
 	default:
 		return compactNumber(v)
 	}
@@ -1404,6 +1409,12 @@ func formatCompAmount(raw, suffix string) string {
 func compactNumber(v float64) string {
 	s := strconv.FormatFloat(v, 'f', 1, 64)
 	return strings.TrimSuffix(s, ".0")
+}
+
+// compactWhole rounds to the nearest integer, so pay ranges render as whole-K
+// values ("61.3K" -> "61K", "191.5K" -> "192K") for a consistent PAY column.
+func compactWhole(v float64) string {
+	return strconv.FormatFloat(math.Round(v), 'f', 0, 64)
 }
 
 // splitTrackerRow splits a tracker table line into trimmed cell values, using
