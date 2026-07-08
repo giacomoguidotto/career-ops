@@ -13,6 +13,8 @@
  * 8. Stale report-number reservation sentinels are garbage-collected
  * 9. No two report files cover the same company+role (warning — see #1425)
  * 10. Every report file has a tracker row referencing it (warning — see #1425)
+ * 11. Via channel consistency for agency-mediated applications
+ * 12. No stranded next-packs — a drafted pack whose row never advanced (warning)
  *
  * Run: node career-ops/verify-pipeline.mjs
  */
@@ -21,6 +23,7 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { canonicalStatus } from './tracker-utils.mjs';
+import { computeAdvance, packArtifact } from './advance-stage.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 // Support both layouts: data/applications.md (boilerplate) and applications.md (original).
@@ -364,6 +367,42 @@ for (const [key, vias] of channelsByRole) {
   }
 }
 if (viaIssues === 0) ok('Via channels consistent');
+
+// --- Check 12: Stranded next-packs ---
+// The `next` mode drafts an agent-owned pack (application pack, interview
+// cheatsheet, negotiation prep) into output/next-packs/ and MUST advance the row
+// to its paired `_ready` stage in the same step. If the advance is skipped the
+// pack is left "stranded": the row still sits in an agent source stage
+// (evaluated/responded/offer) while the drafted artifact exists on disk, so the
+// dashboard keeps showing "generate pack" and every rerun re-drafts it forever.
+// This is the deterministic backstop for the next-mode reconcile: a stranded
+// pack is caught here even when the prose step was missed. Remediation is one
+// idempotent command, so this stays a warning and names it.
+const PACKS_DIR = join(CAREER_OPS, 'output', 'next-packs');
+const entryByNum = new Map(entries.map(e => [e.num, e]));
+let strandedPacks = 0;
+if (existsSync(PACKS_DIR)) {
+  for (const name of readdirSync(PACKS_DIR)) {
+    if (!name.endsWith('.md')) continue;
+    const num = parseInt(name.split('-')[0], 10);
+    if (isNaN(num)) continue;
+    const entry = entryByNum.get(num);
+    if (!entry) continue; // pack with no tracker row is a different concern
+    let artifact = null;
+    try {
+      artifact = packArtifact(readFileSync(join(PACKS_DIR, name), 'utf-8'));
+    } catch {
+      // Unreadable pack — computeAdvance still routes off the row's status.
+    }
+    // ok:true means the row is still in an agent source stage that CAN advance,
+    // i.e. the pack was drafted but the row was never advanced past it.
+    if (computeAdvance(entry.status, undefined, artifact).ok) {
+      warn(`Stranded pack — #${num} (${entry.company}) has a drafted pack but its row is still "${entry.status}". Run: node advance-stage.mjs --reconcile`);
+      strandedPacks++;
+    }
+  }
+}
+if (strandedPacks === 0) ok('No stranded packs');
 
 // --- Summary ---
 console.log('\n' + '='.repeat(50));
