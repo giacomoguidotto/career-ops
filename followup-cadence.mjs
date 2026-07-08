@@ -5,6 +5,11 @@
  * Parses applications.md + follow-ups.md, calculates follow-up cadence
  * for active applications, extracts contacts, and flags overdue entries.
  *
+ * It also nudges the pre-application `qualifying_sent` wait: a gating question
+ * unanswered past `qualifying_stale` days (default 7) surfaces as an overdue
+ * apply-or-discard decision, anchored on the `[qualifying-sent YYYY-MM-DD]`
+ * marker in the row's notes.
+ *
  * Run: node followup-cadence.mjs             (JSON to stdout)
  *      node followup-cadence.mjs --summary   (human-readable dashboard)
  *      node followup-cadence.mjs --overdue-only
@@ -16,7 +21,7 @@ import { join, dirname, relative, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import { dashboardGroup } from './tracker-utils.mjs';
+import { dashboardGroup, resolveState } from './tracker-utils.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
@@ -41,6 +46,7 @@ export const DEFAULT_CADENCE = {
   responded_initial: 1,
   responded_subsequent: 3,
   interview_thankyou: 1,
+  qualifying_stale: 7,
 };
 
 const PROFILE_CADENCE_KEYS = {
@@ -50,6 +56,7 @@ const PROFILE_CADENCE_KEYS = {
   responded_initial_days: 'responded_initial',
   responded_subsequent_days: 'responded_subsequent',
   interview_thankyou_days: 'interview_thankyou',
+  qualifying_stale_days: 'qualifying_stale',
 };
 
 function positiveInteger(value) {
@@ -114,6 +121,18 @@ export function parseDate(dateStr) {
 export function parseAppliedDate(notes) {
   if (!notes) return null;
   const m = String(notes).match(/\bapplied\s+(\d{4}-\d{2}-\d{2})/i);
+  return m ? m[1] : null;
+}
+
+// A row in the `qualifying_sent` stage records WHEN the gating question went to
+// the recruiter as a `[qualifying-sent YYYY-MM-DD]` marker in its notes (written
+// by the `next` mode on the qualifying_ready → qualifying_sent advance). That
+// timestamp anchors the staleness nudge — the tracker `date` column is the
+// evaluation date and can't stand in for it. Returns the date, or null when the
+// marker is absent (nothing to nudge on).
+export function parseQualifyingSentDate(notes) {
+  if (!notes) return null;
+  const m = String(notes).match(/\[qualifying-sent\s+(\d{4}-\d{2}-\d{2})/i);
   return m ? m[1] : null;
 }
 
@@ -253,6 +272,14 @@ export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, foll
   return 'waiting';
 }
 
+// --- Compute qualifying (pre-application gate) staleness ---
+// A qualifying question sitting unanswered past `qualifying_stale` days is the
+// signal to stop waiting and decide: apply anyway if the gate was marginal, or
+// discard if it was a hard blocker. Before that it is a normal wait.
+export function computeQualifyingUrgency(daysSinceSent, cadence = CADENCE) {
+  return daysSinceSent >= cadence.qualifying_stale ? 'overdue' : 'waiting';
+}
+
 // --- Compute next follow-up date ---
 export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
   if (status === 'applied') {
@@ -292,6 +319,41 @@ function analyze() {
   const entries = [];
 
   for (const app of apps) {
+    // Pre-application qualifying wait: nudge on staleness, not the applied cadence.
+    // Keyed on the exact stage (its dashboard_group is `evaluated`, which the
+    // applied/responded/interview cadence deliberately ignores).
+    const stageRec = resolveState(app.status);
+    if (stageRec && stageRec.id === 'qualifying_sent') {
+      const sentDateStr = parseQualifyingSentDate(app.notes);
+      const sentDate = sentDateStr ? parseDate(sentDateStr) : null;
+      if (!sentDate) continue; // no timestamp marker → nothing to nudge on yet
+      const daysSinceSent = daysBetween(sentDate, now);
+      const urgency = computeQualifyingUrgency(daysSinceSent);
+      const staleDate = addDays(sentDate, CADENCE.qualifying_stale);
+      entries.push({
+        num: app.num,
+        date: app.date,
+        company: app.company,
+        role: app.role,
+        status: 'qualifying',
+        stage: 'qualifying_sent',
+        score: app.score,
+        notes: app.notes,
+        reportPath: resolveReportPath(app.report),
+        contacts: extractContacts(app.notes),
+        qualifyingSentDate: sentDateStr,
+        daysSinceApplication: daysSinceSent,
+        daysSinceLastFollowup: null,
+        followupCount: 0,
+        urgency,
+        suggestedAction: 'apply-or-discard',
+        nextFollowupDate: staleDate,
+        nextOverride: null,
+        daysUntilNext: daysBetween(now, parseDate(staleDate)),
+      });
+      continue;
+    }
+
     const normalized = normalizeStatus(app.status);
     if (!ACTIONABLE_STATUSES.includes(normalized)) continue;
 
@@ -376,6 +438,7 @@ function analyze() {
       urgent: entries.filter(e => e.urgency === 'urgent').length,
       cold: entries.filter(e => e.urgency === 'cold').length,
       waiting: entries.filter(e => e.urgency === 'waiting').length,
+      qualifying: entries.filter(e => e.status === 'qualifying').length,
     },
     entries: filtered,
     cadenceConfig: CADENCE,

@@ -84,6 +84,9 @@ location:
 #   responded_initial_days: 1
 #   responded_subsequent_days: 3
 #   interview_thankyou_days: 1
+#   # Days a pre-application qualifying question (Qualifying Sent) may sit
+#   # unanswered before it is nudged as an apply-or-discard decision.
+#   qualifying_stale_days: 7
 
 cv:
   output_format: "html" # "html" (default) or "latex"
