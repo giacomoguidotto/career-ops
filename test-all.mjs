@@ -1091,6 +1091,32 @@ if (
 }
 
 if (
+  nextMode.includes('**Form mirror:**') &&
+  nextMode.includes('### Application Form') &&
+  nextMode.includes('Press `o` to open and fill the form') &&
+  nextMode.includes('### Outreach Messages') &&
+  nextMode.includes('Language proficiency dropdowns') &&
+  nextMode.includes('Salary fields') &&
+  !/Suggested stage after approval|Suggested stage:/.test(nextMode)
+) {
+  pass('next mode form-mirrors applications and keeps stage routing out of user copy');
+} else {
+  fail('next mode missing form-mirror/outreach contract or leaking suggested-stage copy');
+}
+
+if (
+  applyMode.includes('### Step 6a — Resolve obvious fields before asking') &&
+  applyMode.includes('Work authorization') &&
+  applyMode.includes('Languages') &&
+  applyMode.includes('Salary') &&
+  applyMode.includes('Personal identifiers')
+) {
+  pass('apply mode resolves source-backed fields before asking the candidate');
+} else {
+  fail('apply mode missing source-backed field resolution policy');
+}
+
+if (
   applyMode.includes('## Step 5 — Preflight gate') &&
   applyMode.includes('verify liveness with Playwright') &&
   applyMode.includes('matching report has been loaded') &&

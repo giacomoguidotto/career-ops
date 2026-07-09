@@ -109,9 +109,32 @@ For each field, preserve the application form contract:
 - `required`: `yes`, `no`, or `unknown`
 - `limit`: exact character/word limit if visible; otherwise `unknown`
 - `options`: visible options for select/radio/checkbox fields
-- `needs_candidate_confirmation`: `yes` for legal, demographic, work authorization, visa, relocation, salary, disability, veteran, sponsorship, background-check, or self-identification questions unless the answer is explicitly present in `config/profile.yml`
+- `needs_candidate_confirmation`: `yes` for legal, demographic, work authorization, visa, relocation, salary, disability, veteran, sponsorship, background-check, or self-identification questions only when the field cannot be resolved from the source policy below
 
-Never invent answers for legal, demographic, work-authorization, visa/sponsorship, salary, disability, veteran, background-check, relocation, or self-identification fields. If the answer is not present in `config/profile.yml` or visible context, mark it as needing candidate confirmation and provide the safest question to ask the candidate.
+Never invent answers for legal, demographic, work-authorization, visa/sponsorship, salary, disability, veteran, background-check, relocation, or self-identification fields. If the answer is not present in `config/profile.yml`, visible context, the matched report, or a current official source, mark it as needing candidate confirmation and provide the safest question to ask the candidate.
+
+### Step 6a — Resolve obvious fields before asking
+
+Use the in-scope sources before asking the candidate. `config/profile.yml`,
+`cv.md`, the matched report, and current official sources can resolve routine
+fields that would otherwise create useless confirmation loops.
+
+- **Work authorization:** If the profile says the candidate is an EU citizen with
+  no sponsorship needed for EU/EEA/Switzerland, and the role country is in
+  EU/EEA/Switzerland, verify the current rule from an official source and answer
+  the form directly. For Switzerland, mention permit/registration admin only in a
+  free-text note; a yes/no eligibility field should get the resolved yes/no
+  answer.
+- **Languages:** If a language is absent from `cv.md` and `config/profile.yml`,
+  and the form offers `None`, select `None`. Ask only when the user has hinted at
+  an unrecorded level or the form lacks a `None`/equivalent option.
+- **Salary:** Use `config/profile.yml` compensation policy plus the report's
+  role/location estimate and market notes. Provide a concrete range in the
+  requested currency. Mark it for review rather than confirmation unless it falls
+  below the profile floor or the form asks for a binding commitment.
+- **Personal identifiers:** Name, email, LinkedIn, portfolio, GitHub, location,
+  resume path, and CV PDF path come from `config/profile.yml`, `cv.md`, and the
+  report/PDF output. Fill them directly.
 
 
 ## Step 6b — Honor explicit application instructions

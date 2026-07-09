@@ -18,10 +18,15 @@ without a second research step before the user can act.
 - Put the decision and next human action at the top.
 - Include a quick-reference block with the role, score, report, blocker, and the
   exact next step.
-- **Include a `Where To Send It` block.** Anything the pack asks the user to send
-  must first say *where it goes*: the apply channel (ATS/form URL) and the human
-  destination for each drafted message. A message with no destination is an
-  unfinished pack.
+- **Form mirror:** the application pack must show the form the user will see when
+  opening the application from the dashboard. Start the section with
+  ``Press `o` to open and fill the form: {ATS/form URL}``. Then list every captured
+  or likely field in page order, using the exact field label, the answer/selection
+  to enter, and the file to upload. For simple ATS flows such as Ashby,
+  Greenhouse, and Lever, this form mirror is the pack's center of gravity.
+- **Include an `Outreach Messages` section.** Put LinkedIn, YC, email, or other
+  contact links beside the drafted messages. A message with no real destination
+  is an unfinished pack.
 - Include copy-paste blocks for anything the user might send or paste into a
   form: email, LinkedIn message, recruiter reply, thank-you note, cover-letter
   paragraph, or application answer.
@@ -59,16 +64,37 @@ without a second research step before the user can act.
   `voice-dna.md` Tier 2 through `modes/contact.md`: warm human opener,
   contractions, natural flow, no keyword dumps, no em dashes. A pre-apply question
   stays warm and focused on the question itself -- no proof-point dump.
-- Keep the whole pack lean: the sendable content, where to send it, and what to
-  confirm are the body. Fold rationale (why this row, scoring, strategy) into a
-  single footer line and do not restate the report.
-- Flag legal, salary, visa, demographic, relocation, sponsorship, background
-  check, and self-identification answers as confirmation-needed unless already
-  present in `config/profile.yml`.
+  Founder or hiring-manager notes should sound genuinely excited about the role
+  and the work, while still naming only source-backed proof points from the
+  CV/profile/report.
+- Keep the whole pack lean: the form answers, outreach destinations, sendable
+  text, and real confirmations are the body. Fold rationale (why this row,
+  scoring, strategy) into a single footer line and do not restate the report.
+- Resolve obvious fields from the in-scope sources before asking the user.
+  `config/profile.yml`, `cv.md`, the report, and current official sources can
+  answer routine work-authorization, language, and compensation fields. Ask only
+  when the answer depends on private intent, an unrecorded fact, contradictory
+  sources, or a legal edge the current official source check cannot settle.
+- Work authorization for EU/EEA/Switzerland roles: when the profile says the
+  candidate is an EU citizen with no sponsorship needed for EU/EEA/Switzerland,
+  and the current official source check supports the country, provide the form
+  answer directly. Note any permit/registration admin in the field note only when
+  the form has free text.
+- Language proficiency dropdowns: when a language is absent from `cv.md` and
+  `config/profile.yml`, and the form offers `None`, select `None`. A missing
+  language in the source files is enough evidence for `None` unless the user has
+  said otherwise in the current conversation.
+- Salary fields: use `config/profile.yml` compensation policy plus the report's
+  role/location estimate and market notes. Provide a concrete range in the asked
+  currency; mark it for user review, not as a blocker, unless it falls below the
+  profile floor or the form asks for a legally binding commitment.
+- Keep stage-machine details in the metadata header only. The body must guide the
+  user through the next real action; do not include "suggested stage after
+  approval" or other state-machine exposition.
 
-Completion criterion: the user can copy the sendable text and knows exactly who
-to send it to, or can see exactly which missing fact — a destination or a gating
-answer — blocks direct use.
+Completion criterion: the user can press `o`, fill the form from top to bottom
+using the pack, and send one optional outreach message without another lookup.
+Every remaining blocker is a real missing fact, destination, or decision.
 
 ## Inputs
 
@@ -248,10 +274,10 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 Loading a behavior owner means running its relevant steps, not just reading its
 file. In particular, `generate_application_pack`, `draft_qualifying_questions`,
 and any `draft_outreach`, `send_outreach`, or `follow_up` action MUST run
-`modes/contact.md` step 1 (contact discovery) so the `Where To Send It` block
-names a real recruiter or hiring manager, links their profile, and — when the
-pack includes an email — carries a real, deliverable address. Do not emit an
-email draft you have no address to send to. When the report's `final_decision`
+`modes/contact.md` step 1 (contact discovery) so `Outreach Messages` names a
+real recruiter or hiring manager, links their profile, and — when the pack
+includes an email — carries a real, deliverable address. Do not emit an email
+draft you have no address to send to. When the report's `final_decision`
 is `Research first` and the row has not already qualified, draft
 `draft_qualifying_questions` instead of the application pack (the pre-application
 qualifying subloop), so the user clears the gate before investing in a full
@@ -262,15 +288,15 @@ Pack contents by `suggests` artifact (agent stages draft these; the paired user
 action and what to confirm, it does not invent a new pack):
 
 - `generate_application_pack` (at `evaluated`) -> application pack:
-  - where-to-send block: the apply/ATS URL, the named recruiter or hiring manager
-    with their LinkedIn URL, and a deliverable email address whenever the pack
-    includes an email draft (run contact discovery to populate this)
+  - application form mirror: ``Press `o` to open and fill the form: {URL}``, then
+    the fields in page order with exact answers, selections, and uploads
   - apply/no-apply recommendation
   - tailored CV/PDF reference
-  - "why this role" or cover-letter paragraph
   - copy-paste answers for likely form questions, plus a dedicated answer for
     every explicit application instruction the posting made (including quirky or
     personal culture-fit asks), written in the posting's register
+  - standalone "why this role" or cover-letter text only when the form or posting
+    explicitly asks for that field
   - recruiter, hiring manager, and peer outreach drafts when useful, each
     addressed to the real named contact found in discovery. For a founder-led
     startup with no recruiter and multiple visible founders, draft one tailored
@@ -280,22 +306,24 @@ action and what to confirm, it does not invent a new pack):
   - a short line of what to confirm before applying
 - `draft_qualifying_questions` (at `evaluated`, when `final_decision` is
   `Research first`) -> qualifying pack:
-  - where-to-send block: the named recruiter/hiring manager and their LinkedIn
-    URL from contact discovery (the question rides the best available channel —
+  - application form mirror only when useful: show the form URL and the fields
+    that become relevant after the gate clears
+  - outreach messages: the named recruiter/hiring manager and their LinkedIn URL
+    from contact discovery (the question rides the best available channel —
     a LinkedIn DM, or the ATS "additional info" field when no email exists)
   - ONE tight qualifying/gating question, warm and focused on the question
     itself (work authorization, relocation, seniority calibration, comp floor) —
     no proof-point dump and no application answers yet
   - a one-line note on which answer clears the gate versus kills the application
 - `draft_outreach` (on-demand at `applied`) -> outreach pack:
-  - where-to-send block: the named contact(s) and their LinkedIn URLs from
-    contact discovery
+  - outreach messages: the named contact(s) and their LinkedIn URLs from contact
+    discovery
   - recruiter, hiring manager, and peer outreach drafts, each addressed to a real
     named contact. For a founder-led startup with no recruiter and multiple
     visible founders, draft one tailored message per relevant founder, each
     individually written, presented as alternatives.
 - `follow_up` (reminder at `applied`) -> follow-up pack:
-  - where-to-send block: the follow-up destination — the address the application
+  - outreach messages: the follow-up destination — the address the application
     thread already uses, or the recruiter's email/LinkedIn found in discovery
   - follow-up email, only when a real deliverable address exists; otherwise a
     LinkedIn follow-up to the named contact
@@ -349,12 +377,18 @@ Pack format:
 **Suggests:** {suggests action}
 **Score:** {score} | **Report:** {report path}
 
-### Where To Send It
-- **Apply:** {ATS/form URL, or the exact submit channel}
-- **Contact:** {name} -- {title} | {LinkedIn URL}   (alternates on their own lines)
-- **Email:** {deliverable address found in discovery, or `none found -- apply via ATS + LinkedIn`}
+### Application Form
+Press `o` to open and fill the form: {ATS/form URL}
 
-### Copy-Paste: {Email / LinkedIn / Form Answer / Script}
+- **{Exact field label}:** {answer / selection / file}
+- **{Exact field label}:** {answer / selection / file}
+
+### Outreach Messages
+- **{name}:** {title} | {LinkedIn/YC/email URL}
+- **{name}:** {title} | {LinkedIn/YC/email URL}
+- **Email:** {deliverable address found in discovery, or `none found`}
+
+### Copy-Paste: {LinkedIn / Email / Form Answer / Script}
 To: {recipient email or LinkedIn profile -- required for any message with a destination}
 Subject: ...
 
@@ -372,7 +406,7 @@ Best,
 - **Explicit asks covered:** {tick off each instruction from the report's `## Application Instructions` — e.g. "blurb ✅ · favorite ice cream flavor ✅ · subject line keyword ✅". Flag any that need the user's own input.}
 - {facts to confirm, blockers, and gating answers -- a few bullets, no report restatement}
 
-_Selected: {one-line why}. Suggested stage: {next stage id} — allowed by the current stage's next_states; apply only after you approve._
+_Selected: {one-line why}._
 ````
 
 Completion criterion: the user can review the pack and decide the next human
