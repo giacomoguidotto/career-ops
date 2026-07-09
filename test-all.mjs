@@ -1374,26 +1374,26 @@ if (
 }
 
 if (
-  ofertaMode.includes('Company type classification (required)') &&
-  ofertaMode.includes('Growth-stage startup / VC-backed startup') &&
-  ofertaMode.includes('Early-stage startup / pre-revenue startup') &&
-  ofertaMode.includes('Open-source community / education community') &&
-  ofertaMode.includes('actual contract / hiring entity') &&
-  ofertaMode.includes('default compensation reliability to the conservative canonical tier: `Low`') &&
-  ofertaMode.includes('Compensation reliability (required)') &&
-  ofertaMode.includes('If no advertised number exists, collapse this section to exactly two concise lines') &&
-  ofertaMode.includes('skip component split, detailed market rows, and HR verification questions') &&
-  ofertaMode.includes('Advertised range') &&
-  ofertaMode.includes('Likely guaranteed base') &&
-  ofertaMode.includes('Variable / conditional cash components') &&
-  ofertaMode.includes('Expected stable cash') &&
-  ofertaMode.includes('Non-cash benefits') &&
-  ofertaMode.includes('Required HR verification questions when a salary figure exists') &&
-  ofertaMode.includes('Do not present advertised compensation as real take-home pay')
+  offerMode.includes('Company type classification (required)') &&
+  offerMode.includes('Growth-stage startup / VC-backed startup') &&
+  offerMode.includes('Early-stage startup / pre-revenue startup') &&
+  offerMode.includes('Open-source community / education community') &&
+  offerMode.includes('actual contract / hiring entity') &&
+  offerMode.includes('default compensation reliability to the conservative canonical tier: `Low`') &&
+  offerMode.includes('Compensation reliability (required)') &&
+  offerMode.includes('If no advertised number exists, collapse this section to exactly two concise lines') &&
+  offerMode.includes('skip component split, detailed market rows, and HR verification questions') &&
+  offerMode.includes('Advertised range') &&
+  offerMode.includes('Likely guaranteed base') &&
+  offerMode.includes('Variable / conditional cash components') &&
+  offerMode.includes('Expected stable cash') &&
+  offerMode.includes('Non-cash benefits') &&
+  offerMode.includes('Required HR verification questions when a salary figure exists') &&
+  offerMode.includes('Do not present advertised compensation as real take-home pay')
 ) {
-  pass('oferta requires company-type-driven compensation reliability checks');
+  pass('offer requires company-type-driven compensation reliability checks');
 } else {
-  fail('oferta missing durable company-type compensation reliability instructions');
+  fail('offer missing durable company-type compensation reliability instructions');
 }
 
 if (
@@ -1433,13 +1433,13 @@ const patternsModeDoc = readFile('modes/patterns.md');
 const batchPromptDoc = readFile('batch/batch-prompt.md');
 
 if (
-  ofertaMode.includes('Advertised (JD)') &&
-  ofertaMode.includes('salary-observations.tsv') &&
-  ofertaMode.includes('advertised_comp')
+  offerMode.includes('Advertised (JD)') &&
+  offerMode.includes('salary-observations.tsv') &&
+  offerMode.includes('advertised_comp')
 ) {
-  pass('oferta pins the verbatim advertised figure (Block D first row + advertised_comp) and gates desired observations on an explicit user ask');
+  pass('offer pins the verbatim advertised figure (Block D first row + advertised_comp) and gates desired observations on an explicit user ask');
 } else {
-  fail('oferta missing Advertised (JD) row, salary-observations.tsv append rule, or advertised_comp requirement');
+  fail('offer missing Advertised (JD) row, salary-observations.tsv append rule, or advertised_comp requirement');
 }
 
 if (
@@ -6537,7 +6537,7 @@ try {
 
   // 55.3 canonical statuses (templates/states.yml → web status pills/actions)
   const statesSrc = readFileSync(join(ROOT, 'templates', 'states.yml'), 'utf-8');
-  const CANONICAL_STATE_IDS = ['evaluated', 'applied', 'interview', 'offer', 'rejected', 'discarded'];
+  const CANONICAL_STATE_IDS = ['evaluated', 'applied', 'interview_ready', 'offer', 'rejected', 'discarded'];
   const missingStates = CANONICAL_STATE_IDS.filter((s) => !new RegExp(`^  - id: ${s}$`, 'm').test(statesSrc));
   if (missingStates.length === 0) {
     pass('templates/states.yml keeps every canonical status id (new ids may be appended)');
@@ -6545,14 +6545,14 @@ try {
     fail(`templates/states.yml lost canonical status id(s): ${missingStates.join(', ')} — BREAKING for the web status mapping`);
   }
 
-  // 55.4 report format blocks (modes/oferta.md → web report parser)
-  const ofertaSrc = readFileSync(join(ROOT, 'modes', 'oferta.md'), 'utf-8');
+  // 55.4 report format blocks (modes/offer.md -> web report parser)
+  const offerSrc = readFileSync(join(ROOT, 'modes', 'offer.md'), 'utf-8');
   const REPORT_BLOCKS = ['Block A', 'Block B', 'Block C', 'Block D', 'Block E', 'Block F', 'Block G'];
-  const missingBlocks = REPORT_BLOCKS.filter((b) => !ofertaSrc.includes(`## ${b} `));
+  const missingBlocks = REPORT_BLOCKS.filter((b) => !offerSrc.includes(`## ${b} `));
   if (missingBlocks.length === 0) {
-    pass('modes/oferta.md keeps the A-G report block structure (new blocks may be appended)');
+    pass('modes/offer.md keeps the A-G report block structure (new blocks may be appended)');
   } else {
-    fail(`modes/oferta.md lost report block(s): ${missingBlocks.join(', ')} — BREAKING for the web report view`);
+    fail(`modes/offer.md lost report block(s): ${missingBlocks.join(', ')} — BREAKING for the web report view`);
   }
 
   // 55.5 cross-check: the web parser still speaks the same column names

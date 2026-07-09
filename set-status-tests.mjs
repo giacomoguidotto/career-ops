@@ -329,7 +329,7 @@ const TRACKER_10 = `# Applications Tracker
   const sb = makeSandbox(TRACKER_10);
   const r = runSetStatus(['1', 'Interview', '--note', 'onsite loop scheduled'], sb);
   const content = readTracker(sb);
-  if (r.code === 0 && /\| Initech \| AI Engineer \| Remote \| 4.5\/5 \| Interview \|/.test(content)
+  if (r.code === 0 && /\| Initech \| AI Engineer \| Remote \| 4.5\/5 \| Interview Ready \|/.test(content)
       && /onsite loop scheduled/.test(content)) {
     pass('location-layout: 10-col tracker updates the right columns');
   } else {
