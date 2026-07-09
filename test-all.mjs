@@ -808,6 +808,75 @@ if (generatePdfScript.includes('--allow-reorder')) {
   fail('generate-pdf is missing --allow-reorder from its usage strings');
 }
 
+if (generatePdfScript.includes('--max-pages') && generatePdfScript.includes('--allow-overflow')) {
+  pass('generate-pdf documents --max-pages / --allow-overflow in its usage strings');
+} else {
+  fail('generate-pdf is missing --max-pages / --allow-overflow from its usage strings');
+}
+
+if (/--max-pages=1/.test(generatePdfScript)) {
+  pass('generate-pdf usage points at the one-page default (--max-pages=1)');
+} else {
+  fail('generate-pdf usage does not surface the one-page default (--max-pages=1)');
+}
+
+try {
+  const { enforcePageBudget } = await import(pathToFileURL(join(ROOT, 'generate-pdf.mjs')).href);
+
+  const throws = (pageCount, opts) => {
+    try { enforcePageBudget(pageCount, opts); return false; } catch { return true; }
+  };
+
+  // Default cap is two pages: three throws, one/two do not.
+  if (throws(3) && !throws(2) && !throws(1)) {
+    pass('enforcePageBudget defaults to a two-page cap');
+  } else {
+    fail('enforcePageBudget default two-page cap is wrong');
+  }
+
+  // Strict one-pager: two pages throws, one does not.
+  if (throws(2, { maxPages: 1 }) && !throws(1, { maxPages: 1 })) {
+    pass('enforcePageBudget({ maxPages: 1 }) enforces a strict one-pager');
+  } else {
+    fail('enforcePageBudget({ maxPages: 1 }) does not enforce a one-pager');
+  }
+
+  // maxPages: 0 disables the check.
+  if (!throws(9, { maxPages: 0 })) {
+    pass('enforcePageBudget({ maxPages: 0 }) disables the check');
+  } else {
+    fail('enforcePageBudget({ maxPages: 0 }) should disable the check');
+  }
+
+  // allowOverflow downgrades a breach to a warning.
+  const originalWarn = console.warn;
+  let warned = false;
+  console.warn = () => { warned = true; };
+  let threwWithFlag = false;
+  try {
+    enforcePageBudget(2, { maxPages: 1, allowOverflow: true });
+  } catch {
+    threwWithFlag = true;
+  } finally {
+    console.warn = originalWarn;
+  }
+  if (!threwWithFlag && warned) {
+    pass('enforcePageBudget({ allowOverflow: true }) warns instead of throwing on a breach');
+  } else {
+    fail('enforcePageBudget({ allowOverflow: true }) should warn, not throw');
+  }
+
+  // The CLI enforces the budget on the render result (regression: don't drop it).
+  const budgetCall = /enforcePageBudget\s*\(\s*result\.pageCount\s*,/.test(generatePdfScript);
+  if (budgetCall) {
+    pass('generate-pdf CLI enforces the page budget on the render result');
+  } else {
+    fail('generate-pdf CLI does not enforce the page budget on the render result');
+  }
+} catch (e) {
+  fail(`enforcePageBudget tests crashed: ${e.message}`);
+}
+
 try {
   const { validateCvSectionOrder } = await import(pathToFileURL(join(ROOT, 'generate-pdf.mjs')).href);
   const cvMarkdown = '# Education\ntext\n# Work Experience\ntext\n# Projects\ntext';

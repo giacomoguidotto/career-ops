@@ -4,7 +4,7 @@
  * generate-pdf.mjs — HTML → PDF via Playwright
  *
  * Usage:
- *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder]
+ *   node career-ops/generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder] [--max-pages=N] [--allow-overflow]
  *
  * --report links the generated PDF to its tracker/report number and records
  * the linkage in data/pdf-index.tsv so downstream tools (e.g. the TUI
@@ -16,6 +16,14 @@
  * tailored (e.g. Projects moved ahead of Education for a technical-heavy
  * role) rather than accidentally scrambled by an agent. Without this flag,
  * any divergence from cv.md's section order still fails generation.
+ *
+ * --max-pages=N caps the rendered CV length (default 2 — the universal
+ * "never exceed two pages" resume rule). The PDF is always written (so an
+ * overflowing draft can be inspected), then generation fails if the page
+ * count exceeds the cap, prompting the agent to trim content and regenerate.
+ * Pass --max-pages=1 to enforce a strict one-pager (the recommended default
+ * for most roles; see modes/pdf.md). --allow-overflow downgrades the cap to
+ * a warning; --max-pages=0 disables the check entirely.
  *
  * Requires: @playwright/test (or playwright) installed.
  * Uses Chromium headless to render the HTML and produce a clean, ATS-parseable PDF.
@@ -200,6 +208,38 @@ export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false 
 }
 
 /**
+ * Enforce a maximum page budget on a rendered CV.
+ *
+ * Resume best practice is a single page (never more than two). The rendered
+ * page count is only known after Chromium produces the PDF, so this runs
+ * post-render: the file is already written (an overflowing draft is still
+ * useful to inspect and trim from), and this decides whether to accept it.
+ *
+ * @param {number} pageCount - Pages in the rendered PDF.
+ * @param {{ maxPages?: number, allowOverflow?: boolean }} [options]
+ *   `maxPages` caps the length (default 2; 0 or a non-positive value disables
+ *   the check). `allowOverflow` downgrades a breach from a thrown error to a
+ *   console warning, for the rare role that genuinely needs the longer form.
+ */
+export function enforcePageBudget(pageCount, { maxPages = 2, allowOverflow = false } = {}) {
+  if (!Number.isFinite(maxPages) || maxPages <= 0) return;
+  if (!Number.isFinite(pageCount) || pageCount <= maxPages) return;
+
+  const pageWord = maxPages === 1 ? 'page' : 'pages';
+  const message =
+    `CV is ${pageCount} pages, over the ${maxPages}-${pageWord} budget. ` +
+    `Trim the weakest content (extra bullets, older roles, the competencies ` +
+    `strip, secondary projects) and regenerate — or pass --max-pages=${pageCount} ` +
+    `/ --allow-overflow if this role genuinely needs the longer form.`;
+
+  if (allowOverflow) {
+    console.warn(`⚠️  ${message} (proceeding — --allow-overflow set)`);
+    return;
+  }
+  throw new Error(message);
+}
+
+/**
  * Convert a path to a repo-relative manifest entry, or blank if it is unknown
  * or outside the career-ops repository.
  *
@@ -282,14 +322,19 @@ async function generatePDF() {
 
   // Parse arguments
   let inputPath, outputPath, format = 'a4', reportNum = '', allowReorder = false;
+  let maxPages = 2, allowOverflow = false;
 
   for (const arg of args) {
     if (arg.startsWith('--format=')) {
       format = arg.split('=')[1].toLowerCase();
     } else if (arg.startsWith('--report=')) {
       reportNum = arg.split('=')[1].trim();
+    } else if (arg.startsWith('--max-pages=')) {
+      maxPages = Number(arg.split('=')[1]);
     } else if (arg === '--allow-reorder') {
       allowReorder = true;
+    } else if (arg === '--allow-overflow') {
+      allowOverflow = true;
     } else if (!inputPath) {
       inputPath = arg;
     } else if (!outputPath) {
@@ -298,7 +343,7 @@ async function generatePDF() {
   }
 
   if (!inputPath || !outputPath) {
-    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder]');
+    console.error('Usage: node generate-pdf.mjs <input.html> <output.pdf> [--format=letter|a4] [--report=NNN] [--allow-reorder] [--max-pages=N] [--allow-overflow]');
     console.error('');
     console.error('This script only converts an already-built HTML file to PDF.');
     console.error('The input HTML is produced by the pdf mode: the agent fills cv-template.html');
@@ -310,6 +355,11 @@ async function generatePDF() {
 
   if (reportNum && !/^\d+$/.test(reportNum)) {
     console.error(`Invalid --report "${reportNum}". Use the numeric tracker/report number, e.g. --report=018`);
+    process.exit(1);
+  }
+
+  if (!Number.isFinite(maxPages) || maxPages < 0) {
+    console.error(`Invalid --max-pages "${maxPages}". Use a non-negative integer (1 = strict one-pager, 0 = no limit).`);
     process.exit(1);
   }
 
@@ -337,6 +387,7 @@ async function generatePDF() {
   console.log(`📄 Input:  ${inputPath}`);
   console.log(`📁 Output: ${outputPath}`);
   console.log(`📏 Format: ${format.toUpperCase()}`);
+  console.log(`📐 Max pages: ${maxPages === 0 ? 'unlimited' : maxPages}${allowOverflow ? ' (overflow allowed)' : ''}`);
 
   let html = await readFile(inputPath, 'utf-8');
   let cvMarkdown = '';
@@ -356,7 +407,14 @@ async function generatePDF() {
     console.log(`🧹 ATS normalization: ${totalReplacements} replacements (${breakdown})`);
   }
 
-  return renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
+  const result = await renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
+
+  // Length is only known after render. The PDF is already on disk (so an
+  // overflowing draft can be inspected and trimmed from); this decides whether
+  // to accept it. Throws on breach unless --allow-overflow / --max-pages=0.
+  enforcePageBudget(result.pageCount, { maxPages, allowOverflow });
+
+  return result;
 }
 
 /**
