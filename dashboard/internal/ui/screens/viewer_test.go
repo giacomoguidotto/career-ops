@@ -250,7 +250,7 @@ func TestDetailsViewerStartsWithDecisionSnapshot(t *testing.T) {
 	}
 }
 
-func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
+func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	root := t.TempDir()
 	reportPath := filepath.Join(root, "reports", "042-acme.md")
 	nextPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
@@ -285,7 +285,7 @@ func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 	next := strings.Join([]string{
 		"## Next: Acme -- Backend Engineer (#42)",
 		"",
-		"**Next human action:** Send the application after reviewing the salary field.",
+		"**Next human action:** Review the salary field, then submit.",
 		"**Stage:** application_ready",
 		"**Owner:** user",
 		"**Suggests:** send_application",
@@ -315,15 +315,13 @@ func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 
 	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
 	first := firstNonBlankLine(plain)
-	if first != "TL;DR: Useful summary should be first." {
-		t.Fatalf("expected TL;DR to be the first visible detail, got %q in:\n%s", first, plain)
+	if first != "NEXT STEP" {
+		t.Fatalf("expected next step to be first visible detail, got %q in:\n%s", first, plain)
 	}
 	for _, want := range []string{
 		"NEXT STEP",
-		"Next human action: Send the application",
-		"Pipeline stage: Application Ready",
-		"Performed by: You",
-		"Action type: Send application",
+		"Next step: Send the generated application: review the salary field, then",
+		"submit.",
 		"COPY-PASTE",
 		"A) ROLE SUMMARY",
 	} {
@@ -331,9 +329,257 @@ func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 			t.Fatalf("expected details page to contain %q, got:\n%s", want, plain)
 		}
 	}
-	for _, unwanted := range []string{"Next: Acme", "Machine Summary", "machine_only", "Owner:", "Suggests:", "Score: 4.2/5"} {
+	for _, unwanted := range []string{
+		"Next: Acme",
+		"Machine Summary",
+		"machine_only",
+		"Decision:",
+		"Next human action:",
+		"Pipeline stage:",
+		"Performed by:",
+		"Action type:",
+		"Owner:",
+		"Suggests:",
+		"Score: 4.2/5",
+		"TL;DR",
+		"TL;DR: Useful summary should be first.",
+	} {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
+		}
+	}
+}
+
+func TestDetailsViewerFallbackNextStepUsesHumanSentence(t *testing.T) {
+	reportLines := []string{
+		"# Evaluation: Acme -- Backend Engineer",
+		"",
+		"## A) Role Summary",
+		"",
+		"Strong backend fit.",
+	}
+	app := model.CareerApplication{
+		ActionState: "needs_action",
+		NextAction:  "generate_application_pack",
+		ActionOwner: "agent",
+		NextCommand: "/career-ops next 311",
+	}
+	m := ViewerModel{
+		lines:  buildDetailsLines("", reportLines, app),
+		title:  "DETAILS: Acme / Backend Engineer",
+		width:  120,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	if !strings.Contains(plain, "Next step: Generate the application with an agent. Run: /career-ops next 311.") {
+		t.Fatalf("expected fallback next step to be a human sentence, got:\n%s", plain)
+	}
+	for _, unwanted := range []string{
+		"Next action:",
+		"Generate application |",
+		"run:",
+		"owner: agent",
+		"|",
+	} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("expected fallback next step to drop raw detail %q, got:\n%s", unwanted, plain)
+		}
+	}
+}
+
+func TestDetailsAppNextStepSummaryCoversKnownActions(t *testing.T) {
+	cases := []struct {
+		name string
+		app  model.CareerApplication
+		want string
+	}{
+		{
+			name: "generate application pack",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_application_pack", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Generate the application with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "send application",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_application", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			want: "Send the generated application. Open: output/next-packs/311-acme.md.",
+		},
+		{
+			name: "draft qualifying question",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_qualifying_questions", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Draft a qualifying question with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "send qualifying question",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_qualifying_questions", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			want: "Send the qualifying question. Open: output/next-packs/311-acme.md.",
+		},
+		{
+			name: "draft outreach",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_outreach", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Draft outreach with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "send outreach",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_outreach", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			want: "Send the outreach. Open: output/next-packs/311-acme.md.",
+		},
+		{
+			name: "follow up",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "follow_up", ActionOwner: "user", ActionDue: "2026-07-16"},
+			want: "Send a follow-up. Due: 2026-07-16.",
+		},
+		{
+			name: "generate interview cheatsheet",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Generate the interview cheatsheet with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "regenerate interview cheatsheet",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "regenerate_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Regenerate the interview cheatsheet with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "attend interview and report",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "attend_interview_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			want: "Attend the interview, then report back. Open: output/next-packs/311-acme.md.",
+		},
+		{
+			name: "generate negotiation prep",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_negotiation_prep", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			want: "Generate negotiation prep with an agent. Run: /career-ops next 311.",
+		},
+		{
+			name: "negotiate and report",
+			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "negotiate_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			want: "Negotiate, then report back. Open: output/next-packs/311-acme.md.",
+		},
+		{
+			name: "waiting with explicit owner",
+			app:  model.CareerApplication{ActionState: "waiting", NextAction: "follow_up", ActionOwner: "company", WaitingOn: "company response", NextCommand: "/career-ops next 311"},
+			want: "Wait for company response.",
+		},
+		{
+			name: "waiting without explicit owner",
+			app:  model.CareerApplication{ActionState: "snoozed", NextAction: "follow_up"},
+			want: "Wait for the company response.",
+		},
+		{
+			name: "none",
+			app:  model.CareerApplication{ActionState: "none", NextAction: "none", ActionOwner: "none", NextCommand: "/career-ops next 311"},
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := detailsAppNextStepSummary(tc.app)
+			if got != tc.want {
+				t.Fatalf("detailsAppNextStepSummary() = %q, want %q", got, tc.want)
+			}
+			for _, raw := range []string{" | ", "owner:", "run:", "pack:"} {
+				if strings.Contains(got, raw) {
+					t.Fatalf("expected summary to avoid raw token %q, got %q", raw, got)
+				}
+			}
+		})
+	}
+}
+
+func TestDetailsViewerUsesRegionAndChildHeadingHierarchy(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"## Next Step",
+			"",
+			"### Where To Send It",
+			"",
+			"- **Apply:** https://jobs.example.com/acme",
+			"",
+			"### Copy-Paste: Cover Paragraph",
+			"",
+			"Hello Acme.",
+			"",
+			"---",
+			"",
+			"## Deep Dive",
+			"",
+			"## A) Role Summary",
+			"",
+			"Role summary text.",
+			"",
+			"## B) Match With CV",
+			"",
+			"Match text.",
+		},
+		title:  "DETAILS: Acme / Backend Engineer",
+		width:  80,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	lineContaining := func(needle string) string {
+		t.Helper()
+		for _, line := range m.renderAll() {
+			if strings.Contains(ansi.Strip(line), needle) {
+				return line
+			}
+		}
+		t.Fatalf("expected rendered details page to contain %q", needle)
+		return ""
+	}
+
+	for _, parent := range []string{"NEXT STEP", "DEEP DIVE"} {
+		if line := lineContaining(parent); !hasFillBackground(line) {
+			t.Fatalf("expected parent heading %q to keep the strong region bar, got %q", parent, line)
+		}
+	}
+
+	for _, child := range []string{"WHERE TO SEND IT", "COPY-PASTE: COVER PARAGRAPH", "A) ROLE SUMMARY", "B) MATCH WITH CV"} {
+		if line := lineContaining(child); hasFillBackground(line) {
+			t.Fatalf("expected child heading %q to render below the region hierarchy, got %q", child, line)
+		}
+	}
+}
+
+func TestDetailsViewerOnlyDrawsRulesBeforeParentRegions(t *testing.T) {
+	m := ViewerModel{
+		lines: []string{
+			"## Next Step",
+			"",
+			"Ready to review.",
+			"",
+			"---",
+			"",
+			"## Deep Dive",
+			"",
+			"## Cover Letter Draft",
+			"",
+			"Intro note.",
+			"",
+			"---",
+			"",
+			"Opening paragraph.",
+			"",
+			"---",
+			"",
+			"Gaps flagged:",
+		},
+		title:  "DETAILS: Acme / Backend Engineer",
+		width:  60,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	if got := strings.Count(plain, "─"); got != m.width {
+		t.Fatalf("expected exactly one full-width rule before the Deep Dive region, got %d rule glyphs in:\n%s", got, plain)
+	}
+	for _, want := range []string{"Opening paragraph.", "Gaps flagged:"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected nested content %q to remain after suppressing local rules, got:\n%s", want, plain)
 		}
 	}
 }
@@ -637,6 +883,39 @@ func TestViewerTablesUseContentInset(t *testing.T) {
 			t.Fatalf("table line width = %d, want %d for %q", got, m.width, line)
 		}
 	}
+}
+
+func TestViewerFieldTablesBoldFirstColumnLabels(t *testing.T) {
+	useTrueColorRenderer(t)
+
+	m := ViewerModel{
+		lines: []string{
+			"| Field | Assessment |",
+			"|---|---|",
+			"| Detected archetype | Platform AI |",
+			"| **Domain** | Agent tooling |",
+		},
+		width:  64,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := m.renderAll()
+	plain := ansi.Strip(strings.Join(rendered, "\n"))
+	for _, want := range []string{"Detected archetype", "Domain"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected rendered table to contain %q, got:\n%s", want, plain)
+		}
+	}
+	for _, line := range rendered {
+		if strings.Contains(ansi.Strip(line), "Detected archetype") {
+			if !strings.Contains(line, "\x1b[1") {
+				t.Fatalf("expected plain first-column field label to render bold, got %q", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected to find Detected archetype row in:\n%s", plain)
 }
 
 func TestViewerBoldOnlyLinesRenderAsTitleRows(t *testing.T) {

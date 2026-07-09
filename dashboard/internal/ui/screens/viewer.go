@@ -85,16 +85,14 @@ func buildDetailsLines(careerOpsPath string, reportLines []string, app model.Car
 	if snapshotLines := extractDetailsSnapshotLines(reportLines); len(snapshotLines) > 0 {
 		lines = append(lines, snapshotLines...)
 		lines = append(lines, "")
-	} else if tldr := extractDetailsTLDR(reportLines); tldr != "" {
-		lines = append(lines, "**TL;DR:** "+tldr, "")
 	}
 
 	if nextLines := loadDetailsNextPackLines(careerOpsPath, app); len(nextLines) > 0 {
-		lines = append(lines, "## Current Next Step", "")
+		lines = append(lines, "## Next Step", "")
 		lines = append(lines, cleanDetailsNextPackLines(nextLines)...)
 		lines = append(lines, "")
-	} else if detail := nextActionDetail(app); detail != "" {
-		lines = append(lines, "## Current Next Step", "", "**Next action:** "+detail, "")
+	} else if detail := detailsAppNextStepLine(app); detail != "" {
+		lines = append(lines, "## Next Step", "", detail, "")
 	}
 
 	if len(lines) > 0 {
@@ -156,81 +154,146 @@ func trimBlankMarkdownLines(lines []string) []string {
 
 func cleanDetailsNextPackLines(lines []string) []string {
 	out := make([]string, 0, len(lines))
+	meta := detailsNextPackMeta{}
 	for _, line := range lines {
-		if display, keep := cleanDetailsNextPackLine(line); keep {
-			out = append(out, display)
+		if keep, handled := meta.readLine(line); handled {
+			if keep {
+				out = append(out, line)
+			}
+			continue
 		}
+		out = append(out, line)
+	}
+	if summary := meta.summaryLine(); summary != "" {
+		out = append([]string{summary, ""}, trimBlankMarkdownLines(out)...)
 	}
 	return trimBlankMarkdownLines(out)
 }
 
-func cleanDetailsNextPackLine(line string) (string, bool) {
+type detailsNextPackMeta struct {
+	decision        string
+	nextHumanAction string
+	owner           string
+	suggests        string
+}
+
+func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 	key, value, ok := splitMetadataLine(strings.TrimSpace(line))
 	if !ok {
-		return line, true
+		return false, false
 	}
 	switch normalizeDetailsLabel(key) {
-	case "stage":
-		return "**Pipeline stage:** " + detailsTokenLabel(value), true
+	case "decision":
+		m.decision = value
+		return false, true
+	case "next human action":
+		m.nextHumanAction = value
+		return false, true
 	case "owner":
-		return "**Performed by:** " + detailsOwnerLabel(value), true
+		m.owner = value
+		return false, true
 	case "suggests":
-		if label := detailsActionLabel(value); label != "" {
-			return "**Action type:** " + label, true
-		}
-		return "", false
-	case "score":
-		return "", false
+		m.suggests = value
+		return false, true
+	case "stage", "score":
+		return false, true
 	default:
-		return line, true
+		return false, false
 	}
 }
 
-func detailsOwnerLabel(value string) string {
-	switch normalizeDetailsLabel(value) {
-	case "user":
-		return "You"
-	case "agent":
-		return "Career-ops agent"
-	case "company":
-		return "Company"
-	case "none":
-		return "No one"
-	default:
-		return cleanDetailsText(value)
+func (m detailsNextPackMeta) summaryLine() string {
+	action := detailsActionLabel(m.suggests)
+	actionSource := m.suggests
+	if action == "" {
+		action = detailsDecisionLabel(m.decision)
+		actionSource = m.decision
 	}
+	human := cleanDetailsText(m.nextHumanAction)
+	if action == "" {
+		action = human
+		human = ""
+	}
+	if action == "" {
+		return ""
+	}
+	if strings.EqualFold(normalizeDetailsLabel(m.owner), "agent") && detailsAgentCanPerform(actionSource) {
+		action += " with an agent"
+	}
+	if human != "" && !detailsSameInstruction(action, human) {
+		action = detailsCombineInstruction(action, human)
+	}
+	return "**Next step:** " + detailsSentence(action)
 }
 
 func detailsActionLabel(value string) string {
 	switch normalizeDetailsLabel(value) {
 	case "generate_application_pack":
-		return "Generate application pack"
+		return "Generate the application"
 	case "send_application":
-		return "Send application"
+		return "Send the generated application"
 	case "draft_qualifying_questions":
-		return "Draft qualifying question"
+		return "Draft a qualifying question"
 	case "send_qualifying_questions":
-		return "Send qualifying question"
+		return "Send the qualifying question"
 	case "draft_outreach":
 		return "Draft outreach"
 	case "send_outreach":
-		return "Send outreach"
+		return "Send the outreach"
 	case "follow_up":
-		return "Follow up"
+		return "Send a follow-up"
 	case "generate_interview_cheatsheet":
-		return "Generate interview cheatsheet"
+		return "Generate the interview cheatsheet"
 	case "regenerate_cheatsheet":
-		return "Regenerate cheatsheet"
+		return "Regenerate the interview cheatsheet"
 	case "attend_interview_and_report":
-		return "Attend interview and report back"
+		return "Attend the interview, then report back"
 	case "generate_negotiation_prep":
 		return "Generate negotiation prep"
 	case "negotiate_and_report":
-		return "Negotiate and report back"
+		return "Negotiate, then report back"
 	case "none":
 		return ""
 	default:
 		return detailsTokenLabel(value)
+	}
+}
+
+func detailsDecisionLabel(value string) string {
+	switch normalizeDetailsLabel(value) {
+	case "draft application pack":
+		return "Generate the application"
+	case "draft qualifying question":
+		return "Draft a qualifying question"
+	case "send", "send application":
+		return "Send the generated application"
+	case "follow up":
+		return "Send a follow-up"
+	case "prep":
+		return "Prepare for the next step"
+	case "negotiate":
+		return "Negotiate"
+	case "close":
+		return "Close this opportunity"
+	default:
+		return detailsTokenLabel(value)
+	}
+}
+
+func detailsAgentCanPerform(value string) bool {
+	switch normalizeDetailsLabel(value) {
+	case "generate_application_pack",
+		"draft application pack",
+		"draft_qualifying_questions",
+		"draft qualifying question",
+		"draft_outreach",
+		"generate_interview_cheatsheet",
+		"regenerate_cheatsheet",
+		"generate_negotiation_prep",
+		"prep":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -246,24 +309,139 @@ func detailsTokenLabel(value string) string {
 	return strings.Join(parts, " ")
 }
 
-func extractDetailsTLDR(lines []string) string {
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if key, value, ok := splitMetadataLine(trimmed); ok && normalizeDetailsLabel(key) == "tl;dr" {
-			return cleanDetailsText(value)
+func detailsSameInstruction(a, b string) bool {
+	clean := func(s string) string {
+		s = strings.ToLower(cleanDetailsText(s))
+		s = strings.TrimRight(s, ".")
+		return strings.Join(strings.Fields(s), " ")
+	}
+	return clean(a) == clean(b)
+}
+
+func detailsCombineInstruction(action, human string) string {
+	if strings.EqualFold(action, "Send the generated application") {
+		lowerHuman := strings.ToLower(human)
+		const prefix = "send the application after "
+		if strings.HasPrefix(lowerHuman, prefix) {
+			return action + " after " + human[len(prefix):]
 		}
-		if !strings.HasPrefix(trimmed, "|") {
-			continue
-		}
-		cells := parseTableCells(trimmed)
-		if len(cells) < 2 || normalizeDetailsLabel(cells[0]) != "tl;dr" {
-			continue
-		}
-		if value := cleanDetailsText(cells[1]); value != "" {
-			return value
+		if strings.HasPrefix(lowerHuman, "send the application") {
+			return action
 		}
 	}
-	return ""
+	return action + ": " + lowercaseFirst(human)
+}
+
+func detailsSentence(s string) string {
+	s = cleanDetailsText(s)
+	if s == "" {
+		return ""
+	}
+	switch s[len(s)-1] {
+	case '.', '!', '?':
+		return s
+	default:
+		return s + "."
+	}
+}
+
+func detailsAppNextStepLine(app model.CareerApplication) string {
+	summary := detailsAppNextStepSummary(app)
+	if summary == "" {
+		return ""
+	}
+	return "**Next step:** " + summary
+}
+
+func detailsAppNextStepSummary(app model.CareerApplication) string {
+	action := detailsAppActionSentence(app)
+	if action == "" {
+		return ""
+	}
+	var parts []string
+	parts = append(parts, action)
+	if command := detailsAppRunCommand(app); command != "" {
+		parts = append(parts, "Run: "+command+".")
+	}
+	if pack := detailsAppPackReference(app); pack != "" {
+		parts = append(parts, "Open: "+pack+".")
+	}
+	if app.ActionDue != "" {
+		parts = append(parts, "Due: "+app.ActionDue+".")
+	}
+	return strings.Join(parts, " ")
+}
+
+func detailsAppActionSentence(app model.CareerApplication) string {
+	switch {
+	case actionStateIs(app, "waiting", "snoozed"):
+		if app.WaitingOn != "" {
+			return "Wait for " + strings.TrimSuffix(app.WaitingOn, ".") + "."
+		}
+		return "Wait for the company response."
+	case app.NextAction == "" || app.NextAction == "none":
+		return ""
+	}
+
+	agentSuffix := ""
+	if strings.EqualFold(app.ActionOwner, "agent") {
+		agentSuffix = " with an agent"
+	}
+
+	switch app.NextAction {
+	case "generate_application_pack":
+		return "Generate the application" + agentSuffix + "."
+	case "send_application":
+		return "Send the generated application."
+	case "draft_qualifying_questions":
+		return "Draft a qualifying question" + agentSuffix + "."
+	case "send_qualifying_questions":
+		return "Send the qualifying question."
+	case "draft_outreach":
+		return "Draft outreach" + agentSuffix + "."
+	case "send_outreach":
+		return "Send the outreach."
+	case "follow_up":
+		return "Send a follow-up."
+	case "generate_interview_cheatsheet":
+		return "Generate the interview cheatsheet" + agentSuffix + "."
+	case "regenerate_cheatsheet":
+		return "Regenerate the interview cheatsheet" + agentSuffix + "."
+	case "attend_interview_and_report":
+		return "Attend the interview, then report back."
+	case "generate_negotiation_prep":
+		return "Generate negotiation prep" + agentSuffix + "."
+	case "negotiate_and_report":
+		return "Negotiate, then report back."
+	default:
+		label := detailsActionLabel(app.NextAction)
+		if label == "" {
+			return ""
+		}
+		return label + "."
+	}
+}
+
+func detailsAppRunCommand(app model.CareerApplication) string {
+	if app.NextCommand == "" || !needsManualAction(app) || canOpenNextArtifact(app) {
+		return ""
+	}
+	return app.NextCommand
+}
+
+func detailsAppPackReference(app model.CareerApplication) string {
+	if !canOpenNextArtifact(app) {
+		return ""
+	}
+	return app.NextPackPath
+}
+
+func lowercaseFirst(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 func normalizeDetailsLabel(s string) string {
@@ -630,6 +808,16 @@ func (m ViewerModel) renderAll() []string {
 			continue
 		}
 
+		if isMarkdownRule(trimmed) && m.isDetailsViewer() {
+			if m.detailsRuleStartsRegion(i) {
+				styled = append(styled, m.styleLine(line))
+			} else {
+				appendBlankLine(&styled)
+			}
+			i++
+			continue
+		}
+
 		if isHeadingLine(trimmed) || reBoldOnly.MatchString(trimmed) {
 			styled = appendHeadingBlock(styled, m.styleLine(line))
 			i++
@@ -736,6 +924,10 @@ func (m ViewerModel) shouldHideLeadingTitleLine(index int, trimmed string) bool 
 func (m ViewerModel) isNextStepViewer() bool {
 	return strings.HasPrefix(m.title, "NEXT STEP: ") ||
 		strings.HasPrefix(m.title, "Next Pack -- ")
+}
+
+func (m ViewerModel) isDetailsViewer() bool {
+	return isDetailsTitle(m.title)
 }
 
 func (m ViewerModel) isEvaluationViewer() bool {
@@ -882,6 +1074,7 @@ func (m ViewerModel) renderTableBlock(lines []string) []string {
 	}
 
 	var headers []string
+	var rawHeaders []string
 	var dataRows [][]string
 	var alignments []lipgloss.Position
 
@@ -895,11 +1088,18 @@ func (m ViewerModel) renderTableBlock(lines []string) []string {
 			continue
 		}
 		cells := parseTableCells(line)
+		if headers != nil && m.shouldHideTableRow(rawHeaders, cells) {
+			continue
+		}
 		rendered := make([]string, len(cells))
 		for i, c := range cells {
+			if headers != nil && i == 0 && tableHasFieldHeader(rawHeaders) {
+				c = boldTableLabel(c)
+			}
 			rendered[i] = m.renderInlineElements(c)
 		}
 		if headers == nil {
+			rawHeaders = cells
 			headers = rendered
 		} else {
 			dataRows = append(dataRows, rendered)
@@ -948,6 +1148,25 @@ func (m ViewerModel) renderTableBlock(lines []string) []string {
 	return rendered
 }
 
+func (m ViewerModel) shouldHideTableRow(headers, cells []string) bool {
+	if !m.isDetailsViewer() || !tableHasFieldHeader(headers) || len(cells) == 0 {
+		return false
+	}
+	return normalizeDetailsLabel(cells[0]) == "tl;dr"
+}
+
+func tableHasFieldHeader(headers []string) bool {
+	return len(headers) > 0 && normalizeDetailsLabel(headers[0]) == "field"
+}
+
+func boldTableLabel(cell string) string {
+	cell = strings.TrimSpace(cell)
+	if cell == "" || reBoldOnly.MatchString(cell) {
+		return cell
+	}
+	return "**" + cell + "**"
+}
+
 var (
 	reBold           = regexp.MustCompile(`\*\*([^*]+)\*\*`)
 	reBoldOnly       = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
@@ -971,7 +1190,7 @@ func isHeadingLine(line string) bool {
 func isSpecialBlockLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return isHeadingLine(trimmed) ||
-		trimmed == "---" || trimmed == "***" ||
+		isMarkdownRule(trimmed) ||
 		strings.HasPrefix(trimmed, "> ") ||
 		strings.HasPrefix(trimmed, "|") ||
 		strings.HasPrefix(trimmed, "```") ||
@@ -980,6 +1199,22 @@ func isSpecialBlockLine(line string) bool {
 		reListNumber.MatchString(trimmed) ||
 		reBoldOnly.MatchString(trimmed) ||
 		(strings.HasPrefix(trimmed, "**") && strings.Contains(trimmed, ":**"))
+}
+
+func isMarkdownRule(trimmed string) bool {
+	return trimmed == "---" || trimmed == "***"
+}
+
+func (m ViewerModel) detailsRuleStartsRegion(index int) bool {
+	for i := index + 1; i < len(m.lines); i++ {
+		trimmed := strings.TrimSpace(m.lines[i])
+		if trimmed == "" {
+			continue
+		}
+		text, ok := markdownHeadingText(trimmed)
+		return ok && isDetailsRegionHeading(text)
+	}
+	return false
 }
 
 func (m ViewerModel) wrapParagraph(text string, width int) []string {
@@ -1081,31 +1316,11 @@ func findInlineMatch(s string, codeStyle, boldStyle, linkStyle lipgloss.Style, c
 func (m ViewerModel) styleLine(line string) string {
 	trimmed := strings.TrimSpace(line)
 
-	if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
-		content := strings.TrimPrefix(trimmed, "# ")
-		return m.renderSectionHeading(content, m.theme.Blue)
+	if level, ok := markdownHeadingLevel(trimmed); ok {
+		content, _ := markdownHeadingText(trimmed)
+		return m.renderMarkdownHeading(level, content)
 	}
-	if strings.HasPrefix(trimmed, "## ") && !strings.HasPrefix(trimmed, "### ") {
-		content := strings.TrimPrefix(trimmed, "## ")
-		return m.renderSectionHeading(content, m.theme.Mauve)
-	}
-	if strings.HasPrefix(trimmed, "### ") && !strings.HasPrefix(trimmed, "#### ") {
-		content := strings.TrimPrefix(trimmed, "### ")
-		return m.renderSectionHeading(content, m.theme.Sky)
-	}
-	if strings.HasPrefix(trimmed, "#### ") && !strings.HasPrefix(trimmed, "##### ") {
-		content := strings.TrimPrefix(trimmed, "#### ")
-		return m.renderHeadingRow(content, m.theme.Subtext, false)
-	}
-	if strings.HasPrefix(trimmed, "##### ") && !strings.HasPrefix(trimmed, "###### ") {
-		content := strings.TrimPrefix(trimmed, "##### ")
-		return m.renderHeadingRow(content, m.theme.Overlay, false)
-	}
-	if strings.HasPrefix(trimmed, "###### ") {
-		content := strings.TrimPrefix(trimmed, "###### ")
-		return m.renderHeadingRow(content, m.theme.Overlay, false)
-	}
-	if trimmed == "---" || trimmed == "***" {
+	if isMarkdownRule(trimmed) {
 		w := m.fullWidth()
 		return lipgloss.NewStyle().Foreground(m.theme.Overlay).Width(w).Render(strings.Repeat("─", w))
 	}
@@ -1150,6 +1365,64 @@ func (m ViewerModel) styleLine(line string) string {
 		wrapped[i] = m.renderContentLine(line)
 	}
 	return strings.Join(wrapped, "\n")
+}
+
+func (m ViewerModel) renderMarkdownHeading(level int, content string) string {
+	if m.isDetailsViewer() {
+		if isDetailsRegionHeading(content) {
+			return m.renderSectionHeading(content, m.theme.Mauve)
+		}
+		return m.renderDetailsChildHeading(content, level)
+	}
+
+	switch level {
+	case 1:
+		return m.renderSectionHeading(content, m.theme.Blue)
+	case 2:
+		return m.renderSectionHeading(content, m.theme.Mauve)
+	case 3:
+		return m.renderSectionHeading(content, m.theme.Sky)
+	case 4:
+		return m.renderHeadingRow(content, m.theme.Subtext, false)
+	default:
+		return m.renderHeadingRow(content, m.theme.Overlay, false)
+	}
+}
+
+func isDetailsRegionHeading(content string) bool {
+	content = strings.TrimSpace(content)
+	return strings.EqualFold(content, "Next Step") ||
+		strings.EqualFold(content, "Current Next Step") ||
+		strings.EqualFold(content, "Deep Dive")
+}
+
+func (m ViewerModel) renderDetailsChildHeading(content string, level int) string {
+	color := m.theme.Sky
+	if level <= 2 {
+		color = m.theme.Mauve
+	}
+	if level >= 4 {
+		color = m.theme.Subtext
+	}
+
+	label := strings.ToUpper(strings.TrimSpace(content))
+	labelWidth := m.textWidth() - 2
+	if labelWidth < 10 {
+		labelWidth = 10
+	}
+	wrapped := strings.Split(ansi.Wrap(label, labelWidth, ""), "\n")
+
+	markerStyle := lipgloss.NewStyle().Foreground(color)
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(color)
+	rows := make([]string, 0, len(wrapped))
+	for i, row := range wrapped {
+		marker := markerStyle.Render("│ ")
+		if i > 0 {
+			marker = markerStyle.Render("  ")
+		}
+		rows = append(rows, m.renderContentLine(marker+labelStyle.Render(row)))
+	}
+	return strings.Join(rows, "\n")
 }
 
 func splitMetadataLine(trimmed string) (string, string, bool) {
