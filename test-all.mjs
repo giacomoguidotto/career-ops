@@ -1081,7 +1081,8 @@ if (
 if (
   nextMode.includes('tailored CV/PDF reference') &&
   nextMode.includes('copy-paste answers for likely form questions') &&
-  nextMode.includes('recruiter, hiring manager, and peer outreach drafts') &&
+  nextMode.includes('outreach action sections when useful') &&
+  nextMode.includes('primary and optional backup outreach action sections') &&
   nextMode.includes('thank-you email draft') &&
   nextMode.includes('negotiation script')
 ) {
@@ -1092,11 +1093,24 @@ if (
 
 if (
   nextMode.includes('**Form mirror:**') &&
-  nextMode.includes('### Application Form') &&
+  nextMode.includes('**Form-question table:**') &&
+  nextMode.includes('**Linear action order:**') &&
+  nextMode.includes('**Preflight sections:**') &&
+  nextMode.includes('**Send actions:**') &&
+  nextMode.includes('### Before You Apply') &&
+  nextMode.includes('### Before You Send') &&
+  nextMode.includes('### Fill the Application Form') &&
   nextMode.includes('Press `o` to open and fill the form') &&
-  nextMode.includes('### Outreach Messages') &&
+  nextMode.includes('| Question | Answer | Notes |') &&
+  nextMode.includes('Do not render form questions as bullet lists') &&
+  nextMode.includes('### Send the Gating Question') &&
+  nextMode.includes('### Send the Backup Gating Question') &&
+  nextMode.includes('### Send the Outreach Message') &&
+  nextMode.includes('### Send the Backup Outreach Message') &&
+  nextMode.includes('Connection note') &&
   nextMode.includes('Language proficiency dropdowns') &&
   nextMode.includes('Salary fields') &&
+  !nextMode.includes('\nTo: {recipient email or LinkedIn profile') &&
   !/Suggested stage after approval|Suggested stage:/.test(nextMode)
 ) {
   pass('next mode form-mirrors applications and keeps stage routing out of user copy');

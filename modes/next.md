@@ -18,14 +18,43 @@ without a second research step before the user can act.
 - Put the decision and next human action at the top.
 - Include a quick-reference block with the role, score, report, blocker, and the
   exact next step.
-- **Form mirror:** the application pack must show the form the user will see when
-  opening the application from the dashboard. Start the section with
-  ``Press `o` to open and fill the form: {ATS/form URL}``. Then list every captured
-  or likely field in page order, using the exact field label, the answer/selection
-  to enter, and the file to upload. For simple ATS flows such as Ashby,
-  Greenhouse, and Lever, this form mirror is the pack's center of gravity.
-- **Include an `Outreach Messages` section.** Put LinkedIn, YC, email, or other
-  contact links beside the drafted messages. A message with no real destination
+- **Linear action order:** order the pack by the current `suggests` action and
+  the next human move, not by a fixed application-template order. Put any
+  preflight block immediately before the action it governs, then the action the
+  user should do now, then conditional follow-on or backup actions. For
+  `send_application`, use `### Before You Apply`, `### Fill the Application Form`,
+  then outreach sections. For `send_qualifying_questions`, use `### Before You
+  Send`, `### Send the Gating Question`, optional `### Send the Backup Gating
+  Question`, then a conditional `### Fill the Application Form` only after the
+  gate clears. For follow-ups, lead with `### Send the Follow-Up`.
+- **Preflight sections:** `### Before You Apply`, `### Before You Send`, and
+  `### Before You Follow Up` are not footer summaries. They appear immediately
+  before the governed action and contain explicit asks covered, blockers, and
+  user-review checks that must happen before acting.
+- **Form mirror:** for an application action, `### Fill the Application Form`
+  must show the form the user will see when opening the application from the
+  dashboard. Start that section with ``Press `o` to open and fill the form:
+  {ATS/form URL}``. Then list every captured or likely field in page order, using
+  the exact field label, the answer/selection to enter, and the file to upload.
+  For simple ATS flows such as Ashby, Greenhouse, and Lever, this form mirror is
+  the pack's center of gravity. In a qualifying/gating pack, the form mirror is
+  conditional and must appear after the gating-send section, not before it.
+- **Form-question table:** inside `### Fill the Application Form`, ALWAYS render
+  form fields/questions as a markdown table with exactly these columns:
+  `Question`, `Answer`, `Notes`. Use `Question` for the exact visible field label,
+  `Answer` for the copy-paste answer, selected option, or upload file, and `Notes`
+  for source/confidence/user-review/blocker context.
+  Hard rule: Do not render form questions as bullet lists.
+- **Send actions:** name the send section by intent: `### Send the Gating
+  Question` for pre-application qualification, `### Send the Outreach Message`
+  for application-related first touches, and `### Send the Follow-Up` for cadence
+  follow-ups. Each send section must say when to send it relative to the
+  application, who receives it, which channel/social surface to use, whether it
+  is a connection note, and the exact character count when the channel has a cap.
+  Put the copy-paste draft inside the same section. Backup sections mirror the
+  primary intent (`### Send the Backup Gating Question`, `### Send the Backup
+  Outreach Message`, or `### Send the Backup Follow-Up`) and only appear when a
+  reliable backup destination exists. A sendable message with no real destination
   is an unfinished pack.
 - Include copy-paste blocks for anything the user might send or paste into a
   form: email, LinkedIn message, recruiter reply, thank-you note, cover-letter
@@ -67,6 +96,10 @@ without a second research step before the user can act.
   Founder or hiring-manager notes should sound genuinely excited about the role
   and the work, while still naming only source-backed proof points from the
   CV/profile/report.
+- Apply `modes/contact.md` step 7 whenever a sendable contact message appears.
+  The pack must embed the primary and backup send guidance in ordered sections,
+  not as a separate recommendation block or contact list. Default to one first
+  touch, with backup contacts reserved for later.
 - Keep the whole pack lean: the form answers, outreach destinations, sendable
   text, and real confirmations are the body. Fold rationale (why this row,
   scoring, strategy) into a single footer line and do not restate the report.
@@ -92,9 +125,10 @@ without a second research step before the user can act.
   user through the next real action; do not include "suggested stage after
   approval" or other state-machine exposition.
 
-Completion criterion: the user can press `o`, fill the form from top to bottom
-using the pack, and send one optional outreach message without another lookup.
-Every remaining blocker is a real missing fact, destination, or decision.
+Completion criterion: the user can execute the first action section immediately,
+then move through any conditional application, outreach, or backup sections
+without another lookup. Every remaining blocker is a real missing fact,
+destination, or decision.
 
 ## Inputs
 
@@ -274,11 +308,13 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 Loading a behavior owner means running its relevant steps, not just reading its
 file. In particular, `generate_application_pack`, `draft_qualifying_questions`,
 and any `draft_outreach`, `send_outreach`, or `follow_up` action MUST run
-`modes/contact.md` step 1 (contact discovery) so `Outreach Messages` names a
-real recruiter or hiring manager, links their profile, and — when the pack
-includes an email — carries a real, deliverable address. Do not emit an email
-draft you have no address to send to. When the report's `final_decision`
-is `Research first` and the row has not already qualified, draft
+`modes/contact.md` step 1 (contact discovery) and step 7 (send action sections)
+so the pack names a real recruiter or hiring manager, links
+their profile, carries a real deliverable address when email is used, and tells
+the candidate which target/channel/timing to use first in the ordered send
+sections. Do not emit an email draft you have no address to send to. When the
+report's `final_decision` is `Research first` and the row has not already
+qualified, draft
 `draft_qualifying_questions` instead of the application pack (the pre-application
 qualifying subloop), so the user clears the gate before investing in a full
 application.
@@ -288,8 +324,12 @@ Pack contents by `suggests` artifact (agent stages draft these; the paired user
 action and what to confirm, it does not invent a new pack):
 
 - `generate_application_pack` (at `evaluated`) -> application pack:
-  - application form mirror: ``Press `o` to open and fill the form: {URL}``, then
-    the fields in page order with exact answers, selections, and uploads
+  - `### Before You Apply`: explicit asks covered, blockers, and user-review
+    checks that must be resolved before opening/submitting the form
+  - `### Fill the Application Form`: ``Press `o` to open and fill the form:
+    {URL}``, then
+    a `Question | Answer | Notes` table containing the fields in page order with
+    exact answers, selections, uploads, and user-review notes
   - apply/no-apply recommendation
   - tailored CV/PDF reference
   - copy-paste answers for likely form questions, plus a dedicated answer for
@@ -297,34 +337,39 @@ action and what to confirm, it does not invent a new pack):
     personal culture-fit asks), written in the posting's register
   - standalone "why this role" or cover-letter text only when the form or posting
     explicitly asks for that field
-  - recruiter, hiring manager, and peer outreach drafts when useful, each
-    addressed to the real named contact found in discovery. For a founder-led
-    startup with no recruiter and multiple visible founders, draft one tailored
-    message per relevant founder (typically the CEO plus the technical/eng
-    founder for an engineering role) — individually written to each person, never
-    the same text repeated — and present them as alternatives the user picks from.
+  - outreach action sections when useful, each addressed to the real named
+    contact found in discovery. For a founder-led startup with no recruiter and
+    multiple visible founders, draft one tailored message per relevant founder
+    (typically the CEO plus the technical/eng founder for an engineering role)
+    and place them in primary/backup send order.
   - a short line of what to confirm before applying
 - `draft_qualifying_questions` (at `evaluated`, when `final_decision` is
   `Research first`) -> qualifying pack:
-  - application form mirror only when useful: show the form URL and the fields
-    that become relevant after the gate clears
-  - outreach messages: the named recruiter/hiring manager and their LinkedIn URL
-    from contact discovery (the question rides the best available channel —
-    a LinkedIn DM, or the ATS "additional info" field when no email exists)
+  - `### Before You Send`: the gate being tested, which answer clears it, and
+    which answer kills or pauses the application
+  - `### Send the Gating Question`: the named recruiter/hiring manager and their
+    LinkedIn URL from contact discovery (the question rides the best available
+    channel: a LinkedIn DM, or the ATS "additional info" field when no email
+    exists)
+  - `### Send the Backup Gating Question`: optional, only when a reliable backup
+    contact exists; state the wait condition before the second touch
   - ONE tight qualifying/gating question, warm and focused on the question
     itself (work authorization, relocation, seniority calibration, comp floor) —
     no proof-point dump and no application answers yet
-  - a one-line note on which answer clears the gate versus kills the application
+  - conditional application form mirror only when useful: after the gating send
+    section, show the form URL and the fields that become relevant after the gate
+    clears as a `Question | Answer | Notes` table
 - `draft_outreach` (on-demand at `applied`) -> outreach pack:
-  - outreach messages: the named contact(s) and their LinkedIn URLs from contact
-    discovery
-  - recruiter, hiring manager, and peer outreach drafts, each addressed to a real
-    named contact. For a founder-led startup with no recruiter and multiple
-    visible founders, draft one tailored message per relevant founder, each
-    individually written, presented as alternatives.
+  - primary and optional backup outreach action sections, each addressed to a
+    real named contact from discovery. For a founder-led startup with no recruiter
+    and multiple visible founders, draft one tailored message per relevant
+    founder and place them in primary/backup send order.
 - `follow_up` (reminder at `applied`) -> follow-up pack:
-  - outreach messages: the follow-up destination — the address the application
-    thread already uses, or the recruiter's email/LinkedIn found in discovery
+  - `### Before You Follow Up`: cadence, previous touch, and any close/deprioritize
+    check
+  - `### Send the Follow-Up`: the follow-up destination — the address the
+    application thread already uses, or the recruiter's email/LinkedIn found in
+    discovery
   - follow-up email, only when a real deliverable address exists; otherwise a
     LinkedIn follow-up to the named contact
   - close/deprioritize note if the cadence is cold
@@ -377,20 +422,26 @@ Pack format:
 **Suggests:** {suggests action}
 **Score:** {score} | **Report:** {report path}
 
-### Application Form
+### Before You Apply
+- **Explicit asks covered:** {tick off each instruction from the report's `## Application Instructions` -- e.g. "blurb covered; favorite ice cream flavor needs your input; subject line keyword covered".}
+- {facts to confirm or blockers before opening/submitting the form -- a few bullets, no report restatement}
+
+### Fill the Application Form
 Press `o` to open and fill the form: {ATS/form URL}
 
-- **{Exact field label}:** {answer / selection / file}
-- **{Exact field label}:** {answer / selection / file}
+| Question | Answer | Notes |
+|---|---|---|
+| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
+| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
 
-### Outreach Messages
-- **{name}:** {title} | {LinkedIn/YC/email URL}
-- **{name}:** {title} | {LinkedIn/YC/email URL}
-- **Email:** {deliverable address found in discovery, or `none found`}
+### Send the Outreach Message
+- **When:** {before applying / while applying / after submitting / later}
+- **To:** {name} -- {title} | {LinkedIn/YC/email URL}
+- **Channel:** {LinkedIn connection note / DM / email / YC / ATS}
+- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Instruction:** {one sentence}
 
-### Copy-Paste: {LinkedIn / Email / Form Answer / Script}
-To: {recipient email or LinkedIn profile -- required for any message with a destination}
-Subject: ...
+Subject: {email only}
 
 Hi {name},
 
@@ -399,12 +450,49 @@ Hi {name},
 Best,
 ...
 
-### Copy-Paste: {Second Sendable Item, if useful}
+### Send the Backup Outreach Message
+- **When:** {condition, e.g. if the primary message goes cold after N business days}
+- **To:** {name} -- {title} | {LinkedIn/YC/email URL}
+- **Channel:** {LinkedIn connection note / DM / email / YC / ATS}
+- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Instruction:** {one sentence}
+
 ...
 
+### Copy-Paste: {Form Answer / Script, if useful}
+...
+
+For a qualifying pack, replace the first action run with this order:
+
 ### Before You Send
-- **Explicit asks covered:** {tick off each instruction from the report's `## Application Instructions` — e.g. "blurb ✅ · favorite ice cream flavor ✅ · subject line keyword ✅". Flag any that need the user's own input.}
-- {facts to confirm, blockers, and gating answers -- a few bullets, no report restatement}
+- **Gate:** {question being tested}
+- **Apply only if:** {answer that clears the gate}
+- **Discard or pause if:** {answer that blocks the application}
+
+### Send the Gating Question
+- **When:** before applying.
+- **To:** {name} -- {title} | {LinkedIn/email URL}
+- **Channel:** {LinkedIn connection note / DM / email / ATS}
+- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Instruction:** {one sentence}
+
+...
+
+### Send the Backup Gating Question
+- **When:** {condition, e.g. if the primary question goes cold after N business days}
+- **To:** {name} -- {title} | {LinkedIn/email URL}
+- **Channel:** {LinkedIn connection note / DM / email / ATS}
+- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Instruction:** {one sentence}
+
+...
+
+### Fill the Application Form
+Only after the gate clears, press `o` to open and fill the form: {ATS/form URL}
+
+| Question | Answer | Notes |
+|---|---|---|
+| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
 
 _Selected: {one-line why}._
 ````

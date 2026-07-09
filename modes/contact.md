@@ -35,12 +35,12 @@ short message; otherwise run the LinkedIn power move below.
 
    **Founder-led startup exception (multiple decision-makers):** when the company
    is a small startup with no recruiter and several visible founders, there is no
-   single gatekeeper — the founders share hiring. Do not force one "primary". Draft
-   **one message per relevant founder** (typically the CEO plus the technical/eng
-   founder for an engineering role, or all of them if the team is tiny), each
-   **individually tailored** to that person's background and what they own — never
-   the same text repeated with the name swapped. Present them as alternatives the
-   candidate picks from, and say so, so it never reads as a mass blast.
+   single gatekeeper -- the founders share hiring. Draft **one message per relevant
+   founder** (typically the CEO plus the technical/eng founder for an engineering
+   role, or all of them if the team is tiny), each **individually tailored** to
+   that person's background and what they own -- never the same text repeated with
+   the name swapped. Present them as alternatives, then recommend the first send
+   order so the candidate can make one calm move instead of a mass blast.
 
 4. **Classify the message intent, then write it like a human.** Intent decides
    how much to say:
@@ -91,6 +91,40 @@ short message; otherwise run the LinkedIn power move below.
    - ES (if Spanish company)
 
 6. **Alternative targets** with justification for why they are good second choices
+
+7. **Linear send action sections**: after drafting, turn the contact research
+   into ordered action blocks instead of a contact inventory. Name the section by
+   the action intent, not by a fixed outreach template.
+
+   Use these sections whenever outreach appears in an application, qualifying,
+   follow-up, or outreach pack:
+
+   - `### Send the Gating Question`: pre-application qualifying question. This is
+     the primary section for `draft_qualifying_questions` and
+     `send_qualifying_questions`.
+   - `### Send the Outreach Message`: application-related first touch, referral
+     ask, or fit pitch.
+   - `### Send the Follow-Up`: cadence follow-up after an application or previous
+     message.
+   - Backup sections mirror the primary intent: `### Send the Backup Gating
+     Question`, `### Send the Backup Outreach Message`, or `### Send the Backup
+     Follow-Up`. Include only when a backup is useful and a reliable destination
+     exists. State the condition that unlocks it, usually "if the primary message
+     goes cold after N business days".
+
+   Every send section includes timing, recipient, channel, whether it is a
+   connection note, exact character count when the channel has a cap, any
+   one-line instruction, and the copy-paste draft.
+
+   For `send_application`, the default timing is: fill and submit the ATS
+   application first, then send one connection note to the primary target. For
+   `draft_qualifying_questions`, send the gate question before applying. For
+   `draft_outreach` after an application is already sent, use the best available
+   direct channel and keep the note tied to the submitted application.
+
+   Completion criterion: the candidate can read the outreach sections in order
+   and know exactly what to send now, what to hold, and when a backup becomes
+   appropriate.
 
 **Contact channel preference:** Read `contact_preferences.preferred_channel` from
 `config/profile.yml`. If it is absent or set to `"either"`, write the CTA
