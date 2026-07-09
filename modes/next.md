@@ -44,6 +44,16 @@ without a second research step before the user can act.
   `Question`, `Answer`, `Notes`. Use `Question` for the exact visible field label,
   `Answer` for the copy-paste answer, selected option, or upload file, and `Notes`
   for source/confidence/user-review/blocker context.
+  Hard rule: the `Answer` cell must contain only what the candidate should paste,
+  select, type, or upload. Never put rationale, source notes, source-check dates,
+  legal/admin nuance, caveats, confidence levels, blocker text, or review
+  instructions in `Answer`; move all of that to `Notes`.
+  For yes/no, radio, dropdown, and language fields, `Answer` must be the exact
+  option text such as `Yes`, `No`, or `None`. For salary fields, `Answer` must be
+  only the concrete range plus currency/comp basis; put calibration and review
+  context in `Notes`. For file fields, `Answer` must name the file/artifact to
+  upload; if it is not created yet, put the creation blocker in `Notes`, not
+  `Answer`.
   Hard rule: Do not render form questions as bullet lists.
 - **Send actions:** name the send section by intent: `### Send the Gating
   Question` for pre-application qualification, `### Send the Outreach Message`
@@ -431,8 +441,8 @@ Press `o` to open and fill the form: {ATS/form URL}
 
 | Question | Answer | Notes |
 |---|---|---|
-| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
-| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
+| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
+| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
 
 ### Send the Outreach Message
 - **When:** {before applying / while applying / after submitting / later}
@@ -492,7 +502,7 @@ Only after the gate clears, press `o` to open and fill the form: {ATS/form URL}
 
 | Question | Answer | Notes |
 |---|---|---|
-| {Exact field label} | {answer / selection / file} | {source, confidence, user review, or blocker} |
+| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
 
 _Selected: {one-line why}._
 ````

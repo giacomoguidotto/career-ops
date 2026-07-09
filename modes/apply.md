@@ -163,6 +163,13 @@ For each question, generate the response following:
 6. **career-ops proof point**: Include in "Additional info" if there is a field for it
 7. **Recruiter-side risk map**: Use `modes/heuristics/recruiter-side.md` to identify what doubt the question is trying to resolve (motivation, stack fit, logistics, comp, work-auth, availability, seniority) and answer that doubt directly.
 8. **Disclosure discipline**: Answer logistics questions truthfully when asked, but do not volunteer sensitive or HR-only details in unrelated motivation/fit answers.
+9. **Paste-ready answer discipline**: The response itself must contain only what
+   the candidate should paste, type, select, or upload. Keep rationale, source
+   citations, source-check dates, legal/admin nuance, confidence notes, blockers,
+   and user-review instructions outside the answer, in notes. For yes/no,
+   radio, dropdown, and language fields, give only the exact option text such as
+   `Yes`, `No`, or `None`. For salary fields, give only the concrete range plus
+   currency/comp basis, with calibration context in notes.
 
 **Output format:**
 
@@ -174,7 +181,7 @@ Based on: Report #NNN | Score: X.X/5 | Archetype: [type]
 ---
 
 ### 1. [Exact form question]
-> [Response ready for copy-paste, or "Ask candidate: ..." if the field needs confirmation]
+> [Paste-ready response, exact selection, or upload file/artifact. If the field needs confirmation, write "Ask candidate: ..."]
 
 ### 2. [Next question]
 > [Response]
