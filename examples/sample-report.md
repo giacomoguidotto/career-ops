@@ -3,10 +3,48 @@
 **Date:** 2026-04-01
 **Archetype:** AI Platform / LLMOps Engineer
 **Score:** 4.2/5
+**Legitimacy:** High Confidence
 **URL:** https://jobs.example.com/acme-ai-senior-engineer
 **PDF:** output/cv-candidate-acme-ai-2026-04-01.pdf
 
 ---
+
+## Decision Snapshot
+
+**Decision:** Apply
+**Score:** 4.2/5
+**Next action:** Review the tailored CV and submit the application.
+**Why it matters:** Senior AI eng to build and scale LLM infrastructure for enterprise customers.
+**Top strengths:** Production ML platforms; observability; team leadership
+**Risks to resolve:** Confirm LLM-specific ownership in the first recruiter screen.
+**Legitimacy:** High Confidence
+**Application asks:** None (standard form)
+
+## Machine Summary
+
+```yaml
+company: "Acme AI"
+role: "Senior AI Engineer"
+score: 4.2
+legitimacy_tier: "High Confidence"
+archetype: "AI Platform / LLMOps Engineer"
+final_decision: "Apply"
+hard_stops: []
+soft_gaps:
+  - "Confirm LLM-specific ownership in the first recruiter screen."
+top_strengths:
+  - "Production ML platforms"
+  - "Observability"
+  - "Team leadership"
+risk_level: "Low"
+confidence: "Medium"
+next_action: "Review the tailored CV and submit the application."
+via: null
+company_confidential: false
+advertised_comp: null
+application_instructions: []
+apply_tone: "formal"
+```
 
 ## A) Role Summary
 

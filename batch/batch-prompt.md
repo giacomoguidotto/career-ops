@@ -217,6 +217,29 @@ Read `modes/_custom.md` → Scoring Rules, if it exists, and apply its override 
 | Red flags | -X (if any) |
 | **Global** | **X/5** |
 
+#### Decision Snapshot
+
+Create the short human-readable summary that the details page shows before the deep dive. It must use this exact shape: bold key/value lines, one line per field, no table and no paragraphs.
+
+```markdown
+## Decision Snapshot
+
+**Decision:** {Apply | Consider | Research first | Skip}
+**Score:** {X.X/5}
+**Next action:** {one concrete human action}
+**Why it matters:** {same one-sentence TL;DR from Block A}
+**Top strengths:** {top 1-3 strengths from the evaluation, semicolon-separated}
+**Risks to resolve:** {hard stops first; if none, the top soft gap; if none, `None`}
+**Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Application asks:** {verbatim special asks compressed to one line, or `None (standard form)`}
+```
+
+Rules:
+
+- Each value must fit on one readable line. If a field wants a paragraph, choose the decision-relevant phrase and leave the deep detail in A-G.
+- The snapshot reuses the same meanings as Machine Summary: `Decision` = `final_decision`, `Next action` = `next_action`, strengths/gaps/legitimacy/application asks come from the completed evaluation.
+- Do not write "see below" in the snapshot. The line must stand alone on the details page.
+
 #### Machine Summary
 
 Create a machine-readable summary from the completed A-G evaluation and global score. This block is for downstream scripts; keep field names exact, use YAML, and do not add prose inside the fence.
@@ -278,6 +301,17 @@ reports/{{REPORT_NUM}}-{company-slug}-{{DATE}}.md
 **Batch ID:** {{ID}}
 
 ---
+
+## Decision Snapshot
+
+**Decision:** {Apply | Consider | Research first | Skip}
+**Score:** {X.X/5}
+**Next action:** {one concrete human action}
+**Why it matters:** {same one-sentence TL;DR from Block A}
+**Top strengths:** {top 1-3 strengths from the evaluation, semicolon-separated}
+**Risks to resolve:** {hard stops first; if none, the top soft gap; if none, `None`}
+**Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Application asks:** {verbatim special asks compressed to one line, or `None (standard form)`}
 
 ## Machine Summary
 

@@ -356,6 +356,26 @@ Save full evaluation in `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
 
 **Report format:**
 
+**Decision Snapshot (required):** every report carries a short `## Decision Snapshot` block immediately before `## Machine Summary`. This is the human details-page contract: key information first, deep dive after. Format it exactly as bold key/value lines, one line per field, no table and no paragraphs:
+
+```markdown
+## Decision Snapshot
+
+**Decision:** {Apply | Consider | Research first | Skip}
+**Score:** {X.X/5}
+**Next action:** {one concrete human action}
+**Why it matters:** {same one-sentence TL;DR from Block A}
+**Top strengths:** {top 1-3 strengths from the evaluation, semicolon-separated}
+**Risks to resolve:** {hard stops first; if none, the top soft gap; if none, `None`}
+**Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Application asks:** {verbatim special asks compressed to one line, or `None (standard form)`}
+```
+
+Snapshot rules:
+- Each value must fit on one readable line. If a field wants a paragraph, choose the decision-relevant phrase and leave the deep detail in A-G.
+- The snapshot reuses the same meanings as Machine Summary: `Decision` = `final_decision`, `Next action` = `next_action`, strengths/gaps/legitimacy/application asks come from the completed evaluation.
+- Do not write "see below" in the snapshot. The line must stand alone on the details page.
+
 ```markdown
 # Evaluation: {Company} — {Role}
 
@@ -368,6 +388,17 @@ Save full evaluation in `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
 **PDF:** {path or pending}
 
 ---
+
+## Decision Snapshot
+
+**Decision:** {Apply | Consider | Research first | Skip}
+**Score:** {X.X/5}
+**Next action:** {one concrete human action}
+**Why it matters:** {same one-sentence TL;DR from Block A}
+**Top strengths:** {top 1-3 strengths from the evaluation, semicolon-separated}
+**Risks to resolve:** {hard stops first; if none, the top soft gap; if none, `None`}
+**Legitimacy:** {High Confidence | Proceed with Caution | Suspicious}
+**Application asks:** {verbatim special asks compressed to one line, or `None (standard form)`}
 
 ## Machine Summary
 (YAML fence for downstream scripts — see requirement below)
@@ -405,7 +436,7 @@ Save full evaluation in `reports/{###}-{company-slug}-{YYYY-MM-DD}.md`.
 (list of 15-20 keywords from the JD for ATS optimization)
 ```
 
-**Machine Summary (required):** every report carries a `## Machine Summary` YAML fence directly after the header — same schema, exact field names, and rules as the "Machine Summary" block in `batch/batch-prompt.md` (do not duplicate the schema here; that file is the source of truth). It includes `advertised_comp`: the JD's own salary figure **verbatim** (e.g. `"80-90k EUR"`), or `null` when the JD states nothing — never estimated, never replaced with researched market data. This key seeds the advertised salary observation read by `node salary-gap.mjs`.
+**Machine Summary (required):** every report carries a `## Machine Summary` YAML fence directly after `## Decision Snapshot` — same schema, exact field names, and rules as the "Machine Summary" block in `batch/batch-prompt.md` (do not duplicate the schema here; that file is the source of truth). It includes `advertised_comp`: the JD's own salary figure **verbatim** (e.g. `"80-90k EUR"`), or `null` when the JD states nothing — never estimated, never replaced with researched market data. This key seeds the advertised salary observation read by `node salary-gap.mjs`.
 
 ### 2. Record in tracker
 

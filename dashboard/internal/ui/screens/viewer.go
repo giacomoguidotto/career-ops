@@ -82,25 +82,168 @@ func isDetailsTitle(title string) bool {
 func buildDetailsLines(careerOpsPath string, reportLines []string, app model.CareerApplication) []string {
 	var lines []string
 
-	if tldr := extractDetailsTLDR(reportLines); tldr != "" {
+	if snapshotLines := extractDetailsSnapshotLines(reportLines); len(snapshotLines) > 0 {
+		lines = append(lines, snapshotLines...)
+		lines = append(lines, "")
+	} else if tldr := extractDetailsTLDR(reportLines); tldr != "" {
 		lines = append(lines, "**TL;DR:** "+tldr, "")
 	}
 
 	if nextLines := loadDetailsNextPackLines(careerOpsPath, app); len(nextLines) > 0 {
-		lines = append(lines, "## Next Step", "")
-		lines = append(lines, nextLines...)
+		lines = append(lines, "## Current Next Step", "")
+		lines = append(lines, cleanDetailsNextPackLines(nextLines)...)
 		lines = append(lines, "")
 	} else if detail := nextActionDetail(app); detail != "" {
-		lines = append(lines, "## Next Step", "", "**Next action:** "+detail, "")
+		lines = append(lines, "## Current Next Step", "", "**Next action:** "+detail, "")
 	}
 
 	if len(lines) > 0 {
 		lines = append(lines, "---", "")
 	}
-	lines = append(lines, "## Evaluation", "")
-	lines = append(lines, stripLeadingReportHeading(reportLines)...)
+	lines = append(lines, "## Deep Dive", "")
+	lines = append(lines, stripDetailsLeadSections(stripLeadingReportHeader(stripLeadingReportHeading(reportLines)))...)
 
 	return lines
+}
+
+func extractDetailsSnapshotLines(lines []string) []string {
+	for i, line := range lines {
+		text, ok := markdownHeadingText(strings.TrimSpace(line))
+		if !ok || !strings.EqualFold(strings.TrimSpace(text), "Decision Snapshot") {
+			continue
+		}
+		end := skipMarkdownSection(lines, i)
+		if end <= i+1 {
+			return nil
+		}
+		return trimBlankMarkdownLines(lines[i+1 : end])
+	}
+	return nil
+}
+
+func stripDetailsLeadSections(lines []string) []string {
+	var out []string
+	for i := 0; i < len(lines); {
+		trimmed := strings.TrimSpace(lines[i])
+		text, ok := markdownHeadingText(trimmed)
+		if ok && detailsLeadSection(text) {
+			i = skipMarkdownSection(lines, i)
+			continue
+		}
+		out = append(out, lines[i])
+		i++
+	}
+	return trimBlankMarkdownLines(out)
+}
+
+func detailsLeadSection(text string) bool {
+	text = strings.TrimSpace(text)
+	return strings.EqualFold(text, "Decision Snapshot") ||
+		strings.EqualFold(text, "Machine Summary")
+}
+
+func trimBlankMarkdownLines(lines []string) []string {
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return lines[start:end]
+}
+
+func cleanDetailsNextPackLines(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if display, keep := cleanDetailsNextPackLine(line); keep {
+			out = append(out, display)
+		}
+	}
+	return trimBlankMarkdownLines(out)
+}
+
+func cleanDetailsNextPackLine(line string) (string, bool) {
+	key, value, ok := splitMetadataLine(strings.TrimSpace(line))
+	if !ok {
+		return line, true
+	}
+	switch normalizeDetailsLabel(key) {
+	case "stage":
+		return "**Pipeline stage:** " + detailsTokenLabel(value), true
+	case "owner":
+		return "**Performed by:** " + detailsOwnerLabel(value), true
+	case "suggests":
+		if label := detailsActionLabel(value); label != "" {
+			return "**Action type:** " + label, true
+		}
+		return "", false
+	case "score":
+		return "", false
+	default:
+		return line, true
+	}
+}
+
+func detailsOwnerLabel(value string) string {
+	switch normalizeDetailsLabel(value) {
+	case "user":
+		return "You"
+	case "agent":
+		return "Career-ops agent"
+	case "company":
+		return "Company"
+	case "none":
+		return "No one"
+	default:
+		return cleanDetailsText(value)
+	}
+}
+
+func detailsActionLabel(value string) string {
+	switch normalizeDetailsLabel(value) {
+	case "generate_application_pack":
+		return "Generate application pack"
+	case "send_application":
+		return "Send application"
+	case "draft_qualifying_questions":
+		return "Draft qualifying question"
+	case "send_qualifying_questions":
+		return "Send qualifying question"
+	case "draft_outreach":
+		return "Draft outreach"
+	case "send_outreach":
+		return "Send outreach"
+	case "follow_up":
+		return "Follow up"
+	case "generate_interview_cheatsheet":
+		return "Generate interview cheatsheet"
+	case "regenerate_cheatsheet":
+		return "Regenerate cheatsheet"
+	case "attend_interview_and_report":
+		return "Attend interview and report back"
+	case "generate_negotiation_prep":
+		return "Generate negotiation prep"
+	case "negotiate_and_report":
+		return "Negotiate and report back"
+	case "none":
+		return ""
+	default:
+		return detailsTokenLabel(value)
+	}
+}
+
+func detailsTokenLabel(value string) string {
+	value = cleanDetailsText(value)
+	parts := strings.Fields(strings.NewReplacer("_", " ", "-", " ").Replace(value))
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 func extractDetailsTLDR(lines []string) string {
@@ -171,6 +314,29 @@ func stripLeadingReportHeading(lines []string) []string {
 	}
 	if i < len(lines) && isEvaluationHeading(strings.TrimSpace(lines[i])) {
 		i++
+	}
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	return lines[i:]
+}
+
+func stripLeadingReportHeader(lines []string) []string {
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || trimmed == "---" || trimmed == "***" {
+			i++
+			continue
+		}
+		if _, _, ok := splitMetadataLine(trimmed); ok {
+			i++
+			continue
+		}
+		break
 	}
 	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
 		i++

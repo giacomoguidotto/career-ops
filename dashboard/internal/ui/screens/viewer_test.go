@@ -178,6 +178,78 @@ func TestViewerSkipsDuplicateEvaluationHeading(t *testing.T) {
 	}
 }
 
+func TestDetailsViewerStartsWithDecisionSnapshot(t *testing.T) {
+	report := strings.Join([]string{
+		"# Evaluation: Acme -- Backend Engineer",
+		"",
+		"**Date:** 2026-07-09",
+		"**Score:** 4.4/5",
+		"**Legitimacy:** High Confidence",
+		"",
+		"---",
+		"",
+		"## Decision Snapshot",
+		"",
+		"**Decision:** Apply",
+		"**Score:** 4.4/5",
+		"**Next action:** Review the tailored CV and send the application.",
+		"**Why it matters:** Strong backend fit with one compensation question.",
+		"**Top strengths:** API design; production ownership",
+		"**Risks to resolve:** Salary band is not stated.",
+		"**Legitimacy:** High Confidence",
+		"**Application asks:** None (standard form)",
+		"",
+		"## Machine Summary",
+		"",
+		"```yaml",
+		"machine_only: true",
+		"```",
+		"",
+		"## A) Role Summary",
+		"",
+		"| Field | Assessment |",
+		"|---|---|",
+		"| **TL;DR** | Legacy summary should not beat the snapshot. |",
+		"",
+		"## B) CV Match",
+		"",
+		"Strong backend fit.",
+	}, "\n")
+
+	m := ViewerModel{
+		lines:  buildDetailsLines("", strings.Split(report, "\n"), model.CareerApplication{}),
+		title:  "DETAILS: Acme / Backend Engineer",
+		width:  80,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	if first := firstNonBlankLine(plain); first != "Decision: Apply" {
+		t.Fatalf("expected decision snapshot to be first, got %q in:\n%s", first, plain)
+	}
+	for _, want := range []string{
+		"Score: 4.4/5",
+		"Next action: Review the tailored CV",
+		"DEEP DIVE",
+		"A) ROLE SUMMARY",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected details page to contain %q, got:\n%s", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"DECISION SNAPSHOT", "Machine Summary", "machine_only"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
+		}
+	}
+	for _, unwanted := range []string{"Date: 2026-07-09"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("expected deep dive to hide duplicate report header field %q, got:\n%s", unwanted, plain)
+		}
+	}
+}
+
 func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 	root := t.TempDir()
 	reportPath := filepath.Join(root, "reports", "042-acme.md")
@@ -214,6 +286,10 @@ func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 		"## Next: Acme -- Backend Engineer (#42)",
 		"",
 		"**Next human action:** Send the application after reviewing the salary field.",
+		"**Stage:** application_ready",
+		"**Owner:** user",
+		"**Suggests:** send_application",
+		"**Score:** 4.2/5 | **Report:** reports/042-acme.md",
 		"",
 		"### Copy-Paste",
 		"",
@@ -242,12 +318,20 @@ func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
 	if first != "TL;DR: Useful summary should be first." {
 		t.Fatalf("expected TL;DR to be the first visible detail, got %q in:\n%s", first, plain)
 	}
-	for _, want := range []string{"NEXT STEP", "Next human action: Send the application", "COPY-PASTE", "A) ROLE SUMMARY"} {
+	for _, want := range []string{
+		"NEXT STEP",
+		"Next human action: Send the application",
+		"Pipeline stage: Application Ready",
+		"Performed by: You",
+		"Action type: Send application",
+		"COPY-PASTE",
+		"A) ROLE SUMMARY",
+	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected details page to contain %q, got:\n%s", want, plain)
 		}
 	}
-	for _, unwanted := range []string{"Next: Acme", "Machine Summary", "machine_only"} {
+	for _, unwanted := range []string{"Next: Acme", "Machine Summary", "machine_only", "Owner:", "Suggests:", "Score: 4.2/5"} {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
 		}

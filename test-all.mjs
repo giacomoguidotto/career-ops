@@ -1470,6 +1470,20 @@ if ((batchPromptDoc.match(/advertised_comp/g) || []).length >= 2) {
   fail('batch prompt missing advertised_comp in one or both Machine Summary fences');
 }
 
+if (
+  offerMode.includes('**Decision Snapshot (required):**') &&
+  offerMode.includes('human details-page contract') &&
+  offerMode.includes('**Decision:** {Apply | Consider | Research first | Skip}') &&
+  offerMode.includes('**Risks to resolve:**') &&
+  /## Decision Snapshot[\s\S]*?## Machine Summary/.test(offerMode) &&
+  batchPromptDoc.includes('#### Decision Snapshot') &&
+  /## Decision Snapshot[\s\S]*?## Machine Summary/.test(batchPromptDoc)
+) {
+  pass('offer and batch prompts require Decision Snapshot before Machine Summary');
+} else {
+  fail('offer/batch prompts missing Decision Snapshot contract or ordering before Machine Summary');
+}
+
 // ── 9. LOCAL PARSER CONTRACT ────────────────────────────────────
 
 console.log('\n9. Local parser contract');

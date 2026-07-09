@@ -12,14 +12,11 @@ import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
 import { DeleteFromTracker } from "@/components/delete-from-tracker";
 
-// Progressive disclosure of the report. The core writes prose blocks
-// "## F) Verdict (lead)", "## A) Role Summary", "## B) Match with CV", then
-// C–G + machine artifacts (Machine Summary YAML, Application Answers, submit
-// log). A mainstream user deciding "should I apply?" needs the verdict + fit;
-// the rest is depth-on-demand. We lead with the verdict as a callout, keep A/B
-// expanded, collapse C–G as content, and drop machine artifacts to a dimmer
-// "Technical" tier — and strip the bare "F)" author-letters from headings
-// (native <details>, no client JS — this stays a server component).
+// Progressive disclosure of the report. The core now writes a human
+// `Decision Snapshot` before the machine YAML, then the A-G deep dive. A
+// mainstream user deciding "should I apply?" needs that snapshot first; A/B
+// stay expanded for fit detail, C-G collapse as depth, and machine artifacts
+// sit in a dimmer technical tier (native <details>, no client JS).
 
 type Section = { heading: string; letter: string | null; content: string };
 
@@ -35,6 +32,10 @@ function cleanHeading(h: string): string {
 // human content C–G (collapsed only for length) — ux's "honest for devs" tier.
 function isMachine(heading: string): boolean {
   return /machine summary|submitted|submit[-\s]?log/i.test(heading);
+}
+
+function isDecisionSnapshot(heading: string): boolean {
+  return /decision snapshot/i.test(heading);
 }
 
 // A one-line teaser for a collapsed content section — drops the interaction cost
@@ -163,12 +164,11 @@ export function ReportView({
                 </article>
               );
             }
-            // Verdict (F) leads as a highlighted callout with no competing heading —
-            // it's THE answer. A/B stay expanded (fit detail); C–G collapse as
-            // content (with a 1-line preview); machine artifacts drop to a dimmer
-            // "Technical" tier so the CLI-DNA is present-but-clearly-secondary.
-            const verdict = sections.find((s) => s.letter === "F");
-            const rest = sections.filter((s) => s !== verdict);
+            // The snapshot is the stable "read first" contract. Do not infer
+            // importance from A-G letters: F is the interview plan in the current
+            // report contract, not a verdict.
+            const snapshot = sections.find((s) => isDecisionSnapshot(s.heading));
+            const rest = sections.filter((s) => s !== snapshot);
             const machine = rest.filter((s) => isMachine(s.heading));
             const mainSections = rest.filter((s) => !isMachine(s.heading));
             const anyAB = mainSections.some((s) => s.letter === "A" || s.letter === "B");
@@ -180,17 +180,19 @@ export function ReportView({
                   </article>
                 )}
 
-                {verdict && (
+                {snapshot && (
                   <div className="rounded-2xl border border-brand/25 bg-brand-soft/50 px-5 py-4">
-                    <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.16em] text-brand/80">Verdict</p>
+                    <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.16em] text-brand/80">
+                      Decision Snapshot
+                    </p>
                     <article className="report-prose [&_p]:font-medium [&_p]:text-foreground">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{verdict.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{snapshot.content}</ReactMarkdown>
                     </article>
                   </div>
                 )}
 
                 {mainSections.map((s, i) => {
-                  const expanded = s.letter === "A" || s.letter === "B" || (!anyAB && i === 0);
+                  const expanded = s.letter === "A" || s.letter === "B" || (!snapshot && !anyAB && i === 0);
                   if (expanded) {
                     return (
                       <article key={i} className="report-prose mt-6">
