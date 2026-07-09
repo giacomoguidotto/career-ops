@@ -493,7 +493,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 	case "enter":
 		if app, ok := m.CurrentApp(); ok && app.ReportPath != "" {
 			fullPath := filepath.Join(m.careerOpsPath, app.ReportPath)
-			title := evaluationViewerTitle(app)
+			title := detailsViewerTitle(app)
 			jobURL := app.JobURL
 			return m, func() tea.Msg {
 				return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: jobURL, App: app}
@@ -555,17 +555,6 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 					Format:        format,
 				}
 			}
-		}
-
-	case "n":
-		if app, ok := m.CurrentApp(); ok && canOpenNextArtifact(app) {
-			fullPath := filepath.Join(m.careerOpsPath, app.NextPackPath)
-			title := nextStepViewerTitle(app)
-			return m, func() tea.Msg {
-				return PipelineOpenReportMsg{Path: fullPath, Title: title, JobURL: app.JobURL, App: app}
-			}
-		} else if ok && app.NextCommand != "" && needsManualAction(app) {
-			m.flash = "No generated artifact yet - run " + app.NextCommand
 		}
 
 	case "p":
@@ -1913,7 +1902,7 @@ func nextActionDetail(app model.CareerApplication) string {
 	var parts []string
 	parts = append(parts, label)
 	if canOpenNextArtifact(app) {
-		parts = append(parts, "n: open "+app.NextPackPath)
+		parts = append(parts, "pack: "+app.NextPackPath)
 	} else if app.NextCommand != "" && needsManualAction(app) {
 		parts = append(parts, "run: "+app.NextCommand)
 	}
@@ -1929,23 +1918,12 @@ func nextActionDetail(app model.CareerApplication) string {
 	return strings.Join(parts, " | ")
 }
 
-func nextStepViewerTitle(app model.CareerApplication) string {
-	label := nextActionLabel(app)
-	if label == "-" {
-		label = "next step"
-	}
-
-	parts := []string{"NEXT STEP: " + titleCaseLabel(label)}
-	parts = append(parts, opportunityTitleParts(app)...)
-	return strings.Join(parts, " / ")
-}
-
-func evaluationViewerTitle(app model.CareerApplication) string {
+func detailsViewerTitle(app model.CareerApplication) string {
 	parts := opportunityTitleParts(app)
 	if len(parts) == 0 {
-		return "EVALUATION"
+		return "DETAILS"
 	}
-	return "EVALUATION: " + strings.Join(parts, " / ")
+	return "DETAILS: " + strings.Join(parts, " / ")
 }
 
 func opportunityTitleParts(app model.CareerApplication) []string {
@@ -1960,17 +1938,6 @@ func opportunityTitleParts(app model.CareerApplication) []string {
 		parts = append(parts, loc)
 	}
 	return parts
-}
-
-func titleCaseLabel(label string) string {
-	words := strings.Fields(label)
-	for i, word := range words {
-		if word == "" {
-			continue
-		}
-		words[i] = strings.ToUpper(word[:1]) + word[1:]
-	}
-	return strings.Join(words, " ")
 }
 
 func titleLocationSummary(app model.CareerApplication) string {
@@ -2045,17 +2012,13 @@ func (m PipelineModel) renderHelp() string {
 	}
 
 	brand := lipgloss.NewStyle().Foreground(m.theme.Overlay).Background(m.theme.Surface).Render("career-ops by santifer.io")
-	artifactReady := false
-	if app, ok := m.CurrentApp(); ok {
-		artifactReady = canOpenNextArtifact(app)
-	}
 
 	segment := func(key, desc string) string {
 		return keyStyle.Render(key) + descStyle.Render(" "+desc)
 	}
 
 	groups := []string{
-		segment("Enter", "report"),
+		segment("Enter", "details"),
 		segment("o", "URL"),
 		segment("d", "PDF"),
 		segment("D", "regen PDF"),
@@ -2072,9 +2035,6 @@ func (m PipelineModel) renderHelp() string {
 		segment("r", "refresh"),
 		segment("v", "view"),
 		segment("q", "quit"),
-	}
-	if artifactReady {
-		groups = append([]string{segment("n", "artifact")}, groups...)
 	}
 
 	return m.renderCommandRows(groups, 1, brand)

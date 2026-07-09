@@ -178,6 +178,121 @@ func TestViewerSkipsDuplicateEvaluationHeading(t *testing.T) {
 	}
 }
 
+func TestDetailsViewerStartsWithTlDrThenNextStep(t *testing.T) {
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "reports", "042-acme.md")
+	nextPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir report: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(nextPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	report := strings.Join([]string{
+		"# Evaluation: Acme -- Backend Engineer",
+		"",
+		"## Machine Summary",
+		"",
+		"```yaml",
+		"machine_only: true",
+		"```",
+		"",
+		"## A) Role Summary",
+		"",
+		"| Field | Assessment |",
+		"|---|---|",
+		"| **TL;DR** | Useful summary should be first. |",
+		"",
+		"## B) CV Match",
+		"",
+		"Strong backend fit.",
+	}, "\n")
+	if err := os.WriteFile(reportPath, []byte(report), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	next := strings.Join([]string{
+		"## Next: Acme -- Backend Engineer (#42)",
+		"",
+		"**Next human action:** Send the application after reviewing the salary field.",
+		"",
+		"### Copy-Paste",
+		"",
+		"Hello Acme.",
+	}, "\n")
+	if err := os.WriteFile(nextPath, []byte(next), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+
+	m := NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		reportPath,
+		"DETAILS: Acme / Backend Engineer",
+		80,
+		30,
+		model.CareerApplication{
+			Company:      "Acme",
+			Role:         "Backend Engineer",
+			NextPackPath: "output/next-packs/042-acme.md",
+		},
+	)
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	first := firstNonBlankLine(plain)
+	if first != "TL;DR: Useful summary should be first." {
+		t.Fatalf("expected TL;DR to be the first visible detail, got %q in:\n%s", first, plain)
+	}
+	for _, want := range []string{"NEXT STEP", "Next human action: Send the application", "COPY-PASTE", "A) ROLE SUMMARY"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("expected details page to contain %q, got:\n%s", want, plain)
+		}
+	}
+	for _, unwanted := range []string{"Next: Acme", "Machine Summary", "machine_only"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
+		}
+	}
+}
+
+func TestDetailsViewerDropsMachineSummarySection(t *testing.T) {
+	m := ViewerModel{
+		lines: []string{
+			"# Evaluation: Acme -- Backend Engineer",
+			"",
+			"## Machine Summary",
+			"",
+			"```yaml",
+			"machine_only: true",
+			"```",
+			"",
+			"## A) Role Summary",
+			"",
+			"Human-readable role summary.",
+		},
+		title:  "DETAILS: Acme / Backend Engineer",
+		width:  80,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	if strings.Contains(plain, "Machine Summary") || strings.Contains(plain, "machine_only") {
+		t.Fatalf("expected machine summary section to be hidden, got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "A) ROLE SUMMARY") || !strings.Contains(plain, "Human-readable role summary") {
+		t.Fatalf("expected normal report content to remain, got:\n%s", plain)
+	}
+}
+
+func firstNonBlankLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func TestViewerSectionHeadingsUseTitleInsetAndSpacing(t *testing.T) {
 	m := ViewerModel{
 		lines: []string{

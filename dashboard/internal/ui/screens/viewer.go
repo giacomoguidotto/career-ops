@@ -56,6 +56,9 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 	if len(content) > 0 {
 		lines = strings.Split(string(content), "\n")
 	}
+	if isDetailsTitle(title) {
+		lines = buildDetailsLines(careerOpsPath, lines, app)
+	}
 
 	m := ViewerModel{
 		lines:           lines,
@@ -70,6 +73,109 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 	}
 	m.rebuildRender()
 	return m
+}
+
+func isDetailsTitle(title string) bool {
+	return title == "DETAILS" || strings.HasPrefix(title, "DETAILS: ")
+}
+
+func buildDetailsLines(careerOpsPath string, reportLines []string, app model.CareerApplication) []string {
+	var lines []string
+
+	if tldr := extractDetailsTLDR(reportLines); tldr != "" {
+		lines = append(lines, "**TL;DR:** "+tldr, "")
+	}
+
+	if nextLines := loadDetailsNextPackLines(careerOpsPath, app); len(nextLines) > 0 {
+		lines = append(lines, "## Next Step", "")
+		lines = append(lines, nextLines...)
+		lines = append(lines, "")
+	} else if detail := nextActionDetail(app); detail != "" {
+		lines = append(lines, "## Next Step", "", "**Next action:** "+detail, "")
+	}
+
+	if len(lines) > 0 {
+		lines = append(lines, "---", "")
+	}
+	lines = append(lines, "## Evaluation", "")
+	lines = append(lines, stripLeadingReportHeading(reportLines)...)
+
+	return lines
+}
+
+func extractDetailsTLDR(lines []string) string {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if key, value, ok := splitMetadataLine(trimmed); ok && normalizeDetailsLabel(key) == "tl;dr" {
+			return cleanDetailsText(value)
+		}
+		if !strings.HasPrefix(trimmed, "|") {
+			continue
+		}
+		cells := parseTableCells(trimmed)
+		if len(cells) < 2 || normalizeDetailsLabel(cells[0]) != "tl;dr" {
+			continue
+		}
+		if value := cleanDetailsText(cells[1]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeDetailsLabel(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "*`:_ ")
+	return strings.ToLower(s)
+}
+
+func cleanDetailsText(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "| ")
+	s = strings.TrimSpace(reBold.ReplaceAllString(s, "$1"))
+	return s
+}
+
+func loadDetailsNextPackLines(careerOpsPath string, app model.CareerApplication) []string {
+	if careerOpsPath == "" || app.NextPackPath == "" {
+		return nil
+	}
+	content, err := os.ReadFile(filepath.Join(careerOpsPath, filepath.FromSlash(app.NextPackPath)))
+	if err != nil {
+		return nil
+	}
+	return stripLeadingNextPackHeading(strings.Split(string(content), "\n"))
+}
+
+func stripLeadingNextPackHeading(lines []string) []string {
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	if i < len(lines) {
+		if text, ok := markdownHeadingText(strings.TrimSpace(lines[i])); ok &&
+			strings.HasPrefix(strings.ToLower(text), "next:") {
+			i++
+		}
+	}
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	return lines[i:]
+}
+
+func stripLeadingReportHeading(lines []string) []string {
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	if i < len(lines) && isEvaluationHeading(strings.TrimSpace(lines[i])) {
+		i++
+	}
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	return lines[i:]
 }
 
 // parseCoverLetterPath scans the report lines for a "PDF generated: output/..." line
@@ -339,6 +445,11 @@ func (m ViewerModel) renderAll() []string {
 		line := m.lines[i]
 		trimmed := strings.TrimSpace(line)
 
+		if m.isEvaluationViewer() && isMachineSummaryHeading(trimmed) {
+			i = skipMarkdownSection(m.lines, i)
+			continue
+		}
+
 		if m.shouldHideLeadingTitleLine(i, trimmed) {
 			i++
 			if i < len(m.lines) && strings.TrimSpace(m.lines[i]) == "" {
@@ -462,7 +573,9 @@ func (m ViewerModel) isNextStepViewer() bool {
 }
 
 func (m ViewerModel) isEvaluationViewer() bool {
-	return strings.HasPrefix(m.title, "EVALUATION: ")
+	return strings.HasPrefix(m.title, "EVALUATION: ") ||
+		m.title == "EVALUATION" ||
+		isDetailsTitle(m.title)
 }
 
 func isEvaluationHeading(trimmed string) bool {
@@ -471,12 +584,43 @@ func isEvaluationHeading(trimmed string) bool {
 }
 
 func markdownHeadingText(trimmed string) (string, bool) {
-	for _, prefix := range []string{"###### ", "##### ", "#### ", "### ", "## ", "# "} {
+	level, ok := markdownHeadingLevel(trimmed)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(trimmed, strings.Repeat("#", level)+" ")), true
+}
+
+func markdownHeadingLevel(trimmed string) (int, bool) {
+	for level := 6; level >= 1; level-- {
+		prefix := strings.Repeat("#", level) + " "
 		if strings.HasPrefix(trimmed, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix)), true
+			return level, true
 		}
 	}
-	return "", false
+	return 0, false
+}
+
+func isMachineSummaryHeading(trimmed string) bool {
+	text, ok := markdownHeadingText(trimmed)
+	return ok && strings.EqualFold(strings.TrimSpace(text), "Machine Summary")
+}
+
+func skipMarkdownSection(lines []string, start int) int {
+	startLevel, ok := markdownHeadingLevel(strings.TrimSpace(lines[start]))
+	if !ok {
+		return start + 1
+	}
+
+	i := start + 1
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+		if level, ok := markdownHeadingLevel(trimmed); ok && level <= startLevel {
+			break
+		}
+		i++
+	}
+	return i
 }
 
 func (m ViewerModel) contentInset() int {

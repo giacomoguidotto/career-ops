@@ -747,18 +747,21 @@ func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
 	})
 
 	preview := pm.renderPreview()
-	if !strings.Contains(preview, "Next step:") || !strings.Contains(preview, "n: open output/next-packs/042-acme.md") {
-		t.Fatalf("expected preview to show next pack opener, got %q", preview)
+	if !strings.Contains(preview, "Next step:") || !strings.Contains(preview, "pack: output/next-packs/042-acme.md") {
+		t.Fatalf("expected preview to show next pack path, got %q", preview)
 	}
 	if strings.Contains(preview, "c: copy artifact") {
 		t.Fatalf("preview should not advertise artifact copying, got %q", preview)
+	}
+	if strings.Contains(preview, "n: open") {
+		t.Fatalf("preview should not advertise a separate next-step page, got %q", preview)
 	}
 	if strings.Contains(preview, "/career-ops next 42") {
 		t.Fatalf("preview should prefer existing pack path over generation command, got %q", preview)
 	}
 }
 
-func TestNextKeyOpensExistingPack(t *testing.T) {
+func TestNextKeyIsUnused(t *testing.T) {
 	apps := []model.CareerApplication{
 		{
 			Company:      "Acme",
@@ -767,25 +770,21 @@ func TestNextKeyOpensExistingPack(t *testing.T) {
 			ActionState:  "needs_action",
 			NextAction:   "send_application",
 			NextPackPath: "output/next-packs/042-acme.md",
+			ReportPath:   "reports/042-acme.md",
 		},
 	}
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
 
-	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if cmd == nil {
-		t.Fatal("expected n to emit an open-pack command")
+	updated, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Fatal("expected n to be unused in the pipeline dashboard")
 	}
-	msg := cmd()
-	openMsg, ok := msg.(PipelineOpenReportMsg)
-	if !ok {
-		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
-	}
-	if openMsg.Path != "/tmp/career-ops/output/next-packs/042-acme.md" {
-		t.Fatalf("opened path = %q", openMsg.Path)
+	if updated.flash != "" {
+		t.Fatalf("expected n not to emit a command hint, got flash %q", updated.flash)
 	}
 }
 
-func TestEnterUsesHumanEvaluationTitle(t *testing.T) {
+func TestEnterUsesHumanDetailsTitle(t *testing.T) {
 	apps := []model.CareerApplication{
 		{
 			Company:    "n8n",
@@ -807,62 +806,9 @@ func TestEnterUsesHumanEvaluationTitle(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
 	}
-	want := "EVALUATION: n8n / Community Software Engineer / Remote / Europe"
+	want := "DETAILS: n8n / Community Software Engineer / Remote / Europe"
 	if openMsg.Title != want {
 		t.Fatalf("opened title = %q, want %q", openMsg.Title, want)
-	}
-}
-
-func TestNextKeyUsesHumanNextStepTitle(t *testing.T) {
-	apps := []model.CareerApplication{
-		{
-			Company:      "n8n",
-			Role:         "Community Software Engineer / Remote / Europe",
-			Status:       "Application Ready",
-			ActionState:  "needs_action",
-			NextAction:   "send_application",
-			NextPackPath: "output/next-packs/042-n8n.md",
-			WorkMode:     "Remote",
-			Location:     "Europe",
-		},
-	}
-	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
-
-	_, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if cmd == nil {
-		t.Fatal("expected n to emit an open-pack command")
-	}
-	msg := cmd()
-	openMsg, ok := msg.(PipelineOpenReportMsg)
-	if !ok {
-		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
-	}
-	want := "NEXT STEP: Send Application / n8n / Community Software Engineer / Remote / Europe"
-	if openMsg.Title != want {
-		t.Fatalf("opened title = %q, want %q", openMsg.Title, want)
-	}
-}
-
-func TestNextKeyDoesNotOpenAgentGenerationStep(t *testing.T) {
-	apps := []model.CareerApplication{
-		{
-			Company:      "Acme",
-			Role:         "AI Engineer",
-			Status:       "Evaluated",
-			ActionState:  "needs_action",
-			NextAction:   "generate_application_pack",
-			NextCommand:  "/career-ops next 42",
-			NextPackPath: "",
-		},
-	}
-	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "/tmp/career-ops", 120, 40)
-
-	updated, cmd := pm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if cmd != nil {
-		t.Fatal("expected n to avoid opening a page before the artifact exists")
-	}
-	if !strings.Contains(updated.flash, "/career-ops next 42") {
-		t.Fatalf("expected n to explain the generation command, got flash %q", updated.flash)
 	}
 }
 
@@ -916,8 +862,11 @@ func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
 	if strings.Contains(plain, "copy") {
 		t.Fatalf("help bar should not advertise copy commands, got %q", plain)
 	}
-	if !strings.Contains(plain, "n artifact") {
-		t.Fatalf("help bar should keep the artifact opener when available, got %q", plain)
+	if strings.Contains(plain, "n artifact") {
+		t.Fatalf("help bar should not advertise a separate next-step page, got %q", plain)
+	}
+	if !strings.Contains(plain, "Enter details") {
+		t.Fatalf("help bar should describe Enter as the details opener, got %q", plain)
 	}
 	if !strings.Contains(plain, "c status") {
 		t.Fatalf("help bar should describe c as status editing, got %q", plain)
