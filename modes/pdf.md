@@ -1,5 +1,32 @@
 # Mode: pdf — ATS-Optimized PDF Generation
 
+## CV Best Practices (baseline)
+
+Every CV this mode produces follows these rules by default. They apply on top of
+the ATS rules below; where a market or the user's `modes/_custom.md` overrides
+one, the override wins.
+
+1. **One page.** Target exactly one page. Two pages only when the user asks, and
+   only for a detailed version aimed at smaller companies — never more than two.
+   Generation is invoked with `--max-pages=1` (see the pipeline), which fails if
+   the render overflows so the content gets trimmed rather than shipped long.
+2. **Contact = email + phone (+ LinkedIn, portfolio). No photo. No full address.**
+   Render location as at most a recognizable "City, Country" and only when it
+   helps; drop it otherwise. Never a street-level address. Photo stays opt-in
+   (`candidate.photo`), off for US/UK/ATS-first markets.
+3. **No floating tech/skills lists — anchor every technology to where it was
+   used.** Fold languages, frameworks, and tools into the experience bullets and
+   a short per-role `Tech:` line. Keep Core Competencies to a compact strip of
+   the top ~6 JD-matched keywords, each demonstrably backed by an experience
+   bullet or project below; cut it first when the one-page budget is tight. Omit
+   the standalone Skills section unless a market or role expects it.
+4. **Tailor to the target.** Adapt section emphasis, project selection, and
+   keywords to the specific JD and archetype (the rest of this mode).
+5. **Every line must be defensible; be objective.** Only include claims the user
+   can talk through in an interview. No exaggeration, no inflated proficiency, no
+   invented metrics or tech — reformulate real experience into the JD's
+   vocabulary, never fabricate.
+
 ## Full pipeline
 
 1. Read `cv.md` as the source of truth
@@ -20,18 +47,18 @@
 14. Generate full HTML from template + personalized content
 15. Read `name` from `config/profile.yml` → normalize to kebab-case lowercase (e.g. "John Doe" → "john-doe") → `{candidate}`
 16. Write HTML to `output/cv-{candidate}-{company}.html` (NOT a temp dir — the recorded HTML is what the dashboard's `D` hotkey regenerates from, so it must survive temp cleanup)
-17. Execute: `node generate-pdf.mjs output/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf --format={letter|a4} --report={report number}` — `{report number}` is the NNN from the report filename/link (e.g. `008` for `reports/008-acme-….md`), not the tracker `#` column. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry.
-18. Report: PDF path, number of pages, keyword coverage %
+17. Execute: `node generate-pdf.mjs output/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf --format={letter|a4} --max-pages=1 --report={report number}` — `{report number}` is the NNN from the report filename/link (e.g. `008` for `reports/008-acme-….md`), not the tracker `#` column. Pass it whenever the application has (or will have) a report; it records the PDF↔report linkage in `data/pdf-index.tsv` so the dashboard can open and regenerate the exact PDF. Omit it only for one-off CVs with no tracker entry. `--max-pages=1` enforces the one-page rule: if the render overflows, the command still writes the PDF (inspect it) but fails — trim the weakest content (extra bullets, older roles, the competencies strip, secondary projects) and regenerate. Use `--max-pages=2` only for an explicitly requested detailed version.
+18. Report: PDF path, number of pages (must be 1), keyword coverage %. If the page count came back over budget, trim and regenerate before handing the PDF to the user.
 
 ## ATS Rules (clean parsing)
 
 - Single-column layout (no sidebars, no parallel columns)
-- Standard headers: "Professional Summary", "Work Experience", "Education", "Skills", "Certifications", "Projects"
+- Standard headers: "Professional Summary", "Work Experience", "Education", "Certifications", "Projects", and "Skills" (Skills is optional — fold it into experience by default; see CV Best Practices)
 - No text in images/SVGs
 - No critical info in PDF headers/footers (ATS ignores them)
 - UTF-8, selectable text (not rasterized)
 - No nested tables
-- Distributed JD keywords: Summary (top 5), first bullet of each role, Skills section
+- Distributed JD keywords: Summary (top 5), first bullet of each role, and the Core Competencies strip — each keyword still anchored to real experience
 - No hidden text, keyword stuffing, or white-font tricks. Optimize for parseability plus human review.
 
 ## Recruiter Review Gates
@@ -56,11 +83,11 @@
 
 1. Header (large name, gradient, contact, portfolio link)
 2. Professional Summary (3-4 lines, keyword-dense)
-3. Core Competencies (6-8 keyword phrases in flex-grid)
-4. Work Experience (reverse chronological)
+3. Core Competencies (compact strip of ~6 JD-matched keywords, each proven below; cut first if the page is tight)
+4. Work Experience (reverse chronological; tech folded into bullets + a per-role `Tech:` line)
 5. Projects (top 3-4 most relevant)
 6. Education & Certifications
-7. Skills (languages + technical)
+7. Skills (optional — fold into experience by default; include a standalone section only when a market or role expects it)
 
 ## Keyword injection strategy (ethical, truth-based)
 
@@ -89,21 +116,20 @@ Use the template in `cv-template.html`. Replace the `{{...}}` placeholders with 
 | `{{LINKEDIN_DISPLAY}}` | [from profile.yml] |
 | `{{PORTFOLIO_URL}}` | [from profile.yml] (or /es depending on language) |
 | `{{PORTFOLIO_DISPLAY}}` | [from profile.yml] (or /es depending on language) |
-| `{{LOCATION}}` | [from profile.yml] |
+| `{{LOCATION}}` | Short "City, Country" from profile.yml, and only when it helps (e.g. "Venice, Italy" — never the full street-level string, never a full address). To omit it, remove both the preceding `<span class="separator">` and the `<span>{{LOCATION}}</span>`. |
 | `{{SECTION_SUMMARY}}` | Professional Summary |
 | `{{SUMMARY_TEXT}}` | Personalized summary with keywords |
 | `{{SECTION_COMPETENCIES}}` | Core Competencies |
-| `{{COMPETENCIES}}` | `<span class="competency-tag">keyword</span>` × 6-8 |
+| `{{COMPETENCIES}}` | `<span class="competency-tag">keyword</span>` × ~6, each proven in the experience/projects below |
 | `{{SECTION_EXPERIENCE}}` | Work Experience |
-| `{{EXPERIENCE}}` | HTML for each job with reordered bullets |
+| `{{EXPERIENCE}}` | HTML for each job with reordered bullets; fold tech into bullets + a per-role `Tech:` line |
 | `{{SECTION_PROJECTS}}` | Projects |
 | `{{PROJECTS}}` | HTML for top 3-4 projects |
 | `{{SECTION_EDUCATION}}` | Education |
 | `{{EDUCATION}}` | Education HTML |
 | `{{SECTION_CERTIFICATIONS}}` | Certifications |
 | `{{CERTIFICATIONS}}` | Certifications HTML |
-| `{{SECTION_SKILLS}}` | Skills |
-| `{{SKILLS}}` | Skills HTML |
+| `{{SECTION_SKILLS}}` / `{{SKILLS}}` | Skills — **optional, off by default** (tech is folded into experience). To omit, **remove the whole Skills `<div class="section">` block** (like `{{PHOTO}}`). Include a standalone section only when a market or role expects one; keep it grouped and truthful, never a floating catch-all list. |
 
 ### Profile photo (opt-in, market-specific)
 
