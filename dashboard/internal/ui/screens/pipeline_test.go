@@ -787,6 +787,7 @@ func TestNextKeyIsUnused(t *testing.T) {
 func TestEnterUsesHumanDetailsTitle(t *testing.T) {
 	apps := []model.CareerApplication{
 		{
+			Number:     143,
 			Company:    "n8n",
 			Role:       "Community Software Engineer / Remote / Europe",
 			Status:     "Evaluated",
@@ -806,7 +807,7 @@ func TestEnterUsesHumanDetailsTitle(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PipelineOpenReportMsg, got %T", msg)
 	}
-	want := "DETAILS: n8n / Community Software Engineer / Remote / Europe"
+	want := "DETAILS: #143 / n8n / Community Software Engineer / Remote / Europe"
 	if openMsg.Title != want {
 		t.Fatalf("opened title = %q, want %q", openMsg.Title, want)
 	}

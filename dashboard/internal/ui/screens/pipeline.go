@@ -1923,7 +1923,20 @@ func detailsViewerTitle(app model.CareerApplication) string {
 	if len(parts) == 0 {
 		return "DETAILS"
 	}
+	if id := opportunityTitleID(app); id != "" {
+		parts = append([]string{id}, parts...)
+	}
 	return "DETAILS: " + strings.Join(parts, " / ")
+}
+
+func opportunityTitleID(app model.CareerApplication) string {
+	if app.Number > 0 {
+		return fmt.Sprintf("#%d", app.Number)
+	}
+	if app.ReportNumber != "" {
+		return "#" + strings.TrimPrefix(app.ReportNumber, "#")
+	}
+	return ""
 }
 
 func opportunityTitleParts(app model.CareerApplication) []string {
