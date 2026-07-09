@@ -303,6 +303,7 @@ const USER_PATHS = [
   'data/',
   'reports/',
   'output/',
+  '.career-ops-web/',
   'jds/',
   'writing-samples/',
   'config/plugins.yml',

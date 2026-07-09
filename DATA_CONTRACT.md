@@ -32,6 +32,7 @@ These files contain your personal data, customizations, and work product. Update
 | `writing-samples/*` | Your personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
 | `reports/*` | Your evaluation reports |
 | `output/*` | Your generated PDFs and generated next packs |
+| `.career-ops-web/*` | Runtime web UI cache, run logs, logo cache, and local assistant memory |
 | `jds/*` | Your saved job descriptions |
 
 ## System Layer (safe to auto-update)
