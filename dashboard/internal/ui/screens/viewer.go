@@ -98,10 +98,41 @@ func buildDetailsLines(careerOpsPath string, reportLines []string, app model.Car
 	if len(lines) > 0 {
 		lines = append(lines, "---", "")
 	}
+	deepDiveLines := stripDetailsLeadSections(stripLeadingReportHeader(stripLeadingReportHeading(reportLines)))
 	lines = append(lines, "## Deep Dive", "")
-	lines = append(lines, stripDetailsLeadSections(stripLeadingReportHeader(stripLeadingReportHeading(reportLines)))...)
+	if tldr := extractDetailsTlDr(deepDiveLines); tldr != "" {
+		lines = append(lines, "**TL;DR:** "+tldr, "")
+	}
+	lines = append(lines, deepDiveLines...)
 
 	return lines
+}
+
+func extractDetailsTlDr(lines []string) string {
+	for _, line := range lines {
+		if !isTableLine(line) || isTableSeparator(line) {
+			continue
+		}
+		cells := parseTableCells(line)
+		if len(cells) < 2 || normalizeDetailsLabel(cells[0]) != "tl;dr" {
+			continue
+		}
+		if tldr := cleanDetailsText(cells[1]); tldr != "" {
+			return tldr
+		}
+	}
+
+	for _, line := range lines {
+		key, value, ok := splitMetadataLine(strings.TrimSpace(line))
+		if !ok || normalizeDetailsLabel(key) != "tl;dr" {
+			continue
+		}
+		if tldr := cleanDetailsText(value); tldr != "" {
+			return tldr
+		}
+	}
+
+	return ""
 }
 
 func extractDetailsSnapshotLines(lines []string) []string {

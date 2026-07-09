@@ -323,11 +323,20 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 		"Next step: Send the generated application: review the salary field, then",
 		"submit.",
 		"COPY-PASTE",
+		"TL;DR: Useful summary should be first.",
 		"A) ROLE SUMMARY",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected details page to contain %q, got:\n%s", want, plain)
 		}
+	}
+	tldrIndex := strings.Index(plain, "TL;DR: Useful summary should be first.")
+	roleSummaryIndex := strings.Index(plain, "A) ROLE SUMMARY")
+	if tldrIndex < 0 || roleSummaryIndex < 0 || tldrIndex > roleSummaryIndex {
+		t.Fatalf("expected TL;DR before role summary, got:\n%s", plain)
+	}
+	if got := strings.Count(plain, "TL;DR"); got != 1 {
+		t.Fatalf("expected TL;DR to appear once, got %d in:\n%s", got, plain)
 	}
 	for _, unwanted := range []string{
 		"Next: Acme",
@@ -341,8 +350,6 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 		"Owner:",
 		"Suggests:",
 		"Score: 4.2/5",
-		"TL;DR",
-		"TL;DR: Useful summary should be first.",
 	} {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
