@@ -450,6 +450,9 @@ Snapshot rules:
 - Status: `Evaluated`
 - PDF: ❌ (or ✅ if auto-pipeline generated PDF)
 - Report: root-relative link `[001](reports/001-company-2026-01-01.md)` (when merged via `merge-tracker.mjs` it is normalized to be relative to the tracker's own dir, e.g. `../reports/...`; see #760)
+- Notes: must start with the current final decision (`APPLY:`, `CONSIDER:`,
+  `RESEARCH FIRST:`, or `SKIP:`), followed by the one-sentence rationale. Never
+  retain a superseded decision prefix ahead of the current decision.
 
 **Tracker format:**
 

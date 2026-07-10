@@ -17,6 +17,7 @@ You are a job-offer evaluation worker for the candidate (read the name from `con
 | cv.md | `cv.md` (project root) | ALWAYS |
 | _profile.md | `modes/_profile.md` (if exists) | ALWAYS (user customizations: archetypes, role shape, location policy, comp targets) |
 | profile.yml | `config/profile.yml` (if exists) | ALWAYS (candidate identity, comp range, role-shape rules) |
+| _custom.md | `modes/_custom.md` (if exists) | ALWAYS (procedural evaluation, decision, and advancement policy) |
 | llms.txt | `llms.txt` (if exists) | ALWAYS |
 | article-digest.md | `article-digest.md` (project root) | ALWAYS (proof points) |
 | i18n.ts | `i18n.ts` (if exists, optional) | Interviews/deep research only |
@@ -26,7 +27,7 @@ You are a job-offer evaluation worker for the candidate (read the name from `con
 **Rule: NEVER write to `cv.md` or `i18n.ts`.** They are read-only.
 **Rule: NEVER hardcode metrics.** Read them from `cv.md` + `article-digest.md` at evaluation time.
 **Rule: For article metrics, `article-digest.md` wins over `cv.md`.** `cv.md` may contain older numbers; that is normal.
-**Rule: Before evaluating, load `modes/_profile.md` and `config/profile.yml` if they exist.** They contain candidate preferences and concrete scoring rules that override system defaults.
+**Rule: Before evaluating, load `modes/_profile.md`, `config/profile.yml`, and `modes/_custom.md` if they exist.** The first two contain candidate preferences and concrete scoring rules. `_custom.md` contains persistent procedural rules and overrides system defaults for evaluation, decisions, tracker notes, and advancement.
 
 These files may include patterns such as:
 
@@ -206,7 +207,7 @@ Analyze posting signals to assess whether this is a real, active opening.
 
 #### Global Score
 
-Read `modes/_custom.md` → Scoring Rules, if it exists, and apply its override here. Default (if absent or silent): calculate global score based on dimension scores below.
+Read `modes/_custom.md` -> applicable scoring rules, if they exist, and apply their override here. Default (if absent or silent): calculate global score based on dimension scores below.
 
 | Dimension | Score |
 |-----------|-------|
@@ -216,6 +217,28 @@ Read `modes/_custom.md` → Scoring Rules, if it exists, and apply its override 
 | Cultural signals | X/5 |
 | Red flags | -X (if any) |
 | **Global** | **X/5** |
+
+#### Decision And Advancement Policy
+
+Before writing the Decision Snapshot, Machine Summary, or tracker line, apply
+`modes/_custom.md` -> `Evaluation And Advancement Policy` when present. When that
+policy disables automatic qualifying questions:
+
+- `Apply` and `Consider` both route to `generate_application_pack`. Use
+  `Consider` to lower queue priority, never to ask the recruiter for permission.
+- Score ranks eligible opportunities; it does not turn a low-scoring eligible
+  role into `Skip`, `Discarded`, or a qualifying-question route by itself.
+- Location ambiguity, sponsorship, relocation, EOR/B2B setup, compensation,
+  seniority, missing technologies, domain gaps, and custom application artifacts
+  are score/priority risks, not automatic pre-application gates.
+- Reserve `Research first` for unresolved safety, legitimacy, scam/payment, or
+  contradictory legal signals. It represents internal research and must not emit
+  `draft_qualifying_questions`.
+- `draft_qualifying_questions` is on-demand only after an explicit user request.
+  An unattended batch worker must never select it automatically.
+
+If `_custom.md` is absent or silent on advancement, retain the standard decision
+semantics. In all cases, keep the Decision Snapshot and Machine Summary aligned.
 
 #### Decision Snapshot
 
@@ -494,6 +517,11 @@ TSV format (single line, no header, 9 tab-separated columns):
 | 9 | notes | string | `APPLY HIGH...` | One-sentence summary |
 
 **Important:** TSV order has status before score (column 5 -> status, column 6 -> score). In `applications.md`, the order is reversed (column 5 -> score, column 6 -> status). `merge-tracker.mjs` handles the conversion.
+
+`{one_sentence_note}` must start with the current final decision (`APPLY:`,
+`CONSIDER:`, `RESEARCH FIRST:`, or `SKIP:`). Never preserve a superseded decision
+prefix ahead of the current one; downstream routing treats the prefix as a
+machine-readable preview.
 
 **Optional fields (column >= 10):** if the offer came through an agency/recruiter (#1596), append a tagged field `via={Agency}` (for example, `via=Hays`) — never positional; the tag is mandatory. A single untagged extra field keeps its legacy meaning as location. If the end employer is unknown, use `?` as company and add the descriptor in notes (for example, `fintech, Leeds`). `merge-tracker.mjs` rejects ambiguous extras (two untagged fields, or two `via=` fields).
 
