@@ -153,13 +153,18 @@ cover_letter:
 
 # ── Outreach / greeting ─────────────────────────────────────────────────────
 #
-# Used by the greeting variant of `/career-ops contacto` (the short first-touch
-# message for BOSS Zhipin 打招呼, job-board chat, or a cold-email opener).
+# Used by outreach modes for LinkedIn connection request notes and by the
+# greeting variant of `/career-ops contacto` (the short first-touch message for
+# BOSS Zhipin 打招呼, job-board chat, or a cold-email opener).
+#
+# connection_note_max_chars is the hard budget for LinkedIn connection request
+# notes. Default when the key is absent: 200.
 #
 # greeting_max_chars is the hard character budget for that message. Default when
 # the key is absent: 150 (BOSS Zhipin's greeting limit). Raise or lower it to
 # match the platform you're messaging on.
 # outreach:
+#   connection_note_max_chars: 200
 #   greeting_max_chars: 150
 
 # ── Application Email Drafts ────────────────────────────────────────────────

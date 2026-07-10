@@ -448,7 +448,7 @@ Press `o` to open and fill the form: {ATS/form URL}
 - **When:** {before applying / while applying / after submitting / later}
 - **To:** {name} -- {title} | {LinkedIn/YC/email URL}
 - **Channel:** {LinkedIn connection note / DM / email / YC / ATS}
-- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Connection note:** {yes/no, {N}/{connection_note_max_chars} chars when relevant}
 - **Instruction:** {one sentence}
 
 Subject: {email only}
@@ -464,7 +464,7 @@ Best,
 - **When:** {condition, e.g. if the primary message goes cold after N business days}
 - **To:** {name} -- {title} | {LinkedIn/YC/email URL}
 - **Channel:** {LinkedIn connection note / DM / email / YC / ATS}
-- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Connection note:** {yes/no, {N}/{connection_note_max_chars} chars when relevant}
 - **Instruction:** {one sentence}
 
 ...
@@ -483,7 +483,7 @@ For a qualifying pack, replace the first action run with this order:
 - **When:** before applying.
 - **To:** {name} -- {title} | {LinkedIn/email URL}
 - **Channel:** {LinkedIn connection note / DM / email / ATS}
-- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Connection note:** {yes/no, {N}/{connection_note_max_chars} chars when relevant}
 - **Instruction:** {one sentence}
 
 ...
@@ -492,7 +492,7 @@ For a qualifying pack, replace the first action run with this order:
 - **When:** {condition, e.g. if the primary question goes cold after N business days}
 - **To:** {name} -- {title} | {LinkedIn/email URL}
 - **Channel:** {LinkedIn connection note / DM / email / ATS}
-- **Connection note:** {yes/no, {N}/300 chars when relevant}
+- **Connection note:** {yes/no, {N}/{connection_note_max_chars} chars when relevant}
 - **Instruction:** {one sentence}
 
 ...

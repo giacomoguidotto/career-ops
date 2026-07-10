@@ -5,7 +5,8 @@
 This mode has two variants that share the same persona engine (recruiter → hard
 requirements; hiring manager → impact/vision):
 
-- **LinkedIn power move** (default) — find contacts and draft a ≤300-char message
+- **LinkedIn power move** (default) — find contacts and draft a connection note
+  within the configured character budget
   tied to a specific application/interview. This is the flow below.
 - **Greeting** — a single ultra-short first-touch message for platforms with a hard
   character budget (BOSS Zhipin 打招呼, job-board chat, a cold-email opener). No
@@ -140,12 +141,16 @@ the CTA phrasing (e.g. "screens unknown numbers" → prefer email wording) but d
 not quote the note verbatim in a public-facing message.
 
 **Message rules:**
-- **Length by channel:** the 300-character cap applies only to a LinkedIn
-  *connection request note*. A direct message, InMail, email, or in-form question
-  has no such limit -- keep it concise but let it breathe (a few short sentences).
+- **Length by channel:** read `outreach.connection_note_max_chars` from
+  `config/profile.yml` for LinkedIn *connection request notes*; default to 200
+  when the key is absent. A direct message, InMail, email, or in-form question has
+  no such limit -- keep it concise but let it breathe (a few short sentences).
   Never sacrifice a warm, natural read just to hit a character count. When the
-  channel is a 300-char connection note, say so and trim to fit without going
-  robotic.
+  channel is a connection note, say so, show `{N}/{limit} chars`, and trim to fit
+  without going robotic.
+- For capped connection notes, preserve the human shape: warm opener, one
+  concrete reason or ask, and a no-pressure energetic closing line. Trim extra
+  proof points before cutting the close.
 - NO corporate-speak
 - NO "I'm passionate about..."
 - NO keyword dumps -- a message is not a CV
