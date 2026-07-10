@@ -150,6 +150,8 @@ destination, or decision.
 - `data/follow-ups.md` -- sent follow-up history, if present.
 - `reports/` -- evaluation reports.
 - `output/next-packs/` -- generated copy-paste advancement packs.
+- `modes/_custom.md` (if present) -- persistent workflow and advancement policy;
+  read it before resolving any action because it overrides the defaults below.
 - `config/profile.yml`, `modes/_profile.md`, `cv.md`, and `article-digest.md`
   for candidate context.
 
@@ -214,6 +216,7 @@ Read:
 - `templates/states.yml`
 - relevant report files
 - `data/follow-ups.md` if present
+- `modes/_custom.md` if present
 - `config/profile.yml`
 - `modes/_profile.md`
 - `cv.md`
@@ -228,6 +231,29 @@ node followup-cadence.mjs
 Completion criterion: every candidate considered has its tracker stage, score,
 report path when available, the stage's `owner`/`suggests` from `templates/states.yml`,
 and enough candidate context for the chosen pack.
+
+#### Advancement policy precedence
+
+Before selecting or generating an artifact, apply `modes/_custom.md` ->
+`Evaluation And Advancement Policy` when that section exists. Its rules override
+the default decision routing later in this file. In particular, when that policy
+disables automatic qualifying questions:
+
+- `Apply` and `Consider` both route to `generate_application_pack`; `Consider` is
+  a lower-priority application, not another lifecycle state.
+- Score controls ordering only. Do not route an otherwise eligible low-scoring
+  row to `skip`, `discarded`, or a qualifying question because of score alone.
+- When an older tracker sentence conflicts with a later
+  `[re-evaluated YYYY-MM-DD]` marker and the report's current Machine Summary, use
+  the later marker and current report.
+- `Research first` remains internal work. Resolve the safety, legitimacy, or
+  contradictory-legal-signal question and rewrite the decision to `Apply`,
+  `Consider`, or `Skip` before advancement. Never route `Research first` directly
+  to `draft_qualifying_questions`.
+- Use `draft_qualifying_questions` only when the user explicitly requests that
+  on-demand action for a specific role.
+
+If `_custom.md` is absent or silent on advancement, use the default routing below.
 
 ### 3. Resolve the Target
 
@@ -245,20 +271,19 @@ For an unattended `auto` run, honor the automation invariant: select only
 `agent`-owned stages ready for their generation step, highest-value first:
 
 1. `evaluated` rows (draft the application pack), sorted by score and boosted by
-   report/tracker `APPLY` or strong `Research first` signals. **Routing:** when
-   the report's `final_decision` is `Research first` and the row has NOT already
-   qualified (no `[qualifying-sent …]` marker in its notes), draft a qualifying
+   the current report/tracker `APPLY` or `CONSIDER` decision. Resolve the current
+   decision using the advancement-policy precedence above. Under the default
+   policy only, when `final_decision` is `Research first` and the row has NOT
+   already qualified (no `[qualifying-sent …]` marker), draft a qualifying
    question (`draft_qualifying_questions`) and advance it into the qualifying
-   subloop instead of drafting the application pack. Otherwise draft the
-   application pack as usual. This gate is automation policy, like the
-   sub-threshold routing below — the loop-guard (skip qualifying when the marker
-   already exists) is what keeps a returned `qualifying_sent → evaluated` row
+   subloop. The loop guard keeps a returned `qualifying_sent → evaluated` row
    from re-qualifying forever.
 2. `responded` rows (draft the interview cheatsheet).
 3. `offer` rows (draft negotiation prep).
 
-Sub-threshold `evaluated` rows may be routed to `skip` or `discarded` per scoring
-policy instead of being drafted; that gate is automation policy, not a stage.
+Sub-threshold `evaluated` rows may be routed to `skip` or `discarded` only when the
+active scoring/advancement policy permits it; that gate is automation policy, not
+a stage.
 
 For an interactive run with no target, additionally surface the smallest useful
 next step for active non-agent rows: `applied` rows with an overdue follow-up
@@ -322,12 +347,11 @@ and any `draft_outreach`, `send_outreach`, or `follow_up` action MUST run
 so the pack names a real recruiter or hiring manager, links
 their profile, carries a real deliverable address when email is used, and tells
 the candidate which target/channel/timing to use first in the ordered send
-sections. Do not emit an email draft you have no address to send to. When the
-report's `final_decision` is `Research first` and the row has not already
-qualified, draft
-`draft_qualifying_questions` instead of the application pack (the pre-application
-qualifying subloop), so the user clears the gate before investing in a full
-application.
+sections. Do not emit an email draft you have no address to send to. Under the
+default advancement policy, when the report's `final_decision` is `Research
+first` and the row has not already qualified, draft
+`draft_qualifying_questions` instead of the application pack. When `_custom.md`
+disables automatic qualifying, follow the precedence section above instead.
 
 Pack contents by `suggests` artifact (agent stages draft these; the paired user
 `_ready` stage re-presents the already-drafted artifact plus the exact real-world
@@ -353,8 +377,8 @@ action and what to confirm, it does not invent a new pack):
     (typically the CEO plus the technical/eng founder for an engineering role)
     and place them in primary/backup send order.
   - a short line of what to confirm before applying
-- `draft_qualifying_questions` (at `evaluated`, when `final_decision` is
-  `Research first`) -> qualifying pack:
+- `draft_qualifying_questions` (at `evaluated`, when the active advancement
+  policy or an explicit user request permits it) -> qualifying pack:
   - `### Before You Send`: the gate being tested, which answer clears it, and
     which answer kills or pauses the application
   - `### Send the Gating Question`: the named recruiter/hiring manager and their
