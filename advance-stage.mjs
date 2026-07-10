@@ -25,6 +25,7 @@
  *   node advance-stage.mjs --reconcile  Advance every agent row that has a drafted pack
  *   node advance-stage.mjs 93 --force   Advance even without a drafted pack on disk
  *   node advance-stage.mjs 93 --dry-run Show what would change, write nothing
+ *   node advance-stage.mjs 93 --coordination-override  Human-confirm one suppressed target on a TTY
  *   node advance-stage.mjs --json       Machine-readable summary
  *   node advance-stage.mjs --self-test  Run built-in assertions (CI)
  */
@@ -32,8 +33,10 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { createInterface } from 'readline/promises';
 import { loadStates, resolveState, pairedReadyStage, rebuildRow } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { candidacyAdvanceBlockReason, loadCandidacySelection } from './candidacy-select.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 
@@ -165,6 +168,8 @@ export function syncPackHeader(content, readyRecord) {
  * @param {boolean} [opts.force] - Advance even without a drafted pack on disk.
  * @param {boolean} [opts.dryRun] - Compute changes but write nothing.
  * @param {ReturnType<typeof loadStates>} [opts.states]
+ * @param {ReturnType<typeof loadCandidacySelection>|null} [opts.coordination]
+ * @param {boolean} [opts.coordinationOverride] - Explicit interactive override for a suppressed sibling.
  * @returns {{ results: object[], trackerChanged: boolean, wrote: boolean }}
  */
 export function advanceApplications(opts) {
@@ -176,6 +181,8 @@ export function advanceApplications(opts) {
     force = false,
     dryRun = false,
     states = loadStates(),
+    coordination = null,
+    coordinationOverride = false,
   } = opts;
 
   const content = readFileSync(appsFile, 'utf-8');
@@ -200,6 +207,9 @@ export function advanceApplications(opts) {
   const results = [];
   const packWrites = [];
   let trackerChanged = false;
+  const coordinationBlocks = new Map(
+    (coordination?.suppressed ?? []).map((item) => [item.num, item]),
+  );
 
   for (const num of targets) {
     const entry = rowsByNum.get(num);
@@ -220,6 +230,18 @@ export function advanceApplications(opts) {
     const adv = computeAdvance(entry.row.status, states, artifact);
     if (!adv.ok) {
       results.push({ num, ok: false, reason: adv.reason, from: adv.fromLabel });
+      continue;
+    }
+    const coordinationBlock = coordinationBlocks.get(num);
+    if (coordinationBlock && !coordinationOverride) {
+      results.push({
+        num,
+        ok: false,
+        reason: candidacyAdvanceBlockReason(coordinationBlock.reason),
+        from: adv.fromLabel,
+        clusterId: coordinationBlock.clusterId ?? null,
+        primary: coordinationBlock.primary ?? null,
+      });
       continue;
     }
     if (!pack && !force) {
@@ -327,21 +349,74 @@ function selfTest() {
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
-function main() {
+/**
+ * A coordination override is a human-reviewed escape hatch, never an automation
+ * switch. It is valid only for one explicit tracker number on an interactive TTY.
+ */
+export function validateCoordinationOverrideRequest({
+  requested,
+  reconcile,
+  nums,
+  json,
+  stdinIsTTY,
+  stdoutIsTTY,
+}) {
+  if (!requested) return { ok: true, needsConfirmation: false };
+  if (reconcile) return { ok: false, reason: 'override-not-allowed-with-reconcile' };
+  if (nums.length !== 1) return { ok: false, reason: 'override-requires-one-target' };
+  if (json) return { ok: false, reason: 'override-requires-human-output' };
+  if (!stdinIsTTY || !stdoutIsTTY) return { ok: false, reason: 'override-requires-tty' };
+  return { ok: true, needsConfirmation: true, num: nums[0] };
+}
+
+async function confirmCoordinationOverride(num) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(
+      `Override candidacy coordination for #${num}? Type ${num} to confirm: `,
+    );
+    return answer.trim() === String(num);
+  } finally {
+    rl.close();
+  }
+}
+
+async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--self-test')) return selfTest();
 
   const dryRun = argv.includes('--dry-run');
   const json = argv.includes('--json');
   const force = argv.includes('--force');
+  const coordinationOverride = argv.includes('--coordination-override');
   const reconcile = argv.includes('--reconcile');
   const nums = argv
     .filter((a) => !a.startsWith('--'))
     .map((a) => parseInt(a, 10))
     .filter((n) => !isNaN(n));
 
+  const overrideRequest = validateCoordinationOverrideRequest({
+    requested: coordinationOverride,
+    reconcile,
+    nums,
+    json,
+    stdinIsTTY: Boolean(process.stdin.isTTY),
+    stdoutIsTTY: Boolean(process.stdout.isTTY),
+  });
+  if (!overrideRequest.ok) {
+    console.error(`Coordination override refused: ${overrideRequest.reason}`);
+    process.exit(1);
+  }
+  if (overrideRequest.needsConfirmation) {
+    const confirmed = await confirmCoordinationOverride(overrideRequest.num);
+    if (!confirmed) {
+      console.error('Coordination override cancelled.');
+      process.exit(1);
+    }
+  }
+
   if (!reconcile && nums.length === 0) {
-    console.error('Usage: node advance-stage.mjs <num...> | --reconcile [--force] [--dry-run] [--json]');
+    console.error('Usage: node advance-stage.mjs <num...> | --reconcile [--force] [--coordination-override] [--dry-run] [--json]');
     process.exit(json ? 0 : 1);
   }
 
@@ -352,6 +427,11 @@ function main() {
     process.exit(0);
   }
 
+  const coordination = loadCandidacySelection({
+    trackerPath: appsFile,
+    clustersPath: join(CAREER_OPS, 'data', 'candidacy-clusters.md'),
+  });
+
   const { results, wrote } = advanceApplications({
     appsFile,
     packsDir: packsDir(),
@@ -359,10 +439,22 @@ function main() {
     reconcile,
     force,
     dryRun,
+    coordination,
+    coordinationOverride,
   });
 
   if (json) {
-    console.log(JSON.stringify({ dryRun, wrote, results }, null, 2));
+    console.log(JSON.stringify({
+      dryRun,
+      wrote,
+      coordinationOverride,
+      coordination: {
+        eligible: coordination.eligible.map((item) => item.num),
+        suppressed: coordination.suppressed.map((item) => item.num),
+        researchRequired: coordination.researchRequired,
+      },
+      results,
+    }, null, 2));
     return;
   }
 
@@ -382,5 +474,5 @@ function main() {
 
 // Only run the CLI when executed directly, not when imported by tests.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  await main();
 }

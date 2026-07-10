@@ -129,7 +129,9 @@ const scripts = [
   { name: 'detect-reposts.mjs --self-test', expectExit: 0 },
   { name: 'process-quality.mjs --self-test', expectExit: 0 },
   { name: 'salary-gap.mjs --self-test', expectExit: 0 },
+  { name: 'candidacy-select.test.mjs', expectExit: 0 },
   { name: 'advance-stage.mjs --self-test', expectExit: 0 },
+  { name: 'advance-stage.test.mjs', expectExit: 0 },
   { name: 'updater-migration-tests.mjs', expectExit: 0 },
   { name: 'tracker-columns-tests.mjs', expectExit: 0 },
   { name: 'agent-inbox-tests.mjs', expectExit: 0 },
@@ -1173,11 +1175,14 @@ if (
   nextMode.includes('including unattended `auto` and interactive') &&
   nextMode.includes('interactive alternate') &&
   nextMode.includes('sole drafting') &&
+  nextMode.includes('node candidacy-select.mjs --json') &&
+  nextMode.includes('exclusive Agent-owned candidate set') &&
+  nextMode.includes('researchRequired') &&
   /Do not\s+add a coordination-only Stage/.test(nextMode)
 ) {
-  pass('next mode coordinates Agent-owned selection by researched Hiring surface without changing Stages');
+  pass('next mode coordinates Agent-owned selection through the deterministic Hiring-surface preflight without changing Stages');
 } else {
-  fail('next mode missing hiring-surface research, shared fallback, sibling exclusion, or state-separation contract');
+  fail('next mode missing deterministic preflight, hiring-surface research, shared fallback, sibling exclusion, or state-separation contract');
 }
 
 if (
@@ -1481,6 +1486,18 @@ if (
 
 const routerSkill = readFile('.agents/skills/career-ops/SKILL.md');
 if (
+  routerSkill.includes('Confirmed candidacy event in natural language') &&
+  routerSkill.includes('User-reported candidacy events') &&
+  routerSkill.includes('I applied to #313') &&
+  routerSkill.includes('takes precedence over auto-pipeline') &&
+  routerSkill.includes('from any working directory')
+) {
+  pass('router skill maps natural-language real-world candidacy events to tracker reconciliation globally');
+} else {
+  fail('router skill can still send a real-world candidacy event to discovery or JD detection');
+}
+
+if (
   /argument-hint:.*offer-prep/.test(routerSkill) &&
   routerSkill.includes('| `offer-prep` | `offer-prep` |') &&
   routerSkill.includes('/career-ops offer-prep') &&
@@ -1511,11 +1528,15 @@ if (
   agentsMdDoc.includes('## User-Reported Candidacy Events') &&
   agentsMdDoc.includes('candidacyCoordination') &&
   agentsMdDoc.includes('sameCompanyApplications') &&
-  agentsMdDoc.includes('data/candidacy-clusters.md')
+  agentsMdDoc.includes('data/candidacy-clusters.md') &&
+  claudeMdDoc.includes('## Deterministic Candidacy Selection') &&
+  agentsMdDoc.includes('## Deterministic Candidacy Selection') &&
+  claudeMdDoc.includes('node candidacy-select.mjs --json') &&
+  agentsMdDoc.includes('node candidacy-select.mjs --json')
 ) {
-  pass('always-loaded agent docs reconcile candidacy clusters after user-reported application events');
+  pass('always-loaded agent docs enforce deterministic selection and reconcile clusters after user-reported events');
 } else {
-  fail('an agent can record "I applied" without reconciling related hiring surfaces');
+  fail('an agent can select raw tracker rows or record "I applied" without deterministic candidacy reconciliation');
 }
 
 const coordinationStatesDoc = readFile('templates/states.yml');

@@ -111,6 +111,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
 | `followup-seed.mjs` | Seeds `data/follow-ups.md` with a pinned first follow-up date when a row turns Applied (JSON output) |
 | `set-status.mjs` | Canonical CLI to update a tracker row: `node set-status.mjs <report#\|company> <State> [--note]` — strict states.yml validation, shared tracker lock, atomic write |
+| `candidacy-select.mjs` | Read-only deterministic preflight for Agent-owned advancement — emits exclusive `eligible`, `suppressed`, and `researchRequired` sets after Hiring-surface coordination |
 | `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email (company name, date, req ID) against `data/applications.md`, ranking candidates when a company has multiple tracker entries (JSON or `--summary` table output) |
 | `detect-reposts.mjs` | Repost detector — flags roles re-listed 2+ times in 90 days from scan-history.tsv (JSON or `--summary` table output) |
 | `process-quality.mjs` | Recruiting-process friction aggregator — parses `[process-friction]` tags candidates add to `data/active-interviews.md` Notes and reports per-company friction rate (JSON or `--summary` table output) |
@@ -413,6 +414,16 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 6. Normalize statuses: `node normalize-statuses.mjs`
 7. Dedup: `node dedup-tracker.mjs`
 
+## Deterministic Candidacy Selection
+
+Before any agent or unattended automation selects Agent-owned Applications for
+advancement, run `node candidacy-select.mjs --json`. Its `eligible` array is the
+exclusive selection input; never reconstruct candidates from raw tracker rows or
+re-add `suppressed` rows after score sorting. If `researchRequired` is non-empty,
+execute `modes/next.md` -> Candidacy Coordination for those companies, persist the
+evidence-backed partition or shared fallback, and rerun the selector. Unattended
+runs never use `advance-stage.mjs --coordination-override`.
+
 ## User-Reported Candidacy Events
 
 When the user reports a real-world event such as "I just applied to #313", treat
@@ -425,6 +436,8 @@ proves one cluster by itself. `modes/next.md` -> Candidacy Coordination is the
 canonical selection, research, fallback, persistence, and Outreach-anchor
 contract. Coordination never changes a sibling Application's factual Stage or
 adds a coordination-only Stage to `templates/states.yml`.
+After persisting the review, rerun `node candidacy-select.mjs --json` and report
+the affected company's eligible/suppressed result before recommending next work.
 
 ### Canonical States (applications.md)
 

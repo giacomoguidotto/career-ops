@@ -65,6 +65,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/offer-prep.md` | Offer-stage contract reading companion instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
 | `modes/next.md` | Status-driven advancement instructions |
+| `candidacy-select.mjs` / `candidacy-select.test.mjs` | Deterministic, read-only Hiring-surface eligibility preflight and its regression suite |
 | `modes/de/*` | German language modes |
 | `modes/fr/*` | French language modes |
 | `modes/hi/*` | Hindi language modes |

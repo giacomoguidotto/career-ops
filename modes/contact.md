@@ -26,6 +26,11 @@ Hiring surface already has an Outreach anchor or recorded first touch, reuse tha
 relationship and its history. Never send a duplicate first touch to the same
 person just because the role title or tracker number differs.
 
+Run `node candidacy-select.mjs --json` before choosing a role-specific target.
+Honor its cluster Primary and Outreach anchor. If the company is listed under
+`researchRequired`, complete and persist the Hiring-surface review, then rerun
+the selector before drafting any first touch.
+
 `data/applications.md` and `data/candidacy-clusters.md` are routing/timing sources
 only, never content sources for public copy. Do not quote their notes or introduce
 an application/outreach claim from them into a message. Mention a prior

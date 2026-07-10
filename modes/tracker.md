@@ -61,10 +61,13 @@ merely news to acknowledge.
    `modes/next.md` -> Candidacy Coordination. Read or update
    `data/candidacy-clusters.md`; do not abbreviate the Hiring-surface review just
    because the user event already changed one Stage.
-4. The newly applied Application becomes the active Primary Application for its
+4. Run `node candidacy-select.mjs --json` after persisting the review. Report its
+   eligible/suppressed result for the affected company and resolve any
+   `researchRequired` membership drift before recommending another Application.
+5. The newly applied Application becomes the active Primary Application for its
    Hiring surface unless a more progressed member already reserves the cluster.
    Record the Outreach anchor when the user also confirms a first touch.
-5. Reconcile guidance, not facts: this coordination review never changes a
+6. Reconcile guidance, not facts: this coordination review never changes a
    sibling Application's Stage. It suppresses conflicting implicit packs and
    duplicate first-touch outreach through `modes/next.md` and `modes/contact.md`.
    If a sibling pack already exists, flag it as an interactive alternate instead

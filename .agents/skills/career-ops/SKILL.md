@@ -33,9 +33,18 @@ Run the career-ops tracker mode and summarize the current statuses.
 
 Determine the mode from `$mode`:
 
+Before discovery or JD detection, route a natural-language report of confirmed
+real-world candidacy activity to `tracker` -> `User-reported candidacy events`.
+Examples include "I applied to #313", "I sent the outreach", "the recruiter
+replied", "I have an interview", "I got an offer", and "they rejected me".
+These are write intents to reconcile confirmed reality, not status questions or
+FYI messages. This event routing applies from any working directory when the
+career-ops skill is invoked.
+
 | Input | Mode |
 |-------|------|
 | (empty / no args) | `discovery` -- Show command menu |
+| Confirmed candidacy event in natural language | `tracker` -- execute `User-reported candidacy events` |
 | JD text or URL (no sub-command) | **`auto-pipeline`** |
 | `offer` | `offer` |
 | `oferta` | `offer` (legacy alias) |
@@ -72,6 +81,9 @@ Determine the mode from `$mode`:
 | `add` | `add` |
 
 **Auto-pipeline detection:** If `$mode` is not a known sub-command AND contains JD text (keywords: "responsibilities", "requirements", "qualifications", "about the role", "we're looking for", company name + role) or a URL to a JD, execute `auto-pipeline`.
+
+Natural-language candidacy-event detection takes precedence over auto-pipeline
+and discovery. Never show the command menu in response to a confirmed event.
 
 If `$mode` is not a sub-command AND doesn't look like a JD, show discovery.
 

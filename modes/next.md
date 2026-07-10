@@ -147,6 +147,9 @@ destination, or decision.
   `stage`.
 - `data/candidacy-clusters.md` -- durable, user-layer coordination between
   related Applications that may share a recruiter, hiring manager, or hiring process.
+- `candidacy-select.mjs` -- deterministic, read-only eligibility preflight. Its
+  `eligible` array is the exclusive Agent-owned input to implicit selection;
+  `suppressed` and `researchRequired` may not be re-added by score ranking.
 - `templates/states.yml` -- the canonical state machine and the single source of
   routing truth (stage `owner`, `suggests`, `on_demand`, `next_states`).
 - `data/follow-ups.md` -- sent follow-up history, if present.
@@ -279,6 +282,24 @@ progressed row plus an agent-owned sibling:
    structure changes; the registry is a cache of evidence, not permission to
    skip current research.
 
+Before any implicit selection, run the mandatory machine preflight:
+
+```bash
+node candidacy-select.mjs --json
+```
+
+- Treat `eligible` as the exclusive Agent-owned candidate set. Never rebuild a
+  raw tracker candidate list afterward or re-add anything from `suppressed`.
+- If `researchRequired` names a company, do the deep Hiring-surface research
+  above, persist the evidence-backed classification or shared fallback in
+  `data/candidacy-clusters.md`, and rerun the command. Do not select that
+  company's blocked Applications before the rerun clears the research item.
+- Rerun after any registry, tracker, Primary, or Outreach-anchor update. The
+  preflight is a current-state computation, not a one-time audit artifact.
+- The selector deterministically prefers the most progressed Agent-owned stage,
+  then current decision, score, and tracker number inside an unreserved cluster.
+  Global throughput/score ranking happens only after this per-surface choice.
+
 Apply the classification before score ordering:
 
 - A cluster is reserved once one member reaches `Application Ready`,
@@ -340,8 +361,15 @@ If the user provided an argument:
 3. Try company/role fuzzy match only if the match is unique.
 4. If the argument resolves to different tracker and report rows, ask which one
    to use.
+5. Inspect that tracker number in `candidacy-select.mjs --json`. If it appears in
+   `suppressed`, present the Primary and shared contact history and require the
+   explicit override described above. If it is blocked by `research-required`,
+   research and persist the Hiring surface before asking for an override.
 
 If no argument or `auto` is provided:
+
+Start only from the latest `candidacy-select.mjs --json` `eligible` array. The
+raw set of Agent-owned tracker rows is not a valid selection input.
 
 For an unattended `auto` run, honor the automation invariant: select only
 `agent`-owned stages ready for their generation step, highest-value first:
@@ -638,6 +666,12 @@ by the current stage's `next_states` and the owner's required trigger has happen
   Never leave a drafted pack on an un-advanced `evaluated`/`responded`/`offer` row.
   To advance every row that already has a drafted pack in one pass, run
   `node advance-stage.mjs --reconcile`.
+  The advancer reruns candidacy coordination and refuses suppressed siblings.
+  Only after the user explicitly approves a conflicting sibling Application may
+  an interactive run use `--coordination-override`; unattended automation must
+  never pass that flag. The CLI accepts it only for one explicit tracker number
+  on a human TTY, rejects `--reconcile` and `--json`, and requires the user to
+  type the tracker number as confirmation.
 - User stage: advance only after the user reports the real-world action -- "I sent
   the application" -> `applied`; "I sent the qualifying questions" -> `qualifying_sent`
   (also append a `[qualifying-sent YYYY-MM-DD]` marker to the row's notes — it
@@ -675,6 +709,12 @@ This advances every agent-owned row that has a drafted pack but was not yet
 advanced. It is idempotent: if step 6 already advanced each row, it reports "No
 changes needed." Never end a run with a drafted pack still sitting on an
 `evaluated`, `responded`, or `offer` row.
+
+The reconcile also enforces `candidacy-select.mjs`: a suppressed sibling remains
+unadvanced and is reported as `candidacy-{reason}`. Do not interpret that as a
+stranded-pack permission; remove or clearly quarantine the conflicting draft and
+report the active Primary. An unattended run never uses
+`--coordination-override`.
 
 The reconcile is also enforced deterministically: `node verify-pipeline.mjs`
 runs a **stranded-pack check** that flags any next-pack whose row is still in an

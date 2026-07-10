@@ -41,6 +41,12 @@ drafting. If no current classification exists or its evidence is stale, execute
 the canonical research, fallback, and persistence contract in `modes/next.md` ->
 Candidacy Coordination before continuing.
 
+Run `node candidacy-select.mjs --json` after that inspection. If the target is in
+`suppressed`, apply the reserved-cluster rule below. If its company appears in
+`researchRequired`, complete the Hiring-surface research, update the registry,
+and rerun the selector before drafting. Never infer eligibility from score or
+company size after the selector has excluded a row.
+
 - If the target belongs to a reserved Candidacy cluster, stop and show the
   Primary Application, its Stage, and the Outreach anchor. Treat this Application
   as an interactive alternate; require the user to explicitly override before

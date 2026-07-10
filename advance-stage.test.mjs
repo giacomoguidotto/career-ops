@@ -16,6 +16,7 @@ import {
   advanceApplications,
   applyStatusToLine,
   findPack,
+  validateCoordinationOverrideRequest,
 } from './advance-stage.mjs';
 import { loadStates, resolveState } from './tracker-utils.mjs';
 import { resolveColumns } from './tracker-parse.mjs';
@@ -52,6 +53,30 @@ function eq(label, actual, expected) {
 }
 
 const states = loadStates();
+
+// ============================================================================
+// 0. interactive coordination override boundary
+// ============================================================================
+console.log('\n--- 0. coordination override boundary ---');
+
+eq('reconcile can never override coordination', validateCoordinationOverrideRequest({
+  requested: true, reconcile: true, nums: [], json: false, stdinIsTTY: true, stdoutIsTTY: true,
+}).reason, 'override-not-allowed-with-reconcile');
+eq('override requires exactly one explicit target', validateCoordinationOverrideRequest({
+  requested: true, reconcile: false, nums: [1, 2], json: false, stdinIsTTY: true, stdoutIsTTY: true,
+}).reason, 'override-requires-one-target');
+eq('machine-readable invocation cannot claim interactive override', validateCoordinationOverrideRequest({
+  requested: true, reconcile: false, nums: [1], json: true, stdinIsTTY: true, stdoutIsTTY: true,
+}).reason, 'override-requires-human-output');
+eq('non-TTY invocation cannot override coordination', validateCoordinationOverrideRequest({
+  requested: true, reconcile: false, nums: [1], json: false, stdinIsTTY: false, stdoutIsTTY: false,
+}).reason, 'override-requires-tty');
+eq('one explicit target on a TTY reaches confirmation', validateCoordinationOverrideRequest({
+  requested: true, reconcile: false, nums: [93], json: false, stdinIsTTY: true, stdoutIsTTY: true,
+}), { ok: true, needsConfirmation: true, num: 93 });
+eq('no override needs no confirmation', validateCoordinationOverrideRequest({
+  requested: false, reconcile: true, nums: [], json: true, stdinIsTTY: false, stdoutIsTTY: false,
+}), { ok: true, needsConfirmation: false });
 
 // ============================================================================
 // 1. computeAdvance — routing derived from states.yml
@@ -251,6 +276,60 @@ function scaffold() {
   ok('4h: tracker shows Qualifying Ready for #84', /\| 84 \|.*\| Qualifying Ready \|/.test(tracker));
   const pack84 = readFileSync(join(packsDir, '084-vercel.md'), 'utf-8');
   ok('4h: pack #84 synced to send_qualifying_questions', /\*\*Suggests:\*\* send_qualifying_questions/.test(pack84) && /\*\*Stage:\*\* qualifying_ready/.test(pack84));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 4i. candidacy coordination is a deterministic last line of defence: a pack
+// generated for a suppressed sibling cannot advance the tracker accidentally.
+{
+  const { dir, appsFile, packsDir } = scaffold();
+  const coordination = {
+    eligible: [{ num: 84 }],
+    suppressed: [{ num: 93, reason: 'reserved-primary', clusterId: 'shared-engineering', primary: 84 }],
+  };
+  const { results } = advanceApplications({
+    appsFile,
+    packsDir,
+    nums: [84, 93],
+    states,
+    coordination,
+  });
+  eq('4i: eligible Primary advances', results.find((r) => r.num === 84)?.to, 'Application Ready');
+  eq('4i: suppressed sibling is refused', results.find((r) => r.num === 93)?.reason, 'candidacy-reserved-primary');
+  eq('4i: refusal carries Primary', results.find((r) => r.num === 93)?.primary, 84);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 4j. an explicit interactive override is the only escape hatch for a known
+// suppressed sibling; it does not weaken the default automation path.
+{
+  const { dir, appsFile, packsDir } = scaffold();
+  const coordination = {
+    eligible: [{ num: 84 }],
+    suppressed: [{ num: 93, reason: 'cluster-choice', clusterId: 'shared-engineering', primary: 84 }],
+  };
+  const { results } = advanceApplications({
+    appsFile,
+    packsDir,
+    nums: [93],
+    states,
+    coordination,
+    coordinationOverride: true,
+  });
+  eq('4j: explicit coordination override advances sibling', results.find((r) => r.num === 93)?.to, 'Application Ready');
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// 4k. an unknown suppression reason still blocks safely and cannot leak an
+// arbitrary public reason string through the canonical advancer contract.
+{
+  const { dir, appsFile, packsDir } = scaffold();
+  const coordination = {
+    eligible: [],
+    suppressed: [{ num: 84, reason: 'typo-from-caller', clusterId: 'shared-engineering', primary: 93 }],
+  };
+  const { results } = advanceApplications({ appsFile, packsDir, nums: [84], states, coordination });
+  eq('4k: unknown reason fails closed with canonical label', results[0].reason, 'candidacy-invalid-suppression');
   rmSync(dir, { recursive: true, force: true });
 }
 

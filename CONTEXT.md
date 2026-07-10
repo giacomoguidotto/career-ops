@@ -115,6 +115,12 @@ A Candidacy cluster whose Primary Application has reached a Ready, Subloop, or
 progressed World stage. Unattended Automation excludes Agent-owned siblings until
 the cluster is released or explicitly overridden.
 
+**Candidacy selection preflight**:
+The deterministic, read-only computation performed by `candidacy-select.mjs`
+before Agent-owned Applications are ranked. It returns the exclusive eligible
+set, suppressed siblings, and companies whose Hiring-surface classification must
+be researched or refreshed. It does not change any Application's Stage.
+
 ### Advancement artifacts
 
 **Application pack**:
