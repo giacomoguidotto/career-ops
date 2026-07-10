@@ -1061,13 +1061,24 @@ func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// isResearchFirstNote reports whether a tracker row's note carries the
-// "Research first" decision prefix that the evaluator/batch writes for gating-
-// question rows (e.g. "Research first: strong fit, but visa/relocation ..."). It
-// is the zero-IO signal the dashboard uses to preview the qualifying subloop for
-// an evaluated row without re-reading the report file.
+// isResearchFirstNote reports whether the tracker note's current decision is
+// "Research first". Re-evaluation markers are appended to notes, so a later
+// APPLY or CONSIDER decision must supersede an older Research-first prefix.
 func isResearchFirstNote(notes string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(notes)), "research first")
+	normalized := strings.ToLower(strings.TrimSpace(notes))
+	if marker := strings.LastIndex(normalized, "[re-evaluated "); marker >= 0 {
+		afterMarker := normalized[marker:]
+		if end := strings.Index(afterMarker, "]"); end >= 0 {
+			current := strings.TrimSpace(afterMarker[end+1:])
+			if strings.HasPrefix(current, "apply:") || strings.HasPrefix(current, "consider:") {
+				return false
+			}
+			if strings.HasPrefix(current, "research first:") {
+				return true
+			}
+		}
+	}
+	return strings.HasPrefix(normalized, "research first")
 }
 
 // hasQualifyingSentMarker reports whether the note carries the

@@ -640,9 +640,9 @@ func TestStatusPriorityRanksAcceptedAsPositiveTerminal(t *testing.T) {
 
 // TestDeriveNextActionResearchFirstPreview asserts that an evaluated row whose
 // note carries the "Research first" decision previews the qualifying-question
-// draft (mirroring modes/next.md routing), while a normal note keeps the
-// application draft and a row that already qualified (loop-guard marker) reverts
-// to the application draft.
+// draft (mirroring modes/next.md routing), while a normal note or a later
+// APPLY/CONSIDER re-evaluation keeps the application draft and a row that already
+// qualified (loop-guard marker) reverts to the application draft.
 func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
 	sm := states()
 	now := time.Now()
@@ -653,6 +653,7 @@ func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
 	}{
 		{"research-first previews the gating question", "Research first: strong fit, but visa/relocation needs confirmation.", "draft_qualifying_questions"},
 		{"normal evaluated row drafts the application", "APPLY: strong remote Europe fit.", "generate_application_pack"},
+		{"later re-evaluation supersedes research-first", "Research first: visa path needs confirmation.; [re-evaluated 2026-07-09] CONSIDER: viable stretch; location is not a pre-application gate.", "generate_application_pack"},
 		{"already-qualified row reverts to the application", "Research first: ... [qualifying-sent 2026-07-08]", "generate_application_pack"},
 	}
 	for _, tc := range cases {
