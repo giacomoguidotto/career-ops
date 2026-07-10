@@ -117,6 +117,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `salary-gap.mjs` | Desired/advertised/actual compensation gap analyzer — folds report `advertised_comp` + `data/salary-observations.tsv` (JSON or `--summary`) |
 | `data/salary-observations.tsv` | Append-only salary observation log (user layer) |
 | `data/follow-ups.md` | Follow-up history tracker |
+| `data/candidacy-clusters.md` | Evidence-backed Hiring-surface coordination across related Applications (user layer; created on first related-Application event) |
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever APIs directly, zero LLM cost |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
@@ -411,6 +412,19 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 5. Health check: `node verify-pipeline.mjs`
 6. Normalize statuses: `node normalize-statuses.mjs`
 7. Dedup: `node dedup-tracker.mjs`
+
+## User-Reported Candidacy Events
+
+When the user reports a real-world event such as "I just applied to #313", treat
+it as a request to perform the canonical write, not as an FYI. Run
+`node set-status.mjs <num> Applied --json`, seed follow-ups when appropriate, and
+always inspect its `candidacyCoordination` payload, including on idempotent
+Applied updates. Then execute `modes/tracker.md` -> User-reported candidacy events.
+`sameCompanyApplications` opens the required Hiring-surface review; it never
+proves one cluster by itself. `modes/next.md` -> Candidacy Coordination is the
+canonical selection, research, fallback, persistence, and Outreach-anchor
+contract. Coordination never changes a sibling Application's factual Stage or
+adds a coordination-only Stage to `templates/states.yml`.
 
 ### Canonical States (applications.md)
 

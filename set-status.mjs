@@ -34,6 +34,10 @@
  * When the new status is Applied, the JSON output carries
  * `"followupSeedCandidate": true` — the hook point for seeding
  * data/follow-ups.md with the default cadence (#1430, not implemented here).
+ * It also surfaces same-company rows under `candidacyCoordination` so the
+ * calling agent cannot overlook potentially shared recruiter/hiring surfaces.
+ * Company-name equality only opens the review: the agent must research the org
+ * deeply before deciding whether the rows actually share a candidacy cluster.
  */
 
 import { readFileSync, existsSync } from 'fs';
@@ -247,6 +251,17 @@ if (rows.length === 0) {
 const target = resolveRow(rows);
 const oldStatus = target.status;
 const note = flags.note != null ? cell(flags.note) : null;
+const targetCompanyKey = normalizeCompany(target.company);
+const sameCompanyApplications = targetCompanyKey && target.company !== '?'
+  ? rows
+      .filter((row) => row.num !== target.num && normalizeCompany(row.company) === targetCompanyKey)
+      .map((row) => ({
+        num: row.num,
+        company: row.company,
+        role: row.role,
+        status: row.status,
+      }))
+  : [];
 
 // Rebuild only the matched line: change the Status cell, append the note, keep
 // every other cell exactly as parsed.
@@ -307,6 +322,13 @@ const result = {
   // idempotent re-run of an already-Applied row must not invite a consumer
   // to seed a duplicate follow-up.
   ...(statusChanged && newStatus === 'Applied' ? { followupSeedCandidate: true } : {}),
+  ...(newStatus === 'Applied' && sameCompanyApplications.length > 0 ? {
+    candidacyCoordination: {
+      requiresHiringSurfaceResearch: true,
+      fallbackScope: 'shared',
+      sameCompanyApplications,
+    },
+  } : {}),
   tracker: APPS_FILE,
 };
 
@@ -317,6 +339,10 @@ if (flags.json) {
   console.log(`✅ #${target.num} ${target.company} — ${target.role}: ${verb} ${oldStatus} → ${newStatus}${note ? ` (note: ${note})` : ''}`);
   if (statusChanged && !flags.dryRun && newStatus === 'Applied') {
     console.error('ℹ️  Status is Applied — consider seeding follow-ups in data/follow-ups.md (#1430: node followup-cadence.mjs)');
+  }
+  if (newStatus === 'Applied' && sameCompanyApplications.length > 0) {
+    const siblings = sameCompanyApplications.map((row) => `#${row.num} ${row.role} (${row.status})`).join(' · ');
+    console.error(`ℹ️  Candidacy coordination review required for ${target.company}: ${siblings}. Research shared vs separate hiring surfaces; if unresolved, treat them as shared.`);
   }
 }
 process.exit(EXIT_OK);

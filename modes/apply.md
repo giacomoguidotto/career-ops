@@ -35,6 +35,22 @@ Before generating any application answers, verify that the form still points to 
 2. If the name is not available, check the tracker for `?` rows with the same Via + a similar role (the same agency re-blasting one listing) and for similar-role rows at plausible-match companies; surface anything close.
 3. Then STOP and require explicit user acknowledgment before the agency is authorized: "The end employer is unknown, so I cannot verify you haven't already applied to this company directly. Authorize anyway?" Never proceed on silence — the reveal-time check only catches damage after the fact.
 
+**candidacy coordination preflight:** read `data/candidacy-clusters.md` when it
+exists and inspect `data/applications.md` for same-company progressed rows before
+drafting. If no current classification exists or its evidence is stale, execute
+the canonical research, fallback, and persistence contract in `modes/next.md` ->
+Candidacy Coordination before continuing.
+
+- If the target belongs to a reserved Candidacy cluster, stop and show the
+  Primary Application, its Stage, and the Outreach anchor. Treat this Application
+  as an interactive alternate; require the user to explicitly override before
+  preparing a second Application pack.
+- If the canonical review establishes an independent Hiring surface, record it
+  and proceed independently.
+- Even after an override, carry forward the cluster's contact history. Never
+  suggest a second immediate connection note to the same person for the sibling
+  Application; `modes/contact.md` owns the Outreach-anchor rule.
+
 1. Read the visible URL, page title, company, role, and any closed/expired signals.
 2. If a URL is available, verify liveness with Playwright:
    - active posting evidence: title/role + job description or form fields + submit/apply path

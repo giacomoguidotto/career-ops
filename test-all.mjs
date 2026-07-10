@@ -1135,6 +1135,7 @@ if (
 }
 
 const applyMode = readFile('modes/apply.md');
+const contactMode = readFile('modes/contact.md');
 const nextMode = readFile('modes/next.md');
 if (
   nextMode.includes('## Ready Block Contract') &&
@@ -1158,6 +1159,41 @@ if (
   pass('next mode covers post-evaluation advancement pack families');
 } else {
   fail('next mode missing one or more advancement pack families');
+}
+
+if (
+  nextMode.includes('## Candidacy Coordination') &&
+  nextMode.includes('data/candidacy-clusters.md') &&
+  nextMode.includes('hiring surface') &&
+  nextMode.includes('Company size is only a research hint') &&
+  nextMode.includes('org chart') &&
+  nextMode.includes('fallback') &&
+  nextMode.includes('shared cluster') &&
+  nextMode.includes('exclude its Agent-owned siblings') &&
+  nextMode.includes('including unattended `auto` and interactive') &&
+  nextMode.includes('interactive alternate') &&
+  nextMode.includes('sole drafting') &&
+  /Do not\s+add a coordination-only Stage/.test(nextMode)
+) {
+  pass('next mode coordinates Agent-owned selection by researched Hiring surface without changing Stages');
+} else {
+  fail('next mode missing hiring-surface research, shared fallback, sibling exclusion, or state-separation contract');
+}
+
+if (
+  applyMode.includes('data/candidacy-clusters.md') &&
+  applyMode.includes('candidacy coordination preflight') &&
+  applyMode.includes('reserved Candidacy cluster') &&
+  contactMode.includes('data/candidacy-clusters.md') &&
+  contactMode.includes('Outreach anchor') &&
+  contactMode.includes('Never send a duplicate first touch') &&
+  contactMode.includes('routing/timing sources') &&
+  contactMode.includes('never content sources') &&
+  /current\s+conversation/.test(contactMode)
+) {
+  pass('apply and contact modes honor the active Candidacy cluster and Outreach anchor');
+} else {
+  fail('apply/contact modes can still generate conflicting sibling applications or duplicate first touches');
 }
 
 if (
@@ -1467,6 +1503,41 @@ if (
   fail('agent docs missing offer-prep mode row');
 }
 
+if (
+  claudeMdDoc.includes('## User-Reported Candidacy Events') &&
+  claudeMdDoc.includes('candidacyCoordination') &&
+  claudeMdDoc.includes('sameCompanyApplications') &&
+  claudeMdDoc.includes('data/candidacy-clusters.md') &&
+  agentsMdDoc.includes('## User-Reported Candidacy Events') &&
+  agentsMdDoc.includes('candidacyCoordination') &&
+  agentsMdDoc.includes('sameCompanyApplications') &&
+  agentsMdDoc.includes('data/candidacy-clusters.md')
+) {
+  pass('always-loaded agent docs reconcile candidacy clusters after user-reported application events');
+} else {
+  fail('an agent can record "I applied" without reconciling related hiring surfaces');
+}
+
+const coordinationStatesDoc = readFile('templates/states.yml');
+if (!/^  - id: (?:alternate|covered|clustered|candidacy_)/m.test(coordinationStatesDoc)) {
+  pass('candidacy coordination stays orthogonal to each Application\'s lifecycle state machine');
+} else {
+  fail('candidacy coordination leaked into templates/states.yml as a coordination-only Stage');
+}
+
+const contextDoc = readFile('CONTEXT.md');
+if (
+  contextDoc.includes('**Hiring surface**:') &&
+  contextDoc.includes('**Candidacy cluster**:') &&
+  contextDoc.includes('**Primary Application**:') &&
+  contextDoc.includes('**Outreach anchor**:') &&
+  contextDoc.includes('without changing any member\'s Stage')
+) {
+  pass('CONTEXT.md defines candidacy coordination without overloading Stage Owner');
+} else {
+  fail('candidacy coordination vocabulary is missing or conflicts with the canonical lifecycle language');
+}
+
 const dataContractDoc = readFile('DATA_CONTRACT.md');
 const gitignoreDoc = readFile('.gitignore');
 const updaterSrc = readFile('update-system.mjs');
@@ -1480,6 +1551,15 @@ if (
   pass('offer-prep registered in data contract, gitignore, and updater manifest');
 } else {
   fail('offer-prep missing from data contract / gitignore / SYSTEM_PATHS');
+}
+
+if (
+  dataContractDoc.includes('data/candidacy-clusters.md') &&
+  gitignoreDoc.includes('data/candidacy-clusters.md')
+) {
+  pass('candidacy-cluster coordination state is explicit user-layer data and cannot be committed');
+} else {
+  fail('candidacy-cluster registry missing from the user-layer data contract or gitignore');
 }
 
 if (
@@ -1540,6 +1620,21 @@ if (
 const trackerModeDoc = readFile('modes/tracker.md');
 const patternsModeDoc = readFile('modes/patterns.md');
 const batchPromptDoc = readFile('batch/batch-prompt.md');
+
+if (
+  trackerModeDoc.includes('## User-reported candidacy events') &&
+  trackerModeDoc.includes('node set-status.mjs') &&
+  trackerModeDoc.includes('candidacyCoordination') &&
+  trackerModeDoc.includes('sameCompanyApplications') &&
+  trackerModeDoc.includes('modes/next.md') &&
+  trackerModeDoc.includes('Candidacy Coordination') &&
+  trackerModeDoc.includes('data/candidacy-clusters.md') &&
+  /never changes a\s+sibling Application's Stage/.test(trackerModeDoc)
+) {
+  pass('tracker mode reconciles candidacy coordination after user-owned real-world transitions');
+} else {
+  fail('tracker mode can record a user event without researching and persisting sibling coordination');
+}
 
 if (
   nextMode.includes('modes/_custom.md') &&

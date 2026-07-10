@@ -145,6 +145,8 @@ destination, or decision.
 - Optional argument: tracker number, report number, company, role, or `auto`.
 - `data/applications.md` -- canonical lifecycle tracker; each row carries one
   `stage`.
+- `data/candidacy-clusters.md` -- durable, user-layer coordination between
+  related Applications that may share a recruiter, hiring manager, or hiring process.
 - `templates/states.yml` -- the canonical state machine and the single source of
   routing truth (stage `owner`, `suggests`, `on_demand`, `next_states`).
 - `data/follow-ups.md` -- sent follow-up history, if present.
@@ -213,6 +215,7 @@ explicit.
 Read:
 
 - `data/applications.md`
+- `data/candidacy-clusters.md` if present
 - `templates/states.yml`
 - relevant report files
 - `data/follow-ups.md` if present
@@ -232,6 +235,79 @@ Completion criterion: every candidate considered has its tracker stage, score,
 report path when available, the stage's `owner`/`suggests` from `templates/states.yml`,
 and enough candidate context for the chosen pack.
 
+## Candidacy Coordination
+
+The lifecycle is per Application. Candidacy coordination is a separate dimension
+that prevents independent Applications from producing contradictory submissions
+or duplicate Outreach when they reach the same recruiter or hiring team. Do not
+add a coordination-only Stage such as `Covered`, `Alternate`, or `Clustered`; a
+sibling can remain factually `Evaluated` while coordination temporarily removes
+it from selection.
+
+Before ranking Agent-owned Applications, group same-company Applications for a Hiring-
+surface review. Company-name equality opens the investigation but does not prove
+the roles share a cluster. Company size is only a research hint, never the
+classifier: a startup often has one founder/recruiter surface, while a large
+company may have several independent divisions and recruiters.
+
+For every same-company group containing either multiple agent-owned rows or one
+progressed row plus an agent-owned sibling:
+
+1. Read any current classification in `data/candidacy-clusters.md`.
+2. Deeply research the org chart and hiring surface before accepting or changing
+   it. Check official team/org pages, the department/team/location in each JD,
+   named recruiters and hiring managers, leadership ownership, and credible
+   public professional profiles. A shared ATS vendor, company name, or careers
+   domain alone is not evidence of one recruiter.
+3. Partition roles only when evidence supports separate recruiting surfaces,
+   such as distinct divisions, teams with separate hiring managers, or different
+   assigned recruiters. If the research remains inconclusive, use the fallback:
+   treat the roles as one shared cluster.
+4. Create or update `data/candidacy-clusters.md` with this table when the file is
+   absent or the evidence changed:
+
+   ```markdown
+   # Candidacy Clusters
+
+   | Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |
+   |---|---|---|---|---|---|---|---|---|
+   ```
+
+   `Members`, `Primary`, and `Outreach anchor` use tracker numbers (`#313`). The
+   evidence cell carries concise source links or report/contact references, not
+   unsupported inference. Re-research when membership, recruiters, or org
+   structure changes; the registry is a cache of evidence, not permission to
+   skip current research.
+
+Apply the classification before score ordering:
+
+- A cluster is reserved once one member reaches `Application Ready`,
+  `Qualifying Ready`, `Qualifying Sent`, `Applied`, `Outreach Ready`,
+  `Responded`, `Interview Ready`, `Offer`, or `Offer Ready`.
+- In every implicit selection path, including unattended `auto` and interactive
+  `next` with no target, exclude its Agent-owned siblings. An interactive
+  no-target run may label them as alternates for visibility, but must not select
+  them or generate Application packs. Do not change their Stages.
+- If no member has reserved the cluster, select at most one agent-owned member:
+  the most actionable stage first, then the current decision and score. Record
+  that member as `Primary` when its pack reserves the cluster.
+- A `Rejected`, `Discarded`, or `SKIP` primary releases the cluster so the best
+  remaining sibling can become actionable. `Accepted` permanently suppresses
+  sibling applications unless the user explicitly reopens the search.
+- An explicitly requested sibling is an interactive alternate, not an implicit
+  action. Show the active Primary Application and shared contact history, explain
+  the conflict, and require an explicit override before drafting a second
+  Application pack. This explicit-target-plus-override path is the sole drafting
+  escape while the cluster is reserved.
+- One Hiring surface has one Outreach anchor. Reuse the existing relationship and
+  never draft another immediate connection note to the same person merely because
+  the JD differs. Separate outreach is allowed only when research establishes an
+  independent recruiter or hiring team.
+
+Completion criterion: `auto` advances no more than one member per unresolved or
+shared hiring surface, progressed candidacies suppress conflicting siblings, and
+every partition is evidence-backed.
+
 #### Advancement policy precedence
 
 Before selecting or generating an artifact, apply `modes/_custom.md` ->
@@ -240,7 +316,7 @@ the default decision routing later in this file. In particular, when that policy
 disables automatic qualifying questions:
 
 - `Apply` and `Consider` both route to `generate_application_pack`; `Consider` is
-  a lower-priority application, not another lifecycle state.
+  a lower-priority Application, not another Stage.
 - Score controls ordering only. Do not route an otherwise eligible low-scoring
   row to `skip`, `discarded`, or a qualifying question because of score alone.
 - When an older tracker sentence conflicts with a later

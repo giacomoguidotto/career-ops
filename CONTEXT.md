@@ -86,6 +86,35 @@ offer, accepted, plus the terminals). Ready and Subloop stages back-map to their
 World stage so the funnel stays coarse while the Stage vocabulary is fine-grained.
 _Avoid_: status column, funnel stage, phase.
 
+### Candidacy coordination
+
+**Hiring surface**:
+The recruiter, hiring-manager, and organizational path through which one or more
+Applications are considered. Applications at the same company may have one shared
+Hiring surface or several independent Hiring surfaces. Company size and ATS vendor
+are research hints, not classifiers.
+
+**Candidacy cluster**:
+Applications that current evidence places on the same Hiring surface. A Candidacy
+cluster coordinates selection and Outreach without changing any member's Stage.
+Persisted in `data/candidacy-clusters.md`.
+_Avoid_: duplicate group, company bucket, lifecycle branch.
+
+**Primary Application**:
+The one Application currently reserving a Candidacy cluster. Agent-owned siblings
+are not selected while the Primary Application is active unless the user explicitly
+overrides the coordination guard.
+
+**Outreach anchor**:
+The Application whose existing contact thread and first-touch history is reused by
+the Candidacy cluster. It prevents sibling Applications from restarting Outreach
+to the same person. It is unrelated to a Stage's Owner.
+
+**Reserved cluster**:
+A Candidacy cluster whose Primary Application has reached a Ready, Subloop, or
+progressed World stage. Unattended Automation excludes Agent-owned siblings until
+the cluster is released or explicitly overridden.
+
 ### Advancement artifacts
 
 **Application pack**:

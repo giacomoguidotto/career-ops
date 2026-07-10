@@ -45,6 +45,35 @@ column (no bold, no dates, no extra text).
 
 If the user asks to update a state, edit the corresponding row.
 
+## User-reported candidacy events
+
+A plain-language report such as "I just applied to #313", "I sent the outreach",
+or "the recruiter replied" is an instruction to record confirmed reality, not
+merely news to acknowledge.
+
+1. Resolve the exact row and transition it through the canonical writer, for
+   example `node set-status.mjs 313 Applied --json`. Seed follow-up cadence when
+   the transition enters `Applied`, using the real submission date.
+2. Always inspect the JSON `candidacyCoordination` payload, including on an
+   idempotent Applied update. `sameCompanyApplications` are research leads, not
+   an automatic cluster.
+3. Execute the canonical research, fallback, and persistence contract in
+   `modes/next.md` -> Candidacy Coordination. Read or update
+   `data/candidacy-clusters.md`; do not abbreviate the Hiring-surface review just
+   because the user event already changed one Stage.
+4. The newly applied Application becomes the active Primary Application for its
+   Hiring surface unless a more progressed member already reserves the cluster.
+   Record the Outreach anchor when the user also confirms a first touch.
+5. Reconcile guidance, not facts: this coordination review never changes a
+   sibling Application's Stage. It suppresses conflicting implicit packs and
+   duplicate first-touch outreach through `modes/next.md` and `modes/contact.md`.
+   If a sibling pack already exists, flag it as an interactive alternate instead
+   of telling the candidate to send it automatically.
+
+Report the recorded transition, follow-up seed, Primary Application, any
+suppressed siblings, and the evidence/fallback used. Initial Outreach belongs to
+the cluster's contact history; it is not a cadence Follow-up.
+
 **Salary observations:** when the user reports a confirmed compensation figure for a row ("recruiter said 84k", "offer letter says 92k", "signed at 90k"), append one `actual` observation line to `data/salary-observations.tsv` (create the file if missing; format per `docs/SCRIPTS.md` → salary-gap) with the source tier matching how the figure arrived: `recruiter-verbal` for a spoken figure, `offer-letter` for a written offer, `contract` for a signed contract. The log is append-only — a new figure is a new line, never an edit of a prior one. Then echo that application's gap in one line (advertised vs actual vs desired); `node salary-gap.mjs --summary` shows the full picture.
 
 **Reveal workflow (#1596):** when the user learns the end employer of a `?` row ("the Hays role is Barclays"):

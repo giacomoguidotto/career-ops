@@ -309,6 +309,47 @@ const TRACKER_10 = `# Applications Tracker
   rmSync(sb.dir, { recursive: true, force: true });
 }
 
+// ── 10b. Applied reports surface same-company coordination Applications ─
+{
+  const sb = makeSandbox(TRACKER_9);
+  const r = runSetStatus(['1', 'Applied', '--json'], sb);
+  let parsed = null;
+  try { parsed = JSON.parse(r.stdout); } catch {}
+  const coordination = parsed?.candidacyCoordination;
+  if (
+    r.code === 0
+    && coordination?.requiresHiringSurfaceResearch === true
+    && coordination?.fallbackScope === 'shared'
+    && Array.isArray(coordination?.sameCompanyApplications)
+    && coordination.sameCompanyApplications.length === 1
+    && coordination.sameCompanyApplications[0]?.num === 3
+    && coordination.sameCompanyApplications[0]?.role === 'Data Engineer'
+    && coordination.sameCompanyApplications[0]?.status === 'Evaluated'
+  ) {
+    pass('coordination: Applied JSON surfaces same-company Applications for Hiring-surface research');
+  } else {
+    fail(`coordination: Applied JSON missing sibling review payload\n${r.stdout}${r.stderr}`);
+  }
+
+  // Repeating "I applied" against an already-Applied row must still remind the
+  // calling agent about sibling coordination even though follow-up seeding stays
+  // idempotent and does not fire again.
+  const r2 = runSetStatus(['1', 'Applied', '--json'], sb);
+  let parsed2 = null;
+  try { parsed2 = JSON.parse(r2.stdout); } catch {}
+  if (
+    r2.code === 0
+    && parsed2?.changed === false
+    && parsed2?.followupSeedCandidate === undefined
+    && parsed2?.candidacyCoordination?.sameCompanyApplications?.[0]?.num === 3
+  ) {
+    pass('coordination: idempotent Applied report still surfaces sibling review');
+  } else {
+    fail(`coordination: idempotent Applied report lost sibling review\n${r2.stdout}${r2.stderr}`);
+  }
+  rmSync(sb.dir, { recursive: true, force: true });
+}
+
 // ── 11. Ambiguous + --json: machine-readable candidates ─────────
 {
   const sb = makeSandbox(TRACKER_9);

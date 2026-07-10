@@ -18,6 +18,31 @@ short message; otherwise run the LinkedIn power move below.
 
 ## LinkedIn power move (default)
 
+### Candidacy coordination preflight
+
+Before finding a new target, read `data/applications.md` and
+`data/candidacy-clusters.md` when present. If another Application in the same researched
+Hiring surface already has an Outreach anchor or recorded first touch, reuse that
+relationship and its history. Never send a duplicate first touch to the same
+person just because the role title or tracker number differs.
+
+`data/applications.md` and `data/candidacy-clusters.md` are routing/timing sources
+only, never content sources for public copy. Do not quote their notes or introduce
+an application/outreach claim from them into a message. Mention a prior
+application or contact only when the user confirmed it in the current
+conversation or it is backed by an allowed candidate-facing source; otherwise
+ask the user to confirm the fact before including it.
+
+When same-company Applications have no reliable classification, execute the
+canonical research, fallback, and persistence contract in `modes/next.md` ->
+Candidacy Coordination before drafting. Separate Outreach anchors are valid only
+when that review establishes independent Hiring surfaces.
+
+If the current JD is a sibling of an active Primary Application, preserve the
+existing contact timing. When a source-backed second touch is genuinely useful,
+do not pretend it is a cold first contact and do not reset backup-message timing
+merely because a new Application pack was generated.
+
 1. **Identify targets** via WebSearch:
    - Hiring manager of the team
    - Assigned recruiter
