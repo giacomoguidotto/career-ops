@@ -1610,13 +1610,14 @@ func (m ViewerModel) renderFooter() string {
 	}
 
 	segments := m.footerSegments(keyStyle, descStyle, false)
-	footer := strings.Join(segments, "  ")
+	separator := descStyle.Render("  ")
+	footer := strings.Join(segments, separator)
 	budget := m.width - 2
 	if budget < 1 {
 		budget = 1
 	}
 	if lipgloss.Width(footer) > budget {
-		footer = strings.Join(m.footerSegments(keyStyle, descStyle, true), "  ")
+		footer = strings.Join(m.footerSegments(keyStyle, descStyle, true), separator)
 	}
 	if lipgloss.Width(footer) > budget {
 		footer = ansi.Truncate(footer, budget, "")

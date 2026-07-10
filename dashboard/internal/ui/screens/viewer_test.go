@@ -957,6 +957,9 @@ func TestViewerFooterBackgroundCoversHelpText(t *testing.T) {
 	if count := strings.Count(footer, "48;2;"); count < 8 {
 		t.Fatalf("expected footer background across styled help spans, got %d background spans in %q", count, footer)
 	}
+	if strings.Contains(footer, "\x1b[0m  \x1b[") {
+		t.Fatalf("expected shortcut separators to inherit the footer background, got an unstyled gap in %q", footer)
+	}
 }
 
 func TestNextStepViewerFooterIncludesLinkShortcuts(t *testing.T) {
