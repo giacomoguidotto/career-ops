@@ -1542,6 +1542,31 @@ const patternsModeDoc = readFile('modes/patterns.md');
 const batchPromptDoc = readFile('batch/batch-prompt.md');
 
 if (
+  nextMode.includes('modes/_custom.md') &&
+  nextMode.includes('`Apply` and `Consider` both route to `generate_application_pack`') &&
+  /later\s+`\[re-evaluated YYYY-MM-DD\]` marker/.test(nextMode) &&
+  /Never route `Research first` directly\s+to `draft_qualifying_questions`/.test(nextMode)
+) {
+  pass('next mode honors custom advancement policy and keeps Consider in application generation');
+} else {
+  fail('next mode can regress to stale Research-first gating or fail to route Consider to application generation');
+}
+
+if (
+  batchPromptDoc.includes('| _custom.md | `modes/_custom.md` (if exists) | ALWAYS') &&
+  batchPromptDoc.includes('Evaluation And Advancement Policy') &&
+  batchPromptDoc.includes('`Apply` and `Consider` both route to `generate_application_pack`') &&
+  batchPromptDoc.includes('must start with the current final decision') &&
+  offerMode.includes('must start with the current final decision') &&
+  autoPipelineMode.includes('Evaluation And Advancement Policy') &&
+  pipelineMode.includes('Evaluation And Advancement Policy')
+) {
+  pass('scan/pipeline batch evaluations honor the same custom decision and advancement policy');
+} else {
+  fail('scan/pipeline evaluation path can miss custom decision routing or emit ambiguous tracker notes');
+}
+
+if (
   offerMode.includes('Advertised (JD)') &&
   offerMode.includes('salary-observations.tsv') &&
   offerMode.includes('advertised_comp')
