@@ -1152,7 +1152,7 @@ if (
 
 if (
   nextMode.includes('tailored CV/PDF reference') &&
-  nextMode.includes('copy-paste answers for likely form questions') &&
+  nextMode.includes('copy-paste answers for captured form questions') &&
   nextMode.includes('outreach action sections when useful') &&
   nextMode.includes('primary and optional backup outreach action sections') &&
   nextMode.includes('thank-you email draft') &&
@@ -1226,6 +1226,22 @@ if (
   pass('next mode form-mirrors applications and keeps stage routing out of user copy');
 } else {
   fail('next mode missing form-mirror/outreach contract or leaking suggested-stage copy');
+}
+
+if (
+  applyMode.includes('### YC Jobs / Work at a Startup form contract') &&
+  applyMode.includes('the live visible form wins') &&
+  applyMode.includes('one free-text reach-out message') &&
+  applyMode.includes('at least 50 characters') &&
+  applyMode.includes('relocation checkbox') &&
+  applyMode.includes('Do not invent ATS fields') &&
+  nextMode.includes('YC Jobs / Work at a Startup form contract') &&
+  nextMode.includes('**Next step:** {one short human sentence}') &&
+  nextMode.includes('Do not replace it with')
+) {
+  pass('application packs preserve the current YC reach-out contract and expose one short next-step sentence');
+} else {
+  fail('application packs can still guess YC ATS fields or leak audit metadata into Next Step');
 }
 
 if (
@@ -1379,6 +1395,20 @@ if (
   pass('eval modes (offer/auto-pipeline) gate dead links before evaluation');
 } else {
   fail('eval modes missing liveness gate before evaluation');
+}
+
+if (
+  autoPipelineMode.includes('load and follow `modes/apply.md` Step 6') &&
+  autoPipelineMode.includes('The live visible form wins') &&
+  autoPipelineMode.includes('current single reach-out message contract') &&
+  autoPipelineMode.includes('not as a claimed') &&
+  autoPipelineMode.includes('form mirror') &&
+  offerMode.includes('YC Jobs / Work at a Startup form') &&
+  offerMode.includes('never invent conventional ATS fields')
+) {
+  pass('offer and auto-pipeline reuse the live-first YC application form contract');
+} else {
+  fail('offer or auto-pipeline can still invent a conventional form for YC applications');
 }
 
 if (

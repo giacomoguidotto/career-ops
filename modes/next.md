@@ -55,6 +55,12 @@ without a second research step before the user can act.
   upload; if it is not created yet, put the creation blocker in `Notes`, not
   `Answer`.
   Hard rule: Do not render form questions as bullet lists.
+- **Provider form contracts:** apply the provider-specific contract owned by
+  `modes/apply.md` before drafting a mirror. In particular, the
+  `YC Jobs / Work at a Startup form contract` forbids guessing a conventional ATS when sign-in
+  blocks inspection: mirror the current single reach-out message and only a
+  visibly-present relocation checkbox. The live visible form always overrides
+  the fallback when YC changes it.
 - **Send actions:** name the send section by intent: `### Send the Gating
   Question` for pre-application qualification, `### Send the Outreach Message`
   for application-related first touches, and `### Send the Follow-Up` for cadence
@@ -134,6 +140,11 @@ without a second research step before the user can act.
 - Keep stage-machine details in the metadata header only. The body must guide the
   user through the next real action; do not include "suggested stage after
   approval" or other state-machine exposition.
+- The dashboard's `Next Step` point contains exactly one short human sentence
+  from the pack's `**Next step:**` header. Do not replace it with `Current
+  status`, `Next checkpoint`, `Selected because`, or a standalone `Report`
+  field. Those are audit notes, not next steps, and must not appear in the pack
+  header or body.
 
 Completion criterion: the user can execute the first action section immediately,
 then move through any conditional application, outreach, or backup sections
@@ -470,7 +481,7 @@ action and what to confirm, it does not invent a new pack):
     exact answers, selections, uploads, and user-review notes
   - apply/no-apply recommendation
   - tailored CV/PDF reference
-  - copy-paste answers for likely form questions, plus a dedicated answer for
+  - copy-paste answers for captured form questions, plus a dedicated answer for
     every explicit application instruction the posting made (including quirky or
     personal culture-fit asks), written in the posting's register
   - standalone "why this role" or cover-letter text only when the form or posting
@@ -554,7 +565,7 @@ Pack format:
 ## Next: {Company} -- {Role} (#{tracker_num})
 
 **Decision:** {draft / send / follow up / prep / negotiate / close}
-**Next human action:** {one sentence}
+**Next step:** {one short human sentence}
 **Stage:** {current stage id}
 **Owner:** {agent / user / company / none}
 **Suggests:** {suggests action}
@@ -634,6 +645,11 @@ Only after the gate clears, press `o` to open and fill the form: {ATS/form URL}
 
 _Selected: {one-line why}._
 ````
+
+Use only those six metadata lines. Do not add `Current status`, `Next
+checkpoint`, `Selected because`, or a second standalone `Report` line. Keep
+selection rationale in the single footer line and detailed status in the
+tracker/report.
 
 Completion criterion: the user can review the pack and decide the next human
 approval without the agent needing to act externally.

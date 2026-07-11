@@ -202,10 +202,10 @@ func cleanDetailsNextPackLines(lines []string) []string {
 }
 
 type detailsNextPackMeta struct {
-	decision        string
-	nextHumanAction string
-	owner           string
-	suggests        string
+	decision string
+	nextStep string
+	owner    string
+	suggests string
 }
 
 func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
@@ -217,8 +217,8 @@ func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 	case "decision":
 		m.decision = value
 		return false, true
-	case "next human action":
-		m.nextHumanAction = value
+	case "next step", "next human action", "next checkpoint":
+		m.nextStep = value
 		return false, true
 	case "owner":
 		m.owner = value
@@ -226,7 +226,8 @@ func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 	case "suggests":
 		m.suggests = value
 		return false, true
-	case "stage", "score":
+	case "stage", "score", "report", "current status", "selected because",
+		"pipeline stage", "performed by", "action type":
 		return false, true
 	default:
 		return false, false
@@ -234,25 +235,22 @@ func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 }
 
 func (m detailsNextPackMeta) summaryLine() string {
+	human := cleanDetailsText(m.nextStep)
+	if human != "" {
+		return "**Next step:** " + detailsSentence(human)
+	}
+
 	action := detailsActionLabel(m.suggests)
 	actionSource := m.suggests
 	if action == "" {
 		action = detailsDecisionLabel(m.decision)
 		actionSource = m.decision
 	}
-	human := cleanDetailsText(m.nextHumanAction)
-	if action == "" {
-		action = human
-		human = ""
-	}
 	if action == "" {
 		return ""
 	}
 	if strings.EqualFold(normalizeDetailsLabel(m.owner), "agent") && detailsAgentCanPerform(actionSource) {
 		action += " with an agent"
-	}
-	if human != "" && !detailsSameInstruction(action, human) {
-		action = detailsCombineInstruction(action, human)
 	}
 	return "**Next step:** " + detailsSentence(action)
 }
@@ -338,29 +336,6 @@ func detailsTokenLabel(value string) string {
 		parts[i] = strings.ToUpper(part[:1]) + part[1:]
 	}
 	return strings.Join(parts, " ")
-}
-
-func detailsSameInstruction(a, b string) bool {
-	clean := func(s string) string {
-		s = strings.ToLower(cleanDetailsText(s))
-		s = strings.TrimRight(s, ".")
-		return strings.Join(strings.Fields(s), " ")
-	}
-	return clean(a) == clean(b)
-}
-
-func detailsCombineInstruction(action, human string) string {
-	if strings.EqualFold(action, "Send the generated application") {
-		lowerHuman := strings.ToLower(human)
-		const prefix = "send the application after "
-		if strings.HasPrefix(lowerHuman, prefix) {
-			return action + " after " + human[len(prefix):]
-		}
-		if strings.HasPrefix(lowerHuman, "send the application") {
-			return action
-		}
-	}
-	return action + ": " + lowercaseFirst(human)
 }
 
 func detailsSentence(s string) string {
@@ -465,14 +440,6 @@ func detailsAppPackReference(app model.CareerApplication) string {
 		return ""
 	}
 	return app.NextPackPath
-}
-
-func lowercaseFirst(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	return strings.ToLower(s[:1]) + s[1:]
 }
 
 func normalizeDetailsLabel(s string) string {

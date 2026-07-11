@@ -428,7 +428,11 @@ Snapshot rules:
 (verbatim explicit application instructions captured in Block A — content asks, channel asks, personality/culture asks, and the one-word tone/register signal. Write `None (standard form)` if the posting has none. The `next`/`apply` pack MUST satisfy every ask listed here.)
 
 ## H) Draft Application Answers
-(only if score >= 4.5 — draft answers for the application form)
+(only if score >= 4.5 — draft answers for the application form; load and follow
+`modes/apply.md` Step 6, including the `YC Jobs / Work at a Startup form
+contract`. The live visible form wins. When YC is inaccessible behind sign-in,
+draft one reach-out message and only a visibly-present relocation checkbox;
+never invent conventional ATS fields.)
 
 ---
 

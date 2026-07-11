@@ -50,13 +50,21 @@ Read `config/profile.yml`. Check `cv.output_format`:
 
 ## Step 4 — Draft Application Answers (only if score >= 4.5)
 
-If the final score is >= 4.5, generate a draft of responses for the application form:
+If the final score is >= 4.5, load and follow `modes/apply.md` Step 6, including
+its provider-specific contracts, then generate a draft of responses for the
+application form:
 
-1. **Extract form questions**: Use Playwright to navigate to the form and take a snapshot. If they cannot be extracted, use the generic questions.
+1. **Extract form questions**: Use Playwright to navigate to the form and take a
+   snapshot. The live visible form wins. If it cannot be extracted, apply a
+   provider-specific fallback when `modes/apply.md` defines one. For YC Jobs /
+   Work at a Startup, use the current single reach-out message contract; never
+   substitute generic ATS fields. If no provider contract exists, keep the
+   generic questions as clearly labelled preparation prompts, not as a claimed
+   form mirror.
 2. **Generate responses** following the tone (see below).
 3. **Save in the report** as section `## H) Draft Application Answers`.
 
-### Generic questions (use if they cannot be extracted from the form)
+### Generic preparation questions (not a form mirror)
 
 - Why are you interested in this role?
 - Why do you want to work at [Company]?

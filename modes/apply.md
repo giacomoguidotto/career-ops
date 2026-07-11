@@ -122,6 +122,31 @@ Identify ALL visible questions:
 - Salary fields (range, expectation)
 - Upload fields (resume, cover letter PDF)
 
+### YC Jobs / Work at a Startup form contract
+
+For applications opened from `ycombinator.com/companies/.../jobs/...`,
+`ycombinator.com/jobs/...`, or `workatastartup.com`, the live visible form wins
+over every cached example or provider fallback. Re-read the modal/page whenever
+it is accessible; YC may change the form.
+
+When the live form is unavailable behind sign-in, use the current YC fallback
+contract instead of guessing a conventional ATS form:
+
+- one free-text reach-out message to the named contact or company, with the
+  visible requirement to write at least 50 characters;
+- a relocation checkbox only when the modal visibly presents the
+  location-preference mismatch;
+- the human reviews the message and clicks `Send`; the agent never sends it.
+
+Do not invent ATS fields such as Resume, LinkedIn, Portfolio, GitHub, Current
+location, work authorization, visa sponsorship, or separate motivation/project
+questions merely because they are common elsewhere. YC account/profile data is
+not part of the job-specific reach-out modal unless the live page visibly asks
+for it. Fold every explicit posting ask into the one reach-out message, leaving
+a clearly labelled candidate slot for any unknown personal fact. If the live YC
+form differs from this fallback, mirror the live fields exactly and update the
+pack rather than preserving the fallback.
+
 Classify each question:
 - **Already answered in Section H or `## Application Answers`** → adapt the existing response
 - **New question** → generate response from the report + cv.md

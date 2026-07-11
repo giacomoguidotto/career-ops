@@ -320,7 +320,7 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	}
 	for _, want := range []string{
 		"NEXT STEP",
-		"Next step: Send the generated application: review the salary field, then",
+		"Next step: Review the salary field, then",
 		"submit.",
 		"COPY-PASTE",
 		"TL;DR: Useful summary should be first.",
@@ -353,6 +353,61 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	} {
 		if strings.Contains(plain, unwanted) {
 			t.Fatalf("expected details page to drop %q, got:\n%s", unwanted, plain)
+		}
+	}
+}
+
+func TestDetailsViewerCollapsesLegacyPackAuditMetadataIntoOneNextStep(t *testing.T) {
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "reports", "263-jiga.md")
+	nextPath := filepath.Join(root, "output", "next-packs", "247-jiga.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir report: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(nextPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	if err := os.WriteFile(reportPath, []byte("# Evaluation: Jiga -- Product Engineer\n\n## A) Role Summary\n\nStrong fit.\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	next := strings.Join([]string{
+		"## Next: Jiga -- Product Engineer (#247)",
+		"",
+		"**Stage:** application_ready",
+		"**Owner:** user",
+		"**Suggests:** send_application",
+		"**Decision:** draft",
+		"**Report:** [263](../../reports/263-jiga.md)",
+		"**Current status:** Active posting; 4.20/5; current decision `Apply`.",
+		"**Next checkpoint:** Review the pack, supply your real favorite ice cream flavor, then submit the application yourself.",
+		"**Selected because:** Highest eligible score and clean product fit.",
+		"",
+		"### Before You Apply",
+		"",
+		"- Review the message.",
+	}, "\n")
+	if err := os.WriteFile(nextPath, []byte(next), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+
+	m := NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		reportPath,
+		"DETAILS: Jiga / Product Engineer",
+		100,
+		30,
+		model.CareerApplication{NextPackPath: "output/next-packs/247-jiga.md"},
+	)
+
+	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+	compact := strings.Join(strings.Fields(plain), " ")
+	if !strings.Contains(compact, "Next step: Review the pack, supply your real favorite ice cream flavor, then submit the application yourself.") {
+		t.Fatalf("expected one short human next-step sentence, got:\n%s", plain)
+	}
+	for _, unwanted := range []string{"Report:", "Current status:", "Next checkpoint:", "Selected because:"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("expected details page to hide legacy audit metadata %q, got:\n%s", unwanted, plain)
 		}
 	}
 }
