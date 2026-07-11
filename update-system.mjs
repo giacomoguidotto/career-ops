@@ -137,6 +137,7 @@ const SYSTEM_PATHS = [
   'set-status-tests.mjs',
   'candidacy-select.mjs',
   'candidacy-select.test.mjs',
+  'integration-preflight.mjs',
   'advance-stage.mjs',
   'advance-stage.test.mjs',
   'normalize-statuses.mjs',
@@ -293,7 +294,7 @@ const BOOTSTRAP_PATHS = [
 ];
 
 // User layer paths — NEVER touch these (safety check)
-const USER_PATHS = [
+export const USER_PATHS = [
   'cv.md',
   'config/profile.yml',
   'modes/_profile.md',

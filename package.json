@@ -16,6 +16,7 @@
     "merge": "node merge-tracker.mjs",
     "advance": "node advance-stage.mjs",
     "select:next": "node candidacy-select.mjs",
+    "integration:preflight": "node integration-preflight.mjs",
     "reconcile": "node reconcile-pipeline.mjs",
     "pdf": "node generate-pdf.mjs",
     "cover-letter": "node generate-cover-letter.mjs --payload",
