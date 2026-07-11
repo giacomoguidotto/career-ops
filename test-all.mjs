@@ -1139,6 +1139,7 @@ if (
 const applyMode = readFile('modes/apply.md');
 const contactMode = readFile('modes/contact.md');
 const nextMode = readFile('modes/next.md');
+const offerDeepLinkMode = readFile('modes/offer.md');
 if (
   nextMode.includes('## Ready Block Contract') &&
   nextMode.includes('### Copy-Paste:') &&
@@ -1161,6 +1162,21 @@ if (
   pass('next mode covers post-evaluation advancement pack families');
 } else {
   fail('next mode missing one or more advancement pack families');
+}
+
+if (
+  nextMode.includes('### Pack deep-link contract') &&
+  nextMode.includes('clickable') &&
+  nextMode.includes('Markdown link') &&
+  nextMode.includes('relative to the pack file') &&
+  nextMode.includes('verify that the target exists') &&
+  offerDeepLinkMode.includes('### Report deep-link contract') &&
+  offerDeepLinkMode.includes('relative to the report file') &&
+  offerDeepLinkMode.includes('verify the target exists')
+) {
+  pass('generated evaluations and next-step packs require verified working deep-links');
+} else {
+  fail('evaluation/next-pack modes missing verified deep-link behavior');
 }
 
 if (

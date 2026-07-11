@@ -440,6 +440,18 @@ never invent conventional ATS fields.)
 (list of 15-20 keywords from the JD for ATS optimization)
 ```
 
+### Report deep-link contract
+
+Every link written into a saved evaluation must be usable from that report:
+
+- External sources and application destinations use absolute `https://` URLs.
+- Repo-local artifacts use Markdown links relative to the report file in
+  `reports/` (for example, `[Tailored CV](../output/cv-candidate-acme.pdf)`).
+- Do not present an inline-code path as the only way to open a user-action
+  artifact.
+- Before saving, resolve every local Markdown destination from `reports/` and
+  verify the target exists. Fix or omit broken local links.
+
 **Machine Summary (required):** every report carries a `## Machine Summary` YAML fence directly after `## Decision Snapshot` — same schema, exact field names, and rules as the "Machine Summary" block in `batch/batch-prompt.md` (do not duplicate the schema here; that file is the source of truth). It includes `advertised_comp`: the JD's own salary figure **verbatim** (e.g. `"80-90k EUR"`), or `null` when the JD states nothing — never estimated, never replaced with researched market data. This key seeds the advertised salary observation read by `node salary-gap.mjs`.
 
 ### 2. Record in tracker

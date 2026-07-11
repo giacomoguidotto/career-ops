@@ -33,6 +33,7 @@ type ViewerModel struct {
 	lines           []string
 	renderedLines   []string
 	title           string
+	linkBaseDir     string
 	scrollOffset    int
 	width           int
 	height          int
@@ -63,6 +64,7 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 	m := ViewerModel{
 		lines:           lines,
 		title:           title,
+		linkBaseDir:     filepath.Dir(path),
 		width:           width,
 		height:          height,
 		theme:           t,
@@ -467,11 +469,43 @@ func loadDetailsNextPackLines(careerOpsPath string, app model.CareerApplication)
 	if careerOpsPath == "" || app.NextPackPath == "" {
 		return nil
 	}
-	content, err := os.ReadFile(filepath.Join(careerOpsPath, filepath.FromSlash(app.NextPackPath)))
+	packPath := filepath.Join(careerOpsPath, filepath.FromSlash(app.NextPackPath))
+	content, err := os.ReadFile(packPath)
 	if err != nil {
 		return nil
 	}
-	return stripLeadingNextPackHeading(strings.Split(string(content), "\n"))
+	lines := stripLeadingNextPackHeading(strings.Split(string(content), "\n"))
+	return absolutizeLocalMarkdownLinks(lines, filepath.Dir(packPath), careerOpsPath)
+}
+
+// absolutizeLocalMarkdownLinks preserves the source directory of links from a
+// next-pack before its lines are merged into a report-backed DETAILS view. A
+// pack-relative link such as ../cv-acme.pdf would otherwise be resolved against
+// reports/ and silently point at the wrong file.
+func absolutizeLocalMarkdownLinks(lines []string, baseDir, careerOpsPath string) []string {
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = reLink.ReplaceAllStringFunc(line, func(raw string) string {
+			parts := reLink.FindStringSubmatch(raw)
+			if len(parts) < 3 {
+				return raw
+			}
+			absPath, ok := resolveLocalHyperlinkPath(parts[2], baseDir, careerOpsPath)
+			if !ok {
+				return raw
+			}
+			root, err := filepath.Abs(careerOpsPath)
+			if err != nil {
+				return raw
+			}
+			rel, err := filepath.Rel(root, absPath)
+			if err != nil {
+				return raw
+			}
+			return "[" + parts[1] + "](repo:" + filepath.ToSlash(rel) + ")"
+		})
+	}
+	return out
 }
 
 func stripLeadingNextPackHeading(lines []string) []string {
@@ -1250,7 +1284,7 @@ func (m ViewerModel) renderInlineElementsAs(line string, baseColor lipgloss.Colo
 	var b strings.Builder
 	rest := line
 	for rest != "" {
-		match := findInlineMatch(rest, codeStyle, boldStyle, linkStyle, m.careerOpsPath)
+		match := findInlineMatch(rest, codeStyle, boldStyle, linkStyle, m.linkBaseDir, m.careerOpsPath)
 		if match == nil {
 			b.WriteString(baseStyle.Render(rest))
 			break
@@ -1269,7 +1303,7 @@ type inlineMatch struct {
 	rendered   string
 }
 
-func findInlineMatch(s string, codeStyle, boldStyle, linkStyle lipgloss.Style, careerOpsPath string) *inlineMatch {
+func findInlineMatch(s string, codeStyle, boldStyle, linkStyle lipgloss.Style, linkBaseDir, careerOpsPath string) *inlineMatch {
 	var best *inlineMatch
 	consider := func(loc []int, rendered func() string) {
 		if loc == nil || (best != nil && loc[0] >= best.start) {
@@ -1287,36 +1321,101 @@ func findInlineMatch(s string, codeStyle, boldStyle, linkStyle lipgloss.Style, c
 	if loc := reLink.FindStringIndex(s); loc != nil {
 		consider(loc, func() string {
 			sm := reLink.FindStringSubmatch(s[loc[0]:loc[1]])
-			if len(sm) >= 2 {
-				return linkStyle.Render(sm[1])
+			if len(sm) >= 3 {
+				return renderOSC8Link(linkStyle.Render(sm[1]), resolveHyperlinkTarget(sm[2], linkBaseDir, careerOpsPath))
 			}
 			return s[loc[0]:loc[1]]
 		})
 	}
 	if loc := reBareURL.FindStringIndex(s); loc != nil {
-		consider(loc, func() string { return linkStyle.Render(s[loc[0]:loc[1]]) })
+		consider(loc, func() string {
+			target := s[loc[0]:loc[1]]
+			return renderOSC8Link(linkStyle.Render(target), target)
+		})
 	}
 	if loc := reRelPDFPath.FindStringIndex(s); loc != nil {
 		consider(loc, func() string {
 			relPath := s[loc[0]:loc[1]]
-			styled := linkStyle.Render(relPath)
-			if careerOpsPath == "" {
-				return styled
-			}
-			joined := filepath.Join(careerOpsPath, filepath.FromSlash(relPath))
-			absPath, err := filepath.Abs(joined)
-			if err != nil {
-				return styled
-			}
-			forward := filepath.ToSlash(absPath)
-			if !strings.HasPrefix(forward, "/") {
-				forward = "/" + forward // Windows: C:/... → /C:/...
-			}
-			// OSC 8 hyperlink: ESC ] 8 ; ; URL BEL text ESC ] 8 ; ; BEL
-			return "\x1b]8;;" + "file://" + forward + "\x07" + styled + "\x1b]8;;\x07"
+			return renderOSC8Link(linkStyle.Render(relPath), resolveHyperlinkTarget(relPath, careerOpsPath, careerOpsPath))
 		})
 	}
 	return best
+}
+
+func renderOSC8Link(label, target string) string {
+	if target == "" || strings.ContainsAny(target, "\x00\x07\x1b\r\n") {
+		return label
+	}
+	// OSC 8 hyperlink: ESC ] 8 ; ; URL BEL text ESC ] 8 ; ; BEL
+	return "\x1b]8;;" + target + "\x07" + label + "\x1b]8;;\x07"
+}
+
+func resolveHyperlinkTarget(target, baseDir, careerOpsPath string) string {
+	target = strings.TrimSpace(strings.Trim(target, "<>"))
+	if target == "" || strings.HasPrefix(target, "#") || strings.ContainsAny(target, "\x00\x07\x1b\r\n") {
+		return ""
+	}
+	for _, scheme := range []string{"https://", "http://", "mailto:"} {
+		if strings.HasPrefix(strings.ToLower(target), scheme) {
+			return target
+		}
+	}
+	if strings.HasPrefix(strings.ToLower(target), "file://") {
+		absPath, ok := resolveLocalHyperlinkPath(target[len("file://"):], careerOpsPath, careerOpsPath)
+		if !ok {
+			return ""
+		}
+		forward := filepath.ToSlash(absPath)
+		if !strings.HasPrefix(forward, "/") {
+			forward = "/" + forward
+		}
+		return "file://" + forward
+	}
+	if strings.HasPrefix(strings.ToLower(target), "repo:") {
+		baseDir = careerOpsPath
+		target = strings.TrimSpace(target[len("repo:"):])
+	}
+	absPath, ok := resolveLocalHyperlinkPath(target, baseDir, careerOpsPath)
+	if !ok {
+		return ""
+	}
+	forward := filepath.ToSlash(absPath)
+	if !strings.HasPrefix(forward, "/") {
+		forward = "/" + forward // Windows: C:/... → /C:/...
+	}
+	return "file://" + forward
+}
+
+func resolveLocalHyperlinkPath(target, baseDir, careerOpsPath string) (string, bool) {
+	target = strings.TrimSpace(strings.Trim(target, "<>"))
+	if target == "" || strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") || strings.ContainsAny(target, "\x00\x07\x1b\r\n") {
+		return "", false
+	}
+	if baseDir == "" {
+		baseDir = careerOpsPath
+	}
+	if baseDir == "" {
+		return "", false
+	}
+	absPath := filepath.FromSlash(target)
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(baseDir, absPath)
+	}
+	absPath, err := filepath.Abs(absPath)
+	if err != nil {
+		return "", false
+	}
+	if careerOpsPath != "" {
+		root, rootErr := filepath.Abs(careerOpsPath)
+		rel, relErr := filepath.Rel(root, absPath)
+		if rootErr != nil || relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", false
+		}
+	}
+	if _, err := os.Stat(absPath); err != nil {
+		return "", false
+	}
+	return absPath, true
 }
 
 func (m ViewerModel) styleLine(line string) string {

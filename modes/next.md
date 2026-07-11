@@ -542,6 +542,17 @@ action and what to confirm, it does not invent a new pack):
   - suggested terminal stage
   - optional polite withdrawal note if the user has already engaged
 
+### Pack deep-link contract
+
+Every user-action artifact named in a generated pack MUST be a clickable
+Markdown link, not only an inline-code path. For repo-local artifacts, make the
+destination relative to the pack file in `output/next-packs/` (for example,
+`[Tailored CV](../cv-candidate-acme-2026-07-11.pdf)`). External destinations
+must use an absolute `https://` URL. Before saving the pack, resolve every local
+Markdown destination from the pack directory and verify that the target exists;
+fix or omit any broken link. This applies to CVs/resumes, cover letters, reports,
+interview prep, and every other generated artifact.
+
 Save each produced pack to:
 
 ```text

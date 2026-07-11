@@ -1117,6 +1117,72 @@ func TestViewerRendersInlineMarkdownBeforeParagraphWrapping(t *testing.T) {
 	}
 }
 
+func TestViewerMarkdownLinksEmitWorkingOSC8Targets(t *testing.T) {
+	root := t.TempDir()
+	reportDir := filepath.Join(root, "reports")
+	if err := os.MkdirAll(reportDir, 0o755); err != nil {
+		t.Fatalf("mkdir reports: %v", err)
+	}
+	localTarget := filepath.Join(root, "output", "cv-acme.pdf")
+	writePDFFixture(t, root, "output/cv-acme.pdf")
+
+	m := ViewerModel{
+		lines:         []string{"[Posting](https://jobs.example.com/acme) [Resume](../output/cv-acme.pdf) [Outside](file:///etc/passwd)"},
+		linkBaseDir:   reportDir,
+		careerOpsPath: root,
+		width:         100,
+		height:        20,
+		theme:         theme.NewTheme("catppuccin-mocha"),
+	}
+
+	rendered := strings.Join(m.renderAll(), "\n")
+	if !strings.Contains(rendered, "\x1b]8;;https://jobs.example.com/acme\x07") {
+		t.Fatalf("expected external Markdown link to emit an OSC 8 target, got %q", rendered)
+	}
+	wantLocal := "\x1b]8;;file://" + filepath.ToSlash(localTarget) + "\x07"
+	if !strings.Contains(rendered, wantLocal) {
+		t.Fatalf("expected local Markdown link target %q, got %q", wantLocal, rendered)
+	}
+	if strings.Contains(rendered, "\x1b]8;;file:///etc/passwd\x07") {
+		t.Fatalf("expected local links outside the career-ops root to stay inert, got %q", rendered)
+	}
+}
+
+func TestDetailsViewerPreservesNextPackRelativeLinkBase(t *testing.T) {
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "reports", "042-acme.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir reports: %v", err)
+	}
+	if err := os.WriteFile(reportPath, []byte("# Evaluation: Acme -- Engineer\n\n## A) Role Summary\n\nGood fit."), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	writePDFFixture(t, root, "output/cv-acme.pdf")
+	packPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
+	if err := os.MkdirAll(filepath.Dir(packPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	if err := os.WriteFile(packPath, []byte("## Next: Acme -- Engineer (#42)\n\n- **Tailored CV:** [cv-acme.pdf](../cv-acme.pdf)"), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+
+	m := NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		reportPath,
+		"DETAILS: Acme / Engineer",
+		100,
+		30,
+		model.CareerApplication{Company: "Acme", Role: "Engineer", NextPackPath: "output/next-packs/042-acme.md"},
+	)
+
+	rendered := strings.Join(m.renderedLines, "\n")
+	want := "\x1b]8;;file://" + filepath.ToSlash(filepath.Join(root, "output", "cv-acme.pdf")) + "\x07"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected next-pack-relative CV link target %q, got %q", want, rendered)
+	}
+}
+
 func TestViewerEmptyContentRendersPlaceholder(t *testing.T) {
 	m := ViewerModel{
 		lines:  nil,

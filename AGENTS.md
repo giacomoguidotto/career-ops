@@ -413,6 +413,11 @@ Write one TSV file per evaluation to `batch/tracker-additions/{num}-{company-slu
 5. Health check: `node verify-pipeline.mjs`
 6. Normalize statuses: `node normalize-statuses.mjs`
 7. Dedup: `node dedup-tracker.mjs`
+8. Generated evaluations and next-step packs must use working Markdown
+   deep-links: absolute `https://` for external destinations; file-relative
+   links for repo-local artifacts, resolved from the generated file's own
+   directory and existence-checked before saving. A code-formatted path alone is
+   not a deep-link.
 
 ## Deterministic Candidacy Selection
 
