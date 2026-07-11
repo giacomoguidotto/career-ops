@@ -31,7 +31,7 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 		t.Fatalf("failed to write tracker: %v", err)
 	}
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 1 {
 		t.Fatalf("expected 1 parsed application, got %d", len(apps))
 	}
@@ -56,7 +56,7 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 		t.Errorf("status word was replaced inside the Company cell, file now:\n%s", out)
 	}
 
-	reparsed := ParseApplications(tempDir)
+	reparsed := ParseDashboardRows(tempDir)
 	if reparsed[0].Company != "Applied Materials" {
 		t.Errorf("company = %q, want \"Applied Materials\"", reparsed[0].Company)
 	}
@@ -65,7 +65,7 @@ func TestUpdateApplicationStatusOnlyRewritesStatusColumn(t *testing.T) {
 	}
 }
 
-func TestParseApplicationsUsesTrackerNumberColumn(t *testing.T) {
+func TestParseDashboardRowsUsesTrackerNumberColumn(t *testing.T) {
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
@@ -85,7 +85,7 @@ func TestParseApplicationsUsesTrackerNumberColumn(t *testing.T) {
 		t.Fatalf("failed to write applications tracker: %v", err)
 	}
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 2 {
 		t.Fatalf("expected 2 parsed applications, got %d", len(apps))
 	}
@@ -101,7 +101,7 @@ func TestParseApplicationsUsesTrackerNumberColumn(t *testing.T) {
 	}
 }
 
-func TestParseApplicationsResolvesTrackerRelativeReportLinks(t *testing.T) {
+func TestParseDashboardRowsResolvesTrackerRelativeReportLinks(t *testing.T) {
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
 	reportsDir := filepath.Join(tempDir, "reports")
@@ -132,7 +132,7 @@ func TestParseApplicationsResolvesTrackerRelativeReportLinks(t *testing.T) {
 		}
 	}
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 2 {
 		t.Fatalf("expected 2 parsed applications, got %d", len(apps))
 	}
@@ -182,10 +182,10 @@ const insertedColumnTracker = `# Applications Tracker
 // the Node tracker tooling supports since #954) must not desync the Go reader.
 // Without header-aware mapping, Status reads the Score cell and the report link
 // reads the PDF cell, so ReportNumber comes back empty.
-func TestParseApplicationsMapsColumnsByHeader(t *testing.T) {
+func TestParseDashboardRowsMapsColumnsByHeader(t *testing.T) {
 	tempDir, _ := writeTracker(t, insertedColumnTracker)
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 1 {
 		t.Fatalf("expected 1 application, got %d", len(apps))
 	}
@@ -215,7 +215,7 @@ func TestParseApplicationsMapsColumnsByHeader(t *testing.T) {
 func TestUpdateApplicationStatusInsertedColumn(t *testing.T) {
 	tempDir, path := writeTracker(t, insertedColumnTracker)
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 1 {
 		t.Fatalf("expected 1 application, got %d", len(apps))
 	}
@@ -240,7 +240,7 @@ func TestUpdateApplicationStatusInsertedColumn(t *testing.T) {
 		}
 	}
 
-	reparsed := ParseApplications(tempDir)
+	reparsed := ParseDashboardRows(tempDir)
 	if reparsed[0].Status != "Interview" {
 		t.Errorf("reparsed Status = %q, want \"Interview\"", reparsed[0].Status)
 	}
@@ -299,7 +299,7 @@ func TestResolveTrackerColumnsVia(t *testing.T) {
 	}
 }
 
-func TestParseApplicationsEnrichesLocationFromDataScanHistory(t *testing.T) {
+func TestParseDashboardRowsEnrichesLocationFromDataScanHistory(t *testing.T) {
 	tempDir := t.TempDir()
 	dataDir := filepath.Join(tempDir, "data")
 	reportsDir := filepath.Join(tempDir, "reports")
@@ -330,7 +330,7 @@ func TestParseApplicationsEnrichesLocationFromDataScanHistory(t *testing.T) {
 		t.Fatalf("failed to write scan history: %v", err)
 	}
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 2 {
 		t.Fatalf("expected 2 parsed applications, got %d", len(apps))
 	}
@@ -346,7 +346,7 @@ func TestParseApplicationsEnrichesLocationFromDataScanHistory(t *testing.T) {
 	}
 }
 
-func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
+func TestParseDashboardRowsIncludesLiveQueueRows(t *testing.T) {
 	tempDir := t.TempDir()
 	for _, dir := range []string{
 		filepath.Join(tempDir, "data"),
@@ -373,6 +373,9 @@ func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tempDir, "reports", "002-beta.md"), []byte("**URL:** https://jobs.example.com/2\n"), 0o644); err != nil {
 		t.Fatalf("failed to write report 002: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(tempDir, "reports", "005-epsilon.md"), []byte("**URL:** https://jobs.example.com/5\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report 005: %v", err)
+	}
 
 	addition := "2\t2026-06-22\tBeta\tUnmerged Role\tEvaluated\t3.5/5\t❌\t[002](reports/002-beta.md)\tUnmerged tracker addition\n"
 	if err := os.WriteFile(filepath.Join(tempDir, "batch", "tracker-additions", "2.tsv"), []byte(addition), 0o644); err != nil {
@@ -393,6 +396,7 @@ func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
 	}
 
 	state := "id\turl\tstatus\tstarted_at\tcompleted_at\treport_num\tscore\terror\tretries\n" +
+		"1\thttps://jobs.example.com/1\tcompleted\t2026-06-22T06:00:00Z\t2026-06-22T06:10:00Z\t001\t4.0\t-\t0\n" +
 		"2\thttps://jobs.example.com/2\tcompleted\t2026-06-22T07:00:00Z\t2026-06-22T07:10:00Z\t002\t3.5\t-\t0\n" +
 		"4\thttps://jobs.example.com/4\tprocessing\t2026-06-22T08:00:00Z\t-\t004\t-\t-\t0\n" +
 		"5\thttps://jobs.example.com/5\tcompleted\t2026-06-22T08:10:00Z\t2026-06-22T08:12:00Z\t005\t2.5\t-\t0\n" +
@@ -401,19 +405,19 @@ func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
 		t.Fatalf("failed to write batch state: %v", err)
 	}
 
-	apps := ParseApplications(tempDir)
-	if len(apps) != 4 {
-		t.Fatalf("expected tracker + unmerged + processing + pending rows, got %d: %+v", len(apps), apps)
+	apps := ParseDashboardRows(tempDir)
+	if len(apps) != 5 {
+		t.Fatalf("expected tracker + tracker addition + unmerged completed batch + processing + pending rows, got %d: %+v", len(apps), apps)
 	}
 
 	byURL := map[string]modelSource{}
 	for _, app := range apps {
-		byURL[app.JobURL] = modelSource{source: app.Source, status: NormalizeStatus(app.Status), company: app.Company, role: app.Role}
+		byURL[app.JobURL] = modelSource{source: string(app.Source), status: NormalizeStatus(app.Status), company: app.Company, role: app.Role}
 	}
 	if byURL["https://jobs.example.com/1"].source != "tracker" {
 		t.Fatalf("expected existing report URL to remain tracker row, got %+v", byURL["https://jobs.example.com/1"])
 	}
-	if got := byURL["https://jobs.example.com/2"]; got.source != "tracker-addition" || got.status != "evaluated" {
+	if got := byURL["https://jobs.example.com/2"]; got.source != "tracker-addition" || got.status != "unmerged_complete" {
 		t.Fatalf("expected URL 2 to come from unmerged tracker addition, got %+v", got)
 	}
 	if got := byURL["https://jobs.example.com/4"]; got.source != "batch" || got.status != "processing" || got.role != "Processing Role" {
@@ -422,11 +426,85 @@ func TestParseApplicationsIncludesLiveQueueRows(t *testing.T) {
 	if got := byURL["https://jobs.example.com/3"]; got.source != "pipeline" || got.status != "pending" || got.company != "Gamma" {
 		t.Fatalf("expected URL 3 to come from pending pipeline row, got %+v", got)
 	}
-	if _, ok := byURL["https://jobs.example.com/5"]; ok {
-		t.Fatalf("terminal completed batch URL 5 should come from tracker merge, not batch-state fallback: %+v", byURL["https://jobs.example.com/5"])
+	if got := byURL["https://jobs.example.com/5"]; got.source != "batch" || got.status != "unmerged_complete" {
+		t.Fatalf("completed batch URL 5 without a tracker row should remain visible as unmerged work: %+v", got)
 	}
 	if _, ok := byURL["https://jobs.example.com/6"]; ok {
 		t.Fatalf("terminal skipped batch URL 6 should come from tracker merge, not batch-state fallback: %+v", byURL["https://jobs.example.com/6"])
+	}
+}
+
+func TestBatchQueueFailureNotesExposeReasonAndRecoveryCommand(t *testing.T) {
+	tests := []struct {
+		status string
+		error  string
+		want   []string
+	}{
+		{status: "failed", error: "worker exited 1", want: []string{"worker exited 1", "--retry-failed"}},
+		{status: "paused_rate_limit", error: "quota reset at 09:00", want: []string{"quota reset at 09:00", "--resume-paused"}},
+		{status: "rate_limited", error: "HTTP 429", want: []string{"HTTP 429", "retry"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			note := batchStateNote(tt.status, tt.error)
+			for _, want := range tt.want {
+				if !strings.Contains(note, want) {
+					t.Fatalf("batchStateNote(%q) = %q, want substring %q", tt.status, note, want)
+				}
+			}
+		})
+	}
+}
+
+func TestApplicationMetricsIgnoreSyntheticQueueRows(t *testing.T) {
+	apps := []model.DashboardRow{
+		{Company: "Tracked", Status: "Evaluated", Score: 4.5, Source: "tracker"},
+		{Company: "Pending", Status: "Pending", Source: "pipeline"},
+		{Company: "Complete", Status: "Unmerged Complete", Score: 4.0, Source: "batch"},
+	}
+
+	metrics := ComputeMetrics(apps)
+	if metrics.Total != 1 || metrics.ByStatus["evaluated"] != 1 {
+		t.Fatalf("pipeline metrics counted synthetic queue work: %+v", metrics)
+	}
+
+	progress := ComputeProgressMetrics(apps)
+	if len(progress.FunnelStages) == 0 || progress.FunnelStages[0].Count != 1 {
+		t.Fatalf("progress metrics counted synthetic queue work: %+v", progress)
+	}
+	if progress.AvgScore != 4.5 {
+		t.Fatalf("progress average = %.1f, want tracker-only 4.5", progress.AvgScore)
+	}
+}
+
+func TestUpdateApplicationStatusRejectsSyntheticQueueRows(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dataDir, "applications.md")
+	tracker := `# Applications Tracker
+
+| # | Date | Company | Role | Score | Status | PDF | Report | Notes |
+|---|------|---------|------|-------|--------|-----|--------|-------|
+| 2 | 2026-06-22 | Beta | Unmerged Role | 3.5/5 | Evaluated | ❌ | [002](../reports/002-beta.md) | Existing tracker row |
+`
+	if err := os.WriteFile(path, []byte(tracker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := model.DashboardRow{ReportNumber: "002", Status: "Unmerged Complete", Source: "tracker-addition"}
+	if err := UpdateApplicationStatus(tempDir, app, "Applied"); err == nil {
+		t.Fatal("expected synthetic queue mutation to be rejected")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != tracker {
+		t.Fatal("synthetic queue mutation changed the tracker")
 	}
 }
 
@@ -437,7 +515,7 @@ type modelSource struct {
 	role    string
 }
 
-func TestParseApplicationsEnrichesNextActionsAndPacks(t *testing.T) {
+func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 	tempDir := t.TempDir()
 	for _, dir := range []string{
 		filepath.Join(tempDir, "data"),
@@ -472,7 +550,7 @@ func TestParseApplicationsEnrichesNextActionsAndPacks(t *testing.T) {
 		t.Fatalf("failed to write stale next pack: %v", err)
 	}
 
-	apps := ParseApplications(tempDir)
+	apps := ParseDashboardRows(tempDir)
 	if len(apps) != 3 {
 		t.Fatalf("expected 3 parsed apps, got %d", len(apps))
 	}
@@ -618,7 +696,7 @@ func TestDeriveNextActionByOwner(t *testing.T) {
 		{"SKIP", "none", "none", "none"},
 	}
 	for _, tc := range cases {
-		rec := deriveNextAction(model.CareerApplication{Status: tc.status}, now, sm)
+		rec := deriveNextAction(model.DashboardRow{Status: tc.status}, now, sm)
 		if rec.ActionState != tc.wantState || rec.NextAction != tc.wantAction || rec.Owner != tc.wantOwner {
 			t.Errorf("deriveNextAction(%q) = %q/%q/%q, want %q/%q/%q",
 				tc.status, rec.ActionState, rec.NextAction, rec.Owner,
@@ -658,7 +736,7 @@ func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := deriveNextAction(model.CareerApplication{Status: "Evaluated", Notes: tc.notes}, now, sm)
+			rec := deriveNextAction(model.DashboardRow{Status: "Evaluated", Notes: tc.notes}, now, sm)
 			if rec.NextAction != tc.wantAction || rec.Owner != "agent" {
 				t.Errorf("deriveNextAction = %q/%q, want %q/agent", rec.NextAction, rec.Owner, tc.wantAction)
 			}

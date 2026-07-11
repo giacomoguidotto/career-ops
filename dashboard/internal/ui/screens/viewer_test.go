@@ -36,6 +36,28 @@ func TestViewerRebuildRenderClampsScrollOffset(t *testing.T) {
 	}
 }
 
+func TestViewerDoesNotOfferTrackerStatusMutationForQueueRows(t *testing.T) {
+	m := ViewerModel{
+		app:    model.DashboardRow{Status: "Unmerged Complete", Source: "tracker-addition"},
+		width:  100,
+		height: 30,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+	m.rebuildRender()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if updated.statusPicker {
+		t.Fatal("queue-backed details viewer opened the tracker status picker")
+	}
+	if cmd != nil {
+		t.Fatal("queue-backed details viewer emitted a tracker mutation command")
+	}
+	footer := ansi.Strip(updated.renderFooter())
+	if strings.Contains(footer, "status") {
+		t.Fatalf("queue-backed details footer advertised tracker status mutation: %q", footer)
+	}
+}
+
 func TestRenderInlineElementsLeavesTrailingPunctuationUnstyled(t *testing.T) {
 	match := reBareURL.FindString("Visit https://example.com.")
 
@@ -217,7 +239,7 @@ func TestDetailsViewerStartsWithDecisionSnapshot(t *testing.T) {
 	}, "\n")
 
 	m := ViewerModel{
-		lines:  buildDetailsLines("", strings.Split(report, "\n"), model.CareerApplication{}),
+		lines:  buildDetailsLines("", strings.Split(report, "\n"), model.DashboardRow{}),
 		title:  "DETAILS: Acme / Backend Engineer",
 		width:  80,
 		height: 30,
@@ -306,7 +328,7 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 		"DETAILS: Acme / Backend Engineer",
 		80,
 		30,
-		model.CareerApplication{
+		model.DashboardRow{
 			Company:      "Acme",
 			Role:         "Backend Engineer",
 			NextPackPath: "output/next-packs/042-acme.md",
@@ -400,7 +422,7 @@ func TestDetailsViewerCollapsesLegacyPackAuditMetadataIntoOneNextStep(t *testing
 		"DETAILS: Jiga / Product Engineer",
 		100,
 		30,
-		model.CareerApplication{NextPackPath: "output/next-packs/247-jiga.md"},
+		model.DashboardRow{NextPackPath: "output/next-packs/247-jiga.md"},
 	)
 
 	plain := ansi.Strip(strings.Join(m.renderAll(), "\n"))
@@ -423,7 +445,7 @@ func TestDetailsViewerFallbackNextStepUsesHumanSentence(t *testing.T) {
 		"",
 		"Strong backend fit.",
 	}
-	app := model.CareerApplication{
+	app := model.DashboardRow{
 		ActionState: "needs_action",
 		NextAction:  "generate_application_pack",
 		ActionOwner: "agent",
@@ -457,82 +479,82 @@ func TestDetailsViewerFallbackNextStepUsesHumanSentence(t *testing.T) {
 func TestDetailsAppNextStepSummaryCoversKnownActions(t *testing.T) {
 	cases := []struct {
 		name string
-		app  model.CareerApplication
+		app  model.DashboardRow
 		want string
 	}{
 		{
 			name: "generate application pack",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_application_pack", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_application_pack", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Generate the application with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "send application",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_application", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "send_application", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
 			want: "Send the generated application. Open: output/next-packs/311-acme.md.",
 		},
 		{
 			name: "draft qualifying question",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_qualifying_questions", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "draft_qualifying_questions", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Draft a qualifying question with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "send qualifying question",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_qualifying_questions", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "send_qualifying_questions", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
 			want: "Send the qualifying question. Open: output/next-packs/311-acme.md.",
 		},
 		{
 			name: "draft outreach",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_outreach", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "draft_outreach", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Draft outreach with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "send outreach",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_outreach", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "send_outreach", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
 			want: "Send the outreach. Open: output/next-packs/311-acme.md.",
 		},
 		{
 			name: "follow up",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "follow_up", ActionOwner: "user", ActionDue: "2026-07-16"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "follow_up", ActionOwner: "user", ActionDue: "2026-07-16"},
 			want: "Send a follow-up. Due: 2026-07-16.",
 		},
 		{
 			name: "generate interview cheatsheet",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Generate the interview cheatsheet with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "regenerate interview cheatsheet",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "regenerate_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "regenerate_cheatsheet", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Regenerate the interview cheatsheet with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "attend interview and report",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "attend_interview_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "attend_interview_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
 			want: "Attend the interview, then report back. Open: output/next-packs/311-acme.md.",
 		},
 		{
 			name: "generate negotiation prep",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_negotiation_prep", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_negotiation_prep", ActionOwner: "agent", NextCommand: "/career-ops next 311"},
 			want: "Generate negotiation prep with an agent. Run: /career-ops next 311.",
 		},
 		{
 			name: "negotiate and report",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "negotiate_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "negotiate_and_report", ActionOwner: "user", NextPackPath: "output/next-packs/311-acme.md", NextCommand: "/career-ops next 311"},
 			want: "Negotiate, then report back. Open: output/next-packs/311-acme.md.",
 		},
 		{
 			name: "waiting with explicit owner",
-			app:  model.CareerApplication{ActionState: "waiting", NextAction: "follow_up", ActionOwner: "company", WaitingOn: "company response", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "waiting", NextAction: "follow_up", ActionOwner: "company", WaitingOn: "company response", NextCommand: "/career-ops next 311"},
 			want: "Wait for company response.",
 		},
 		{
 			name: "waiting without explicit owner",
-			app:  model.CareerApplication{ActionState: "snoozed", NextAction: "follow_up"},
+			app:  model.DashboardRow{ActionState: "snoozed", NextAction: "follow_up"},
 			want: "Wait for the company response.",
 		},
 		{
 			name: "none",
-			app:  model.CareerApplication{ActionState: "none", NextAction: "none", ActionOwner: "none", NextCommand: "/career-ops next 311"},
+			app:  model.DashboardRow{ActionState: "none", NextAction: "none", ActionOwner: "none", NextCommand: "/career-ops next 311"},
 			want: "",
 		},
 	}
@@ -1023,7 +1045,7 @@ func TestViewerFooterBackgroundCoversHelpText(t *testing.T) {
 func TestNextStepViewerFooterIncludesLinkShortcuts(t *testing.T) {
 	m := ViewerModel{
 		title:     "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
-		app:       model.CareerApplication{JobURL: "https://jobs.example.com/acme"},
+		app:       model.DashboardRow{JobURL: "https://jobs.example.com/acme"},
 		cvPDFPath: "/tmp/career-ops/output/cv-jane-doe-acme-2026-07-08.pdf",
 		width:     120,
 		height:    20,
@@ -1041,7 +1063,7 @@ func TestNextStepViewerFooterIncludesLinkShortcuts(t *testing.T) {
 func TestNextStepViewerOpenURLShortcut(t *testing.T) {
 	m := ViewerModel{
 		title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
-		app:    model.CareerApplication{JobURL: "https://jobs.example.com/acme"},
+		app:    model.DashboardRow{JobURL: "https://jobs.example.com/acme"},
 		width:  80,
 		height: 20,
 		theme:  theme.NewTheme("catppuccin-mocha"),
@@ -1079,7 +1101,7 @@ func TestNextStepViewerOpenPDFShortcut(t *testing.T) {
 		"NEXT STEP: Send Application / Globex / Engineer",
 		80,
 		20,
-		model.CareerApplication{Company: "Globex", Role: "Engineer"},
+		model.DashboardRow{Company: "Globex", Role: "Engineer"},
 	)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -1173,7 +1195,7 @@ func TestDetailsViewerPreservesNextPackRelativeLinkBase(t *testing.T) {
 		"DETAILS: Acme / Engineer",
 		100,
 		30,
-		model.CareerApplication{Company: "Acme", Role: "Engineer", NextPackPath: "output/next-packs/042-acme.md"},
+		model.DashboardRow{Company: "Acme", Role: "Engineer", NextPackPath: "output/next-packs/042-acme.md"},
 	)
 
 	rendered := strings.Join(m.renderedLines, "\n")

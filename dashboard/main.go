@@ -35,7 +35,7 @@ type appModel struct {
 }
 
 func (m *appModel) reloadPipelineData() {
-	apps := data.ParseApplications(m.careerOpsPath)
+	apps := data.ParseDashboardRows(m.careerOpsPath)
 	metrics := data.ComputeMetrics(apps)
 	m.progressMetrics = data.ComputeProgressMetrics(apps)
 	m.pipeline = m.pipeline.WithReloadedData(apps, metrics)
@@ -249,7 +249,7 @@ func main() {
 	careerOpsPath := *pathFlag
 
 	// Load applications
-	apps := data.ParseApplications(careerOpsPath)
+	apps := data.ParseDashboardRows(careerOpsPath)
 	if apps == nil {
 		fmt.Fprintf(os.Stderr, "Error: could not find applications.md in %s or %s/data/\n", careerOpsPath, careerOpsPath)
 		os.Exit(1)

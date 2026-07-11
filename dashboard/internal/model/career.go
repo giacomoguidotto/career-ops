@@ -1,7 +1,8 @@
 package model
 
-// CareerApplication represents a single job application from the tracker.
-type CareerApplication struct {
+// DashboardRow is the dashboard's read model. It can project either a tracked
+// Application or synthetic evaluation-queue work; Source identifies which.
+type DashboardRow struct {
 	Number       int
 	Date         string
 	Company      string
@@ -26,9 +27,9 @@ type CareerApplication struct {
 	TlDr         string
 	Remote       string
 	CompEstimate string
-	// Source identifies where this dashboard row came from. Empty is treated as
-	// "tracker" for older tests/fixtures.
-	Source string
+	// Source identifies where this dashboard row came from. The zero value is
+	// tracker-backed for compatibility with older fixtures.
+	Source DashboardRowSource
 	// Next-action view-model, derived from the row's stage in templates/states.yml.
 	ActionState  string // needs_action | waiting | blocked | none
 	NextAction   string // the stage's suggests action, e.g. generate_application_pack | send_application | follow_up | none
@@ -38,6 +39,23 @@ type CareerApplication struct {
 	ActionReason string
 	NextPackPath string // output/next-packs/... when a generated pack exists
 	NextCommand  string // /career-ops next {num}
+}
+
+// DashboardRowSource identifies the durable source projected into a row.
+type DashboardRowSource string
+
+const (
+	DashboardSourceTracker         DashboardRowSource = "tracker"
+	DashboardSourceTrackerAddition DashboardRowSource = "tracker-addition"
+	DashboardSourceBatch           DashboardRowSource = "batch"
+	DashboardSourcePipeline        DashboardRowSource = "pipeline"
+)
+
+// IsTrackedApplication reports whether this row is backed by applications.md.
+// Empty Source remains tracker-backed for compatibility with older fixtures and
+// callers that predate synthetic dashboard rows.
+func (r DashboardRow) IsTrackedApplication() bool {
+	return r.Source == "" || r.Source == DashboardSourceTracker
 }
 
 // PipelineMetrics holds aggregate stats for the pipeline dashboard.
