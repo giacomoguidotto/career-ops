@@ -125,8 +125,9 @@ without a second research step before the user can act.
   not as a separate recommendation block or contact list. Default to one first
   touch, with backup contacts reserved for later.
 - Keep the whole pack lean: the form answers, outreach destinations, sendable
-  text, and real confirmations are the body. Fold rationale (why this row,
-  scoring, strategy) into a single footer line and do not restate the report.
+  text, and real confirmations are the body. Omit selection rationale entirely;
+  the decision and next step already explain why the pack exists. Do not restate
+  the report or add a selection footer.
 - Resolve obvious fields from the in-scope sources before asking the user.
   `config/profile.yml`, `cv.md`, the report, and current official sources can
   answer routine work-authorization, language, and compensation fields. Ask only
@@ -152,7 +153,7 @@ without a second research step before the user can act.
   from the pack's `**Next step:**` header. Do not replace it with `Current
   status`, `Next checkpoint`, `Selected because`, or a standalone `Report`
   field. Those are audit notes, not next steps, and must not appear in the pack
-  header or body.
+  header or body. Never emit a `Selected` sentence anywhere in a generated pack.
 
 Completion criterion: the user can execute the first action section immediately,
 then move through any conditional application, outreach, or backup sections
@@ -667,14 +668,12 @@ Only after the gate clears, press `o` to open and fill the form: {ATS/form URL}
 | Question | Answer | Notes |
 |---|---|---|
 | {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
-
-_Selected: {one-line why}._
 ````
 
 Use only those six metadata lines. Do not add `Current status`, `Next
-checkpoint`, `Selected because`, or a second standalone `Report` line. Keep
-selection rationale in the single footer line and detailed status in the
-tracker/report.
+checkpoint`, `Selected because`, `Selected`, or a second standalone `Report`
+line. Do not add selection rationale or a selection footer; keep detailed status
+in the tracker/report.
 
 Completion criterion: the user can review the pack and decide the next human
 approval without the agent needing to act externally.

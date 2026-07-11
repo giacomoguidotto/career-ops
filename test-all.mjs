@@ -1152,6 +1152,16 @@ if (
 }
 
 if (
+  nextMode.includes('Omit selection rationale entirely') &&
+  nextMode.includes('Never emit a `Selected` sentence anywhere in a generated pack') &&
+  !nextMode.includes('_Selected:')
+) {
+  pass('next mode omits unclear Selected rationale from every generated pack');
+} else {
+  fail('next mode can still emit an unclear Selected rationale sentence');
+}
+
+if (
   nextMode.includes('tailored CV/PDF reference') &&
   nextMode.includes('copy-paste answers for captured form questions') &&
   nextMode.includes('outreach action sections when useful') &&
