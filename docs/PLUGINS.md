@@ -1,9 +1,9 @@
 # Plugins
 
-Plugins extend career-ops with integrations that need an API key or talk to an
-external service — things the zero-keys, local-first core doesn't carry. They are
-**opt-in**, sandboxed-by-convention, and additive: with no plugins enabled, the
-core runs exactly as it always has.
+Plugins extend career-ops with opt-in integrations that do not belong in the
+stable core: keyed/external services and best-effort parsers for public sites.
+They are **opt-in**, sandboxed-by-convention, and additive: with no plugins
+enabled, the core runs exactly as it always has.
 
 > This is **not** the Claude Code plugin (`.claude-plugin/`). These plugins
 > extend career-ops itself.
@@ -110,11 +110,31 @@ Every community plugin in the registry is reviewed and pinned to an exact commit
 
 | Plugin | What it does | Hooks | Keys needed | Author |
 | --- | --- | --- | --- | --- |
+| [career-ops-plugin-startup-boards](https://github.com/giacomoguidotto/career-ops-plugin-startup-boards) | Scans YC, Getro, and Consider startup job boards through one explicit provider. | provider | None | @giacomoguidotto |
 | [career-ops-plugin-tavily](https://github.com/Schlaflied/career-ops-plugin-tavily) | Tavily search/extract for job scanning, liveness checks, and company research. | search | `TAVILY_API_KEY` | @Schlaflied |
 | [career-ops-plugin-google-calendar](https://github.com/Schlaflied/career-ops-plugin-google-calendar) | Google Calendar ingest — detect upcoming interview events and surface them in the career-ops pipeline. | ingest | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REFRESH_TOKEN` | @Schlaflied |
 | [career-ops-plugin-linkedin-alerts](https://github.com/Schlaflied/career-ops-plugin-linkedin-alerts) | LinkedIn job alert ingest — parse LinkedIn alert emails from your Gmail inbox, normalize tracking links to canonical job URLs, and surface them in the career-ops pipeline. | ingest | `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | @Schlaflied |
 | [career-ops-plugin-outlook-interviews](https://github.com/Schlaflied/career-ops-plugin-outlook-interviews) | Outlook interview ingest — detect interview invitation emails via Microsoft Graph, extract company / role / meeting link, and surface them in the career-ops pipeline. | ingest | `MSGRAPH_CLIENT_ID`, `MSGRAPH_REFRESH_TOKEN` (optional: `MSGRAPH_CLIENT_SECRET`) | @Schlaflied |
 | [career-ops-plugin-obsidian](https://github.com/Schlaflied/career-ops-plugin-obsidian) | Obsidian export — mirror the tracker into your vault as frontmatter notes queryable by Dataview/Bases; frontmatter belongs to the machine, the note body belongs to you. | export | None | @Schlaflied |
+
+Startup-board providers are deliberately plugin-only. Install and enable the
+approved pinned plugin, then select the board engine explicitly in each portal:
+
+```bash
+node plugins.mjs add startup-boards --confirm
+```
+
+```yaml
+tracked_companies:
+  - name: Y Combinator
+    provider: startup-boards
+    startup_board: ycombinator
+    careers_url: https://www.ycombinator.com/jobs/role/software-engineer
+```
+
+Use `startup_board: getro` or `startup_board: consider` for those portfolio
+board types. If the plugin is disabled or missing, the scanner reports it as
+inactive and does not fall back to a bundled implementation.
 
 To add your own plugin to the registry, follow the [Publishing + getting approved](#publishing--getting-approved) flow above.
 

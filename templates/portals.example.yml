@@ -799,6 +799,28 @@ search_queries:
 
 tracked_companies:
 
+  # -- Startup and VC portfolio boards (optional plugin) --
+  # Install with `node plugins.mjs add startup-boards --confirm`, then enable
+  # the entries you want. The explicit selector avoids guessing custom domains.
+
+  - name: Y Combinator Jobs
+    careers_url: https://www.ycombinator.com/jobs/role/software-engineer
+    provider: startup-boards
+    startup_board: ycombinator
+    enabled: false
+
+  - name: Example Getro Portfolio
+    careers_url: https://careers.example.com/jobs
+    provider: startup-boards
+    startup_board: getro
+    enabled: false
+
+  - name: Example Consider Portfolio
+    careers_url: https://jobs.example.com/
+    provider: startup-boards
+    startup_board: consider
+    enabled: false
+
   # -- AI Labs & LLM providers --
 
   - name: Anthropic
