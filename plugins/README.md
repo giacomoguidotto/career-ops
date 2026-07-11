@@ -1,9 +1,9 @@
 # career-ops plugins
 
-The plugin layer is the **opt-in home for integrations that need a key or talk
-to an external service** — things the zero-keys, local-first core deliberately
-doesn't carry. It generalizes the proven `providers/` pattern: drop a directory
-in here, declare a manifest, and it's discovered automatically.
+The plugin layer is the **opt-in home for integrations outside the stable
+core** — keyed/external services and best-effort parsers for public sites. It
+generalizes the proven `providers/` pattern: drop a directory in here, declare
+a manifest, and it's discovered automatically.
 
 > **Not the Claude Code plugin.** This is unrelated to `.claude-plugin/` (the
 > Claude Code marketplace metadata). These plugins extend career-ops itself.
@@ -48,7 +48,7 @@ plugins/<id>/
 
 | Hook | Signature | Does |
 |------|-----------|------|
-| `provider` | `{ id, detect?, fetch(entry, ctx) → Job[] }` | A keyed/auth-gated job source. Same shape as `providers/_types.js`. Runs via `scan` on a `provider: <id>` entry in `portals.yml`. |
+| `provider` | `{ id, detect?, fetch(entry, ctx) → Job[] }` | An explicit opt-in job source. Same shape as `providers/_types.js`. Runs via `scan` on a `provider: <id>` entry in `portals.yml`. |
 | `ingest` | `(ctx) → Job[]` | Pull postings from a service (email, a board). |
 | `search` | `(query, ctx) → Job[]` | Postings for a query string. |
 | `export` | `(snapshot, ctx) → {pushed}` | Push a **read-only** tracker snapshot to your own external store. |

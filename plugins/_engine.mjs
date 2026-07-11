@@ -3,8 +3,8 @@
  * plugins/_engine.mjs — the career-ops plugin engine.
  *
  * Generalizes the proven providers/ auto-loader (scan.mjs `loadProviders`) into
- * a sibling `plugins/` layer for integrations that need a KEY or talk to an
- * EXTERNAL service. The zero-key providers/ dir is untouched and stays pure.
+ * a sibling `plugins/` layer for opt-in integrations: keyed/external services
+ * and brittle public-board parsers that do not belong in the stable core.
  *
  * Design invariants (every one is asserted by test-all.mjs section 49):
  *  - ZERO module-level side effects. Importing this file reads no config, loads
@@ -651,9 +651,9 @@ export async function runHook(kind, payload, { root, dryRun = false, timeoutMs =
  *  4. detect-EXEMPT: a merged provider's detect() is forced to null, so it fires
  *     ONLY on an explicit `provider: <id>` portals.yml entry — never via
  *     auto-detection (no surprise paid/keyed network during a plain scan).
- *  5. A known-but-inactive provider plugin registers a STUB whose fetch throws
- *     an actionable message (disabled / missing key) — so `provider: apify` with
- *     the plugin off yields a helpful error, not a confusing "unknown provider".
+ *  5. A configured-but-inactive provider plugin registers a STUB whose fetch
+ *     throws an actionable message (disabled / not installed / missing key) —
+ *     so an explicit `provider:` entry never falls back silently.
  *
  * @param {Map<string, any>} providersMap   The Map returned by scan.mjs loadProviders.
  * @param {{ root: string }} opts
@@ -677,39 +677,54 @@ export async function mergeProviderPlugins(providersMap, { root }) {
   // untouched — fail-open is enforced structurally here, not just emergently.
   try {
     const cfg = await loadPluginConfig(root);
-    const providerManifests = discoverPlugins(pluginRoots(root), resolveSuccessorIds(root)).filter(m => m.hooks.includes('provider'));
-    if (providerManifests.length === 0) return;
+    const configEntries = cfg?.plugins && typeof cfg.plugins === 'object' ? cfg.plugins : {};
+    const providerManifests = discoverPlugins(pluginRoots(root), resolveSuccessorIds(root))
+      .filter(m => m.hooks.includes('provider'));
+    const manifestById = new Map(providerManifests.map(manifest => [manifest.id, manifest]));
+    const registeredProviderIds = new Set(
+      loadRegistry(root).plugins
+        .filter(entry => Array.isArray(entry.hooks) && entry.hooks.includes('provider'))
+        .map(entry => entry.id),
+    );
+    const configuredIds = Object.keys(configEntries)
+      .filter(id => manifestById.has(id) || registeredProviderIds.has(id));
+    if (configuredIds.length === 0) return;
 
-    // Only the plugins the user actually switched on in plugins.yml matter.
-    const configuredOn = providerManifests.filter(m => cfg?.plugins?.[m.id]?.enabled === true);
-    if (configuredOn.length === 0) return;
-
-    await loadDotenvOnce(); // (2) lazy, only now that an enabled provider plugin exists
-
-    for (const manifest of configuredOn) {
-      if (providersMap.has(manifest.id)) {
-        warnSkip(manifest.id, 'a core provider already owns this id — plugin not merged');
+    for (const id of configuredIds) {
+      if (providersMap.has(id)) {
+        warnSkip(id, 'a core provider already owns this id — plugin not merged');
         continue;
       }
+      const manifest = manifestById.get(id);
+      if (configEntries[id]?.enabled !== true) {
+        providersMap.set(id, inactiveProviderStub(id, 'disabled in config/plugins.yml')); // (5)
+        continue;
+      }
+      if (!manifest) {
+        providersMap.set(id, inactiveProviderStub(id, `not installed — run \`node plugins.mjs add ${id} --confirm\``)); // (5)
+        continue;
+      }
+
+      await loadDotenvOnce(); // (2) lazy, only now that an installed provider plugin is enabled
       const { enabled, missingEnv } = pluginStatus(manifest, cfg);
       if (!enabled) {
         const reason = missingEnv.length ? `missing env ${missingEnv.join(', ')} — add to .env` : 'disabled in config/plugins.yml';
-        providersMap.set(manifest.id, inactiveProviderStub(manifest.id, reason)); // (5)
+        providersMap.set(id, inactiveProviderStub(id, reason)); // (5)
         continue;
       }
       if (!lockGate(manifest, root).load) {
-        providersMap.set(manifest.id, inactiveProviderStub(manifest.id, 'integrity/consent check failed — see ⚠️ above; run `node plugins.mjs trust ' + manifest.id + '` or `enable ' + manifest.id + '`'));
+        providersMap.set(id, inactiveProviderStub(id, 'integrity/consent check failed — see ⚠️ above; run `node plugins.mjs trust ' + id + '` or `enable ' + id + '`'));
         continue;
       }
       const hook = await importHook(manifest, 'provider');
       if (!hook) {
         // enabled + keyed but the entry failed to import — keep the path self-explaining.
-        providersMap.set(manifest.id, inactiveProviderStub(manifest.id, 'failed to load — see ⚠️ above'));
+        providersMap.set(id, inactiveProviderStub(id, 'failed to load — see ⚠️ above'));
         continue;
       }
       const ctx = buildCtx(manifest, { settings: pluginSettings(manifest.id, cfg) });
-      providersMap.set(manifest.id, {
-        id: manifest.id,
+      providersMap.set(id, {
+        id,
         detect: () => null, // (4) keyed providers never auto-detect
         fetch: (entry) => hook.fetch(entry, ctx), // (3) ctx injection
       });

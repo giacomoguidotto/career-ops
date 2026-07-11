@@ -1092,7 +1092,7 @@ async function main() {
 
   // 1. Load providers
   const providers = await loadProviders(PROVIDERS_DIR);
-  // Opt-in: merge enabled keyed/auth-gated provider plugins. Returns immediately
+  // Opt-in: merge enabled provider plugins. Returns immediately
   // (no discovery, no dotenv, no process.env mutation) when config/plugins.yml is
   // absent — so a plain scan with no plugins configured stays byte-identical.
   await mergeProviderPlugins(providers, { root: path.dirname(PROVIDERS_DIR) });
