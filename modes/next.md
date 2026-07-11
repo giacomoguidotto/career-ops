@@ -22,15 +22,23 @@ without a second research step before the user can act.
   the next human move, not by a fixed application-template order. Put any
   preflight block immediately before the action it governs, then the action the
   user should do now, then conditional follow-on or backup actions. For
-  `send_application`, use `### Before You Apply`, `### Fill the Application Form`,
-  then outreach sections. For `send_qualifying_questions`, use `### Before You
-  Send`, `### Send the Gating Question`, optional `### Send the Backup Gating
-  Question`, then a conditional `### Fill the Application Form` only after the
-  gate clears. For follow-ups, lead with `### Send the Follow-Up`.
-- **Preflight sections:** `### Before You Apply`, `### Before You Send`, and
-  `### Before You Follow Up` are not footer summaries. They appear immediately
-  before the governed action and contain explicit asks covered, blockers, and
-  user-review checks that must happen before acting.
+  `send_application`, use an optional `### Before You Apply` only when a real
+  preflight remains, followed by `### Fill the Application Form`, then outreach
+  sections. For `send_qualifying_questions`, use `### Before You Send`, `### Send
+  the Gating Question`, optional `### Send the Backup Gating Question`, then a
+  conditional `### Fill the Application Form` only after the gate clears. For
+  follow-ups, lead with `### Send the Follow-Up`.
+- **Preflight sections:** `### Before You Apply` is optional. Include it only for
+  unresolved user input, confirmation, or a blocker that must be handled before
+  the user can sensibly apply; omit the heading entirely when there is nothing
+  to do before applying. Never use it to repeat the recommendation or fit
+  analysis, list the tailored CV/PDF, restate form coverage, report liveness, say
+  that outreach was not found, or remind the user to report back after applying.
+  Write one or two genuine checks as one or two short sentences. Use a bullet
+  list only when there are at least three distinct checks whose separation helps
+  the user act. Other preflight sections, such as `### Before You Send` and
+  `### Before You Follow Up`, still appear immediately before the governed action
+  when their stage has a real gate or cadence check.
 - **Form mirror:** for an application action, `### Fill the Application Form`
   must show the form the user will see when opening the application from the
   dashboard. Start that section with ``Press `o` to open and fill the form:
@@ -473,14 +481,16 @@ Pack contents by `suggests` artifact (agent stages draft these; the paired user
 action and what to confirm, it does not invent a new pack):
 
 - `generate_application_pack` (at `evaluated`) -> application pack:
-  - `### Before You Apply`: explicit asks covered, blockers, and user-review
-    checks that must be resolved before opening/submitting the form
+  - optional `### Before You Apply`: only unresolved input, confirmations, or
+    blockers that must be handled before opening/submitting the form; omit the
+    section when there is no actual pre-application action
   - `### Fill the Application Form`: ``Press `o` to open and fill the form:
     {URL}``, then
     a `Question | Answer | Notes` table containing the fields in page order with
     exact answers, selections, uploads, and user-review notes
   - apply/no-apply recommendation
-  - tailored CV/PDF reference
+  - tailored CV/PDF reference at the point where the user uploads or opens it,
+    normally the Resume/CV row in the form mirror, never as generic preflight
   - copy-paste answers for captured form questions, plus a dedicated answer for
     every explicit application instruction the posting made (including quirky or
     personal culture-fit asks), written in the posting's register
@@ -491,7 +501,6 @@ action and what to confirm, it does not invent a new pack):
     multiple visible founders, draft one tailored message per relevant founder
     (typically the CEO plus the technical/eng founder for an engineering role)
     and place them in primary/backup send order.
-  - a short line of what to confirm before applying
 - `draft_qualifying_questions` (at `evaluated`, when the active advancement
   policy or an explicit user request permits it) -> qualifying pack:
   - `### Before You Send`: the gate being tested, which answer clears it, and
@@ -572,6 +581,10 @@ unattended automations that delegate to this mode) re-drafts the same pack forev
 
 Pack format:
 
+In the application template below, omit `### Before You Apply` and its body
+entirely when no unresolved preflight remains. The placeholder demonstrates the
+shape only; it does not make the section mandatory.
+
 ````markdown
 ## Next: {Company} -- {Role} (#{tracker_num})
 
@@ -583,8 +596,9 @@ Pack format:
 **Score:** {score} | **Report:** {report path}
 
 ### Before You Apply
-- **Explicit asks covered:** {tick off each instruction from the report's `## Application Instructions` -- e.g. "blurb covered; favorite ice cream flavor needs your input; subject line keyword covered".}
-- {facts to confirm or blockers before opening/submitting the form -- a few bullets, no report restatement}
+{One or two short sentences for one or two real unresolved checks. Use bullets
+only for three or more distinct checks. Never restate completed coverage,
+recommendations, fit analysis, CV metadata, liveness, or post-application steps.}
 
 ### Fill the Application Form
 Press `o` to open and fill the form: {ATS/form URL}

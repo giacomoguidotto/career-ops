@@ -1224,6 +1224,11 @@ if (
   nextMode.includes('**Preflight sections:**') &&
   nextMode.includes('**Send actions:**') &&
   nextMode.includes('### Before You Apply') &&
+  nextMode.includes('omit the heading entirely when there is nothing') &&
+  nextMode.includes('list the tailored CV/PDF') &&
+  nextMode.includes('one or two short sentences') &&
+  nextMode.includes('at least three distinct checks') &&
+  nextMode.includes('never as generic preflight') &&
   nextMode.includes('### Before You Send') &&
   nextMode.includes('### Fill the Application Form') &&
   nextMode.includes('Press `o` to open and fill the form') &&
