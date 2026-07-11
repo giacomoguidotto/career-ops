@@ -285,7 +285,7 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	next := strings.Join([]string{
 		"## Next: Acme -- Backend Engineer (#42)",
 		"",
-		"**Next human action:** Review the salary field, then submit.",
+		"**Next step:** Review the salary field, then submit.",
 		"**Stage:** application_ready",
 		"**Owner:** user",
 		"**Suggests:** send_application",
@@ -337,6 +337,9 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	}
 	if got := strings.Count(plain, "TL;DR"); got != 1 {
 		t.Fatalf("expected TL;DR to appear once, got %d in:\n%s", got, plain)
+	}
+	if got := strings.Count(plain, "Next step:"); got != 1 {
+		t.Fatalf("expected the authored next step exactly once, got %d in:\n%s", got, plain)
 	}
 	for _, unwanted := range []string{
 		"Next: Acme",

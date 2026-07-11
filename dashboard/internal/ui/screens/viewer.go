@@ -202,10 +202,11 @@ func cleanDetailsNextPackLines(lines []string) []string {
 }
 
 type detailsNextPackMeta struct {
-	decision string
-	nextStep string
-	owner    string
-	suggests string
+	decision        string
+	legacyNextStep  string
+	hasAuthoredStep bool
+	owner           string
+	suggests        string
 }
 
 func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
@@ -217,8 +218,11 @@ func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 	case "decision":
 		m.decision = value
 		return false, true
-	case "next step", "next human action", "next checkpoint":
-		m.nextStep = value
+	case "next step":
+		m.hasAuthoredStep = true
+		return true, true
+	case "next human action", "next checkpoint":
+		m.legacyNextStep = value
 		return false, true
 	case "owner":
 		m.owner = value
@@ -235,7 +239,11 @@ func (m *detailsNextPackMeta) readLine(line string) (bool, bool) {
 }
 
 func (m detailsNextPackMeta) summaryLine() string {
-	human := cleanDetailsText(m.nextStep)
+	if m.hasAuthoredStep {
+		return ""
+	}
+
+	human := cleanDetailsText(m.legacyNextStep)
 	if human != "" {
 		return "**Next step:** " + detailsSentence(human)
 	}
