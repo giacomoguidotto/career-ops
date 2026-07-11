@@ -16,8 +16,8 @@ Edit the right-hand column to match whatever vocabulary you actually use.
 
 ## Repo note
 
-This repo's GitHub already has `needs-info` and `wontfix`. The other three
-(`needs-triage`, `ready-for-agent`, `ready-for-human`) don't exist yet — create
-them on first use with `gh label create "<name>"`, or remap the right-hand column
-above to labels you already keep (e.g. `needs-maintainer-decision` for a
-human-decision role).
+This repo's GitHub currently has `ready-for-agent` and `wontfix`. The other
+three roles are reserved vocabulary but are not configured labels yet. Create a
+missing label on first use with
+`gh label create "<name>" --repo giacomoguidotto/career-ops`, or remap the
+right-hand column above to a label the tracker already uses.

@@ -91,6 +91,14 @@ Rule of thumb before you build: **provider modules, languages, CLI support, mode
 
 ## Development
 
+### Fork engineering workflow
+
+Fork contributors should follow the retained
+[engineering workflow](docs/agents/engineering-workflow.md) and read
+[`CONTEXT.md`](CONTEXT.md) before changing lifecycle behavior. Issues, tests,
+and implementation use the canonical terms Application, Stage, Owner,
+Automation, Hiring surface, and Candidacy cluster.
+
 ```bash
 # Scripts
 npm run doctor                # Setup validation

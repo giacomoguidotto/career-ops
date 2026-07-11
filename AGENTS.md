@@ -484,7 +484,14 @@ Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `In
 - No dates in status field (use the date column)
 - No extra text (use the notes column)
 
-## Agent skills
+## Engineering workflow
+
+This fork retains the specification-to-implementation, domain-modeling, and
+architecture-review workflows. Before contributor work, read `CONTEXT.md` and
+use its canonical terms: Application, Stage, Owner, Automation, Hiring surface,
+and Candidacy cluster. See `docs/agents/engineering-workflow.md` for the
+`to-spec` -> `to-tickets` -> `implement` -> `code-review` delivery loop and the
+`domain-modeling` / `improve-codebase-architecture` design flow.
 
 ### Issue tracker
 
