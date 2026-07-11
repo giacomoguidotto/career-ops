@@ -367,6 +367,18 @@ When spawning headless workers for batch processing, use the appropriate command
 
 **Parallel fan-outs — reserve report numbers first.** When orchestrating N parallel evaluators (headless workers, subagents, or multiple agent windows), reserve the report-number range before spawning: `node reserve-report-num.mjs --count N` prints e.g. `042-049`; hand each worker its own number. Each slot claim is individually atomic; the contiguous range is an ergonomic allocation, not an all-or-nothing transaction — on collision the partially claimed slots are released and the reservation restarts past the collision. Release with `node reserve-report-num.mjs --release 042-049` when done (stale sentinels are GC'd after 4h, so reserve right before spawning; collision restarts leave permanent — harmless — gaps in the sequence). Never let parallel workers compute `max+1` themselves — that is the #749 race.
 
+## Fork Integration Worktrees
+
+The primary/root checkout on `fork/main` is an Automation runtime. Never repoint, rebase, or use it for integration work. Fetch both remotes before choosing a lane.
+
+| Lane | Start and worktree | Destination | Required completion flow |
+|------|--------------------|-------------|--------------------------|
+| Upstream-bound work | Create a dedicated branch and worktree at the exact fetched `upstream/main` tip. Before editing, run `node integration-preflight.mjs` there. | Pull request to the configured `upstream/main` | After upstream merges, use the Upstream absorption lane. |
+| Fork-only work | Create a dedicated branch and worktree from `fork/main`; leave the live `fork/main` checkout in place. | Pull request to the configured `origin/fork/main` | Merge through the fork PR; do not move `origin/main`. |
+| Upstream absorption | First fast-forward `origin/main` to the fetched `upstream/main`, then create a dedicated worktree from `fork/main` for the semantic absorption. | Pull request to the configured `origin/fork/main` | Absorb the already-merged upstream result; resolve only remaining fork-specific differences. |
+
+For upstream-bound work, `origin/main` and `upstream/main` must identify the same commit. If the preflight reports that `origin/main` is only behind, fast-forward it with `git push origin upstream/main:main`; never force-push a divergent mirror. The preflight is read-only and also rejects dirty candidates, non-exact starting commits, primary-checkout execution or repointing, and any copied or changed user-layer path.
+
 ## Stack and Conventions
 
 - Node.js (mjs modules), Playwright (PDF + scraping), YAML (config), HTML/CSS (template), Markdown (data), Canva MCP (optional visual CV)

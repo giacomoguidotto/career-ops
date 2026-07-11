@@ -27,6 +27,25 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 | `npm run invite-match` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `data/applications.md` |
+| `npm run integration:preflight` | `integration-preflight.mjs` | Verify an upstream-bound worktree before implementation |
+
+---
+
+## integration:preflight
+
+Read-only preflight for an upstream-bound integration worktree. Run it after fetching `origin` and `upstream`, creating a dedicated ticket worktree from `upstream/main`, and before making any edits:
+
+```bash
+git fetch --all --prune
+git worktree add -b ticket/123-short-slug ../career-ops-ticket-123 upstream/main
+cd ../career-ops-ticket-123
+npm run integration:preflight
+npm run integration:preflight -- --json
+```
+
+The command requires `origin/main` and `upstream/main` to identify the same commit, candidate `HEAD` to equal the exact `upstream/main` tip, a clean linked worktree, the primary/root checkout to remain on `fork/main`, and no changed or copied user-layer paths. It never fetches, pushes, creates a worktree, or edits either checkout. Failures include a reason and a remediation command; JSON output is available for orchestration.
+
+**Exit codes:** `0` every invariant passes, `1` a safety invariant or invocation failed.
 
 ---
 
