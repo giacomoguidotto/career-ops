@@ -26,7 +26,7 @@ type PipelineOpenReportMsg struct {
 	Path   string
 	Title  string
 	JobURL string
-	App    model.CareerApplication
+	App    model.DashboardRow
 }
 
 // PipelineOpenURLMsg is emitted when a job URL should be opened in browser.
@@ -67,14 +67,14 @@ type PipelineLoadReportMsg struct {
 // PipelineUpdateStatusMsg requests a status update for an application.
 type PipelineUpdateStatusMsg struct {
 	CareerOpsPath string
-	App           model.CareerApplication
+	App           model.DashboardRow
 	NewStatus     string
 }
 
 // PipelineUpdateStatusAndNotesMsg requests updating both status and notes.
 type PipelineUpdateStatusAndNotesMsg struct {
 	CareerOpsPath string
-	App           model.CareerApplication
+	App           model.DashboardRow
 	NewStatus     string
 	NewNotes      string
 }
@@ -189,12 +189,12 @@ var optionalCols = []colDef{
 var statusOptions = []string{"Evaluated", "Application Ready", "Applied", "Outreach Ready", "Responded", "Interview Ready", "Offer", "Offer Ready", "Accepted", "Rejected", "Discarded", "SKIP"}
 
 // statusGroupOrder defines display order for grouped view.
-var statusGroupOrder = []string{"processing", "pending", "failed", "rate_limited", "paused", "interview", "offer", "accepted", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
+var statusGroupOrder = []string{"processing", "pending", "failed", "rate_limited", "paused", "unmerged_complete", "interview", "offer", "accepted", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
 
 // PipelineModel implements the career pipeline dashboard screen.
 type PipelineModel struct {
-	apps          []model.CareerApplication
-	filtered      []model.CareerApplication
+	apps          []model.DashboardRow
+	filtered      []model.DashboardRow
 	metrics       model.PipelineMetrics
 	cursor        int
 	scrollOffset  int
@@ -225,11 +225,11 @@ type PipelineModel struct {
 	visibleCols  map[ColumnID]bool
 
 	// Hired win flow sub-state (Issue 1447)
-	hiredApp  model.CareerApplication
+	hiredApp  model.DashboardRow
 	hiredStep int // 0 = inactive, 1 = celebration, 2 = story invite, 3 = anonymous stat
 
 	// Discard reason picker sub-state (Issue 1380)
-	discardApp      model.CareerApplication
+	discardApp      model.DashboardRow
 	discardStatus   string // "Discarded" or "SKIP"
 	discardStep     int    // 0 = inactive, 1 = pick reason, 2 = custom reason input
 	discardOptions  []string
@@ -238,7 +238,7 @@ type PipelineModel struct {
 }
 
 // NewPipelineModel creates a new pipeline screen.
-func NewPipelineModel(t theme.Theme, apps []model.CareerApplication, metrics model.PipelineMetrics, careerOpsPath string, width, height int) PipelineModel {
+func NewPipelineModel(t theme.Theme, apps []model.DashboardRow, metrics model.PipelineMetrics, careerOpsPath string, width, height int) PipelineModel {
 	visible := make(map[ColumnID]bool)
 	for _, col := range optionalCols {
 		visible[col.id] = col.onByDefault
@@ -296,14 +296,11 @@ func (m *PipelineModel) EnrichReport(reportPath, archetype, tldr, remote, comp s
 
 // WithReloadedData rebuilds the pipeline with fresh tracker data while preserving
 // the current UI state so manual refresh feels seamless.
-func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics model.PipelineMetrics) PipelineModel {
-	selectedReportPath := ""
-	selectedCompany := ""
-	selectedRole := ""
+func (m PipelineModel) WithReloadedData(apps []model.DashboardRow, metrics model.PipelineMetrics) PipelineModel {
+	selectedIdentity := ""
+	selectedScrollOffset := m.scrollOffset
 	if app, ok := m.CurrentApp(); ok {
-		selectedReportPath = app.ReportPath
-		selectedCompany = app.Company
-		selectedRole = app.Role
+		selectedIdentity = dashboardRowIdentity(app)
 	}
 
 	reloaded := NewPipelineModel(m.theme, apps, metrics, m.careerOpsPath, m.width, m.height)
@@ -320,14 +317,9 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	reloaded.CopyReportCache(&m)
 
 	for i, app := range reloaded.filtered {
-		if selectedReportPath != "" && app.ReportPath == selectedReportPath {
+		if selectedIdentity != "" && dashboardRowIdentity(app) == selectedIdentity {
 			reloaded.cursor = i
-			reloaded.adjustScroll()
-			return reloaded
-		}
-		if selectedReportPath == "" && app.Company == selectedCompany && app.Role == selectedRole {
-			reloaded.cursor = i
-			reloaded.adjustScroll()
+			reloaded.restoreScrollOffset(selectedScrollOffset)
 			return reloaded
 		}
 	}
@@ -343,14 +335,48 @@ func (m PipelineModel) WithReloadedData(apps []model.CareerApplication, metrics 
 	} else if m.cursor > 0 {
 		reloaded.cursor = m.cursor
 	}
-	reloaded.adjustScroll()
+	reloaded.restoreScrollOffset(selectedScrollOffset)
 	return reloaded
 }
 
+func (m *PipelineModel) restoreScrollOffset(offset int) {
+	m.scrollOffset = offset
+	maxOffset := lipgloss.Height(m.renderBody()) - m.bodyViewportRows()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	m.adjustScroll()
+}
+
+func dashboardRowIdentity(app model.DashboardRow) string {
+	if !app.IsTrackedApplication() {
+		if app.JobURL != "" {
+			return "queue:url:" + app.JobURL
+		}
+		if app.ReportNumber != "" {
+			return "queue:report:" + app.ReportNumber
+		}
+		return "queue:" + string(app.Source) + ":" + app.Company + ":" + app.Role
+	}
+	if app.ReportNumber != "" {
+		return "tracker:report:" + app.ReportNumber
+	}
+	if app.Number > 0 {
+		return fmt.Sprintf("tracker:number:%d", app.Number)
+	}
+	return "tracker:" + app.Company + ":" + app.Role
+}
+
 // CurrentApp returns the currently selected application, if any.
-func (m PipelineModel) CurrentApp() (model.CareerApplication, bool) {
+func (m PipelineModel) CurrentApp() (model.DashboardRow, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.filtered) {
-		return model.CareerApplication{}, false
+		return model.DashboardRow{}, false
 	}
 	return m.filtered[m.cursor], true
 }
@@ -569,7 +595,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 		return m, nil
 
 	case "c":
-		if app, ok := m.CurrentApp(); ok && isTrackerRow(app) {
+		if app, ok := m.CurrentApp(); ok && app.IsTrackedApplication() {
 			m.statusPicker = true
 			m.statusCursor = 0
 		}
@@ -757,13 +783,13 @@ func (m PipelineModel) handlePDFPicker(msg tea.KeyMsg) (PipelineModel, tea.Cmd) 
 	return m, nil
 }
 
-func (m PipelineModel) StartHiredFlow(app model.CareerApplication) (PipelineModel, tea.Cmd) {
+func (m PipelineModel) StartHiredFlow(app model.DashboardRow) (PipelineModel, tea.Cmd) {
 	m.hiredApp = app
 	m.hiredStep = 1
 	return m, nil
 }
 
-func (m PipelineModel) StartDiscardReasonFlow(app model.CareerApplication, status string) (PipelineModel, tea.Cmd) {
+func (m PipelineModel) StartDiscardReasonFlow(app model.DashboardRow, status string) (PipelineModel, tea.Cmd) {
 	m.discardApp = app
 	m.discardStatus = status
 	m.discardStep = 1
@@ -950,7 +976,7 @@ func (m PipelineModel) loadCurrentReport() tea.Cmd {
 // matchesSearch reports whether app contains the query as a case-insensitive
 // substring of its company, role, or notes. Empty query matches everything.
 // Lowercases both sides so callers don't have to remember the contract.
-func matchesSearch(app model.CareerApplication, query string) bool {
+func matchesSearch(app model.DashboardRow, query string) bool {
 	if query == "" {
 		return true
 	}
@@ -972,7 +998,7 @@ func matchesSearch(app model.CareerApplication, query string) bool {
 
 // applyFilterAndSort rebuilds the filtered list from apps.
 func (m *PipelineModel) applyFilterAndSort() {
-	var filtered []model.CareerApplication
+	var filtered []model.DashboardRow
 	m.activeTab = normalizePipelineTabIndex(m.activeTab)
 
 	currentFilter := pipelineTabs[m.activeTab].filter
@@ -980,18 +1006,8 @@ func (m *PipelineModel) applyFilterAndSort() {
 		if !matchesSearch(app, m.searchQuery) {
 			continue
 		}
-		norm := data.NormalizeStatus(app.Status)
-		switch currentFilter {
-		case filterAll:
+		if rowMatchesFilter(app, currentFilter) {
 			filtered = append(filtered, app)
-		case filterQueue:
-			if isQueueStatus(norm) {
-				filtered = append(filtered, app)
-			}
-		default:
-			if norm == currentFilter {
-				filtered = append(filtered, app)
-			}
 		}
 	}
 
@@ -1019,21 +1035,21 @@ func (m *PipelineModel) applyFilterAndSort() {
 
 // sortLess returns the comparator for the active sort mode. Shared by the flat
 // sort and the within-group tiebreaker in grouped view.
-func (m PipelineModel) sortLess() func(a, b model.CareerApplication) bool {
+func (m PipelineModel) sortLess() func(a, b model.DashboardRow) bool {
 	switch m.sortMode {
 	case sortDate:
-		return func(a, b model.CareerApplication) bool { return a.Date > b.Date }
+		return func(a, b model.DashboardRow) bool { return a.Date > b.Date }
 	case sortCompany:
-		return func(a, b model.CareerApplication) bool {
+		return func(a, b model.DashboardRow) bool {
 			return strings.ToLower(a.Company) < strings.ToLower(b.Company)
 		}
 	case sortStatus:
-		return func(a, b model.CareerApplication) bool {
+		return func(a, b model.DashboardRow) bool {
 			return data.StatusPriority(a.Status) < data.StatusPriority(b.Status)
 		}
 	case sortLocation:
 		// Remote-first, then hybrid, then onsite; alphabetical city as tiebreaker.
-		return func(a, b model.CareerApplication) bool {
+		return func(a, b model.DashboardRow) bool {
 			ra, rb := workModeRank(a.WorkMode), workModeRank(b.WorkMode)
 			if ra != rb {
 				return ra < rb
@@ -1042,12 +1058,12 @@ func (m PipelineModel) sortLess() func(a, b model.CareerApplication) bool {
 		}
 	case sortPay:
 		// Highest band ceiling first; unknown pay (0) sinks to the bottom.
-		return func(a, b model.CareerApplication) bool { return a.PayMax > b.PayMax }
+		return func(a, b model.DashboardRow) bool { return a.PayMax > b.PayMax }
 	case sortLast:
 		// Most recent contact first; empty dates sink to the bottom.
-		return func(a, b model.CareerApplication) bool { return a.LastContact > b.LastContact }
+		return func(a, b model.DashboardRow) bool { return a.LastContact > b.LastContact }
 	default: // sortScore
-		return func(a, b model.CareerApplication) bool { return a.Score > b.Score }
+		return func(a, b model.DashboardRow) bool { return a.Score > b.Score }
 	}
 }
 
@@ -1357,21 +1373,22 @@ func (m PipelineModel) renderTabs() string {
 func (m PipelineModel) countForFilter(filter string) int {
 	count := 0
 	for _, app := range m.apps {
-		norm := data.NormalizeStatus(app.Status)
-		switch filter {
-		case filterAll:
+		if rowMatchesFilter(app, filter) {
 			count++
-		case filterQueue:
-			if isQueueStatus(norm) {
-				count++
-			}
-		default:
-			if norm == filter {
-				count++
-			}
 		}
 	}
 	return count
+}
+
+func rowMatchesFilter(row model.DashboardRow, filter string) bool {
+	switch filter {
+	case filterAll:
+		return row.IsTrackedApplication()
+	case filterQueue:
+		return !row.IsTrackedApplication()
+	default:
+		return row.IsTrackedApplication() && data.NormalizeStatus(row.Status) == filter
+	}
 }
 
 func (m PipelineModel) renderMetrics() string {
@@ -1537,7 +1554,7 @@ func (m PipelineModel) workModeColor(mode string) lipgloss.Color {
 	}
 }
 
-func (m PipelineModel) renderLocCell(app model.CareerApplication, width int, selected bool) string {
+func (m PipelineModel) renderLocCell(app model.DashboardRow, width int, selected bool) string {
 	text := app.WorkMode
 	if app.Location != "" {
 		if text != "" {
@@ -1569,7 +1586,7 @@ func (m PipelineModel) renderCheckCell(yes bool, width int, selected bool) strin
 // renderPayCell prefers the pay range parsed from notes and falls back to the
 // report-cache comp estimate (the pre-column behavior). POSTED bands render
 // green; estimates stay yellow.
-func (m PipelineModel) renderPayCell(app model.CareerApplication, width int, selected bool) string {
+func (m PipelineModel) renderPayCell(app model.DashboardRow, width int, selected bool) string {
 	text := app.PayRange
 	color := m.theme.Yellow
 	if app.PaySource == "POSTED" {
@@ -1627,7 +1644,7 @@ func (m PipelineModel) renderColumnHeader() string {
 	return padStyle.Render(" " + strings.Join(segments, " "))
 }
 
-func (m PipelineModel) renderAppLine(app model.CareerApplication, selected bool) string {
+func (m PipelineModel) renderAppLine(app model.DashboardRow, selected bool) string {
 	padStyle := lipgloss.NewStyle().Padding(0, 2)
 	cw := m.columnWidths()
 
@@ -1772,6 +1789,19 @@ func (m PipelineModel) renderPreview() string {
 			labelStyle.Render("Next step: ")+valueStyle.Render(truncateRunes(nextDetail, m.width-15))))
 	}
 
+	queueNotesShown := false
+	if !app.IsTrackedApplication() {
+		if app.ActionReason != "" {
+			lines = append(lines, padStyle.Render(
+				labelStyle.Render("Queue action: ")+valueStyle.Render(truncateRunes(app.ActionReason, m.width-18))))
+		}
+		if app.Notes != "" {
+			lines = append(lines, padStyle.Render(
+				labelStyle.Render("Queue reason: ")+valueStyle.Render(truncateRunes(app.Notes, m.width-18))))
+			queueNotesShown = true
+		}
+	}
+
 	outcome := previewOutcome(app)
 
 	// Check report cache
@@ -1792,7 +1822,7 @@ func (m PipelineModel) renderPreview() string {
 			lines = append(lines, padStyle.Render(
 				labelStyle.Render("Remote: ")+valueStyle.Render(summary.remote)))
 		}
-	} else if app.Notes != "" && outcome == "" {
+	} else if app.Notes != "" && outcome == "" && !queueNotesShown {
 		// Fallback: show notes (the outcome line below already carries them)
 		notes := truncateRunes(app.Notes, m.width-10)
 		lines = append(lines, padStyle.Render(dimStyle.Render(notes)))
@@ -1816,7 +1846,7 @@ func (m PipelineModel) renderPreview() string {
 // previewOutcome returns "what happened" to a closed-out application — the raw
 // status (which often carries the decision date, e.g. "descartado 2026-03-12")
 // plus the tracker notes holding the reason. Returns "" for apps still in play.
-func previewOutcome(app model.CareerApplication) string {
+func previewOutcome(app model.DashboardRow) string {
 	switch data.NormalizeStatus(app.Status) {
 	case "discarded", "skip", "rejected":
 	default:
@@ -1829,12 +1859,12 @@ func previewOutcome(app model.CareerApplication) string {
 	return outcome
 }
 
-func needsManualAction(app model.CareerApplication) bool {
+func needsManualAction(app model.DashboardRow) bool {
 	state := strings.ToLower(strings.TrimSpace(app.ActionState))
 	return state == "needs_action" || state == "blocked"
 }
 
-func actionStateIs(app model.CareerApplication, states ...string) bool {
+func actionStateIs(app model.DashboardRow, states ...string) bool {
 	current := strings.ToLower(strings.TrimSpace(app.ActionState))
 	for _, state := range states {
 		if current == state {
@@ -1844,7 +1874,7 @@ func actionStateIs(app model.CareerApplication, states ...string) bool {
 	return false
 }
 
-func canOpenNextArtifact(app model.CareerApplication) bool {
+func canOpenNextArtifact(app model.DashboardRow) bool {
 	return app.NextPackPath != "" && needsManualAction(app) && artifactBackedNextAction(app.NextAction)
 }
 
@@ -1855,7 +1885,7 @@ func artifactBackedNextAction(action string) bool {
 	return action != "" && action != "none"
 }
 
-func nextActionLabel(app model.CareerApplication) string {
+func nextActionLabel(app model.DashboardRow) string {
 	if actionStateIs(app, "waiting", "snoozed") {
 		return "Wait for response"
 	}
@@ -1893,7 +1923,7 @@ func nextActionLabel(app model.CareerApplication) string {
 	}
 }
 
-func nextActionDetail(app model.CareerApplication) string {
+func nextActionDetail(app model.DashboardRow) string {
 	label := nextActionLabel(app)
 	if label == "-" {
 		return ""
@@ -1918,7 +1948,7 @@ func nextActionDetail(app model.CareerApplication) string {
 	return strings.Join(parts, " | ")
 }
 
-func detailsViewerTitle(app model.CareerApplication) string {
+func detailsViewerTitle(app model.DashboardRow) string {
 	parts := opportunityTitleParts(app)
 	if len(parts) == 0 {
 		return "DETAILS"
@@ -1929,7 +1959,7 @@ func detailsViewerTitle(app model.CareerApplication) string {
 	return "DETAILS: " + strings.Join(parts, " / ")
 }
 
-func opportunityTitleID(app model.CareerApplication) string {
+func opportunityTitleID(app model.DashboardRow) string {
 	if app.Number > 0 {
 		return fmt.Sprintf("#%d", app.Number)
 	}
@@ -1939,7 +1969,7 @@ func opportunityTitleID(app model.CareerApplication) string {
 	return ""
 }
 
-func opportunityTitleParts(app model.CareerApplication) []string {
+func opportunityTitleParts(app model.DashboardRow) []string {
 	var parts []string
 	if app.Company != "" {
 		parts = append(parts, app.Company)
@@ -1953,7 +1983,7 @@ func opportunityTitleParts(app model.CareerApplication) []string {
 	return parts
 }
 
-func titleLocationSummary(app model.CareerApplication) string {
+func titleLocationSummary(app model.DashboardRow) string {
 	var parts []string
 	if app.WorkMode != "" {
 		parts = append(parts, app.WorkMode)
@@ -1964,7 +1994,7 @@ func titleLocationSummary(app model.CareerApplication) string {
 	return strings.Join(parts, " / ")
 }
 
-func (m PipelineModel) nextActionColor(app model.CareerApplication) lipgloss.Color {
+func (m PipelineModel) nextActionColor(app model.DashboardRow) lipgloss.Color {
 	if canOpenNextArtifact(app) {
 		return m.theme.Green
 	}
@@ -2397,34 +2427,22 @@ func (m PipelineModel) scoreStyle(score float64) lipgloss.Style {
 
 func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
 	return map[string]lipgloss.Color{
-		"processing":   m.theme.Mauve,
-		"pending":      m.theme.Yellow,
-		"failed":       m.theme.Red,
-		"rate_limited": m.theme.Yellow,
-		"paused":       m.theme.Yellow,
-		"interview":    m.theme.Green,
-		"offer":        m.theme.Green,
-		"accepted":     m.theme.Pink,
-		"applied":      m.theme.Sky,
-		"responded":    m.theme.Blue,
-		"evaluated":    m.theme.Text,
-		"skip":         m.theme.Red,
-		"rejected":     m.theme.Subtext,
-		"discarded":    m.theme.Subtext,
+		"processing":        m.theme.Mauve,
+		"pending":           m.theme.Yellow,
+		"failed":            m.theme.Red,
+		"rate_limited":      m.theme.Yellow,
+		"paused":            m.theme.Yellow,
+		"unmerged_complete": m.theme.Green,
+		"interview":         m.theme.Green,
+		"offer":             m.theme.Green,
+		"accepted":          m.theme.Pink,
+		"applied":           m.theme.Sky,
+		"responded":         m.theme.Blue,
+		"evaluated":         m.theme.Text,
+		"skip":              m.theme.Red,
+		"rejected":          m.theme.Subtext,
+		"discarded":         m.theme.Subtext,
 	}
-}
-
-func isQueueStatus(norm string) bool {
-	switch norm {
-	case "processing", "pending", "failed", "rate_limited", "paused":
-		return true
-	default:
-		return false
-	}
-}
-
-func isTrackerRow(app model.CareerApplication) bool {
-	return app.Source == "" || app.Source == "tracker"
 }
 
 func (m PipelineModel) countByNormStatus(status string) int {
@@ -2486,6 +2504,8 @@ func statusLabel(norm string) string {
 		return "Rate Limited"
 	case "paused":
 		return "Paused"
+	case "unmerged_complete":
+		return "Unmerged"
 	case "interview":
 		return "Interview"
 	case "offer":

@@ -24,7 +24,7 @@ type ViewerOpenCoverLetterMsg struct{ Path string }
 
 // ViewerUpdateStatusMsg is emitted when a status update is requested from the viewer.
 type ViewerUpdateStatusMsg struct {
-	App       model.CareerApplication
+	App       model.DashboardRow
 	NewStatus string
 }
 
@@ -38,7 +38,7 @@ type ViewerModel struct {
 	width           int
 	height          int
 	theme           theme.Theme
-	app             model.CareerApplication
+	app             model.DashboardRow
 	careerOpsPath   string
 	coverLetterPath string
 	cvPDFPath       string
@@ -47,7 +47,7 @@ type ViewerModel struct {
 }
 
 // NewViewerModel creates a new file viewer for the given path.
-func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, height int, app model.CareerApplication) ViewerModel {
+func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, height int, app model.DashboardRow) ViewerModel {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		content = []byte("Error reading file: " + err.Error())
@@ -81,7 +81,7 @@ func isDetailsTitle(title string) bool {
 	return title == "DETAILS" || strings.HasPrefix(title, "DETAILS: ")
 }
 
-func buildDetailsLines(careerOpsPath string, reportLines []string, app model.CareerApplication) []string {
+func buildDetailsLines(careerOpsPath string, reportLines []string, app model.DashboardRow) []string {
 	var lines []string
 
 	if snapshotLines := extractDetailsSnapshotLines(reportLines); len(snapshotLines) > 0 {
@@ -361,7 +361,7 @@ func detailsSentence(s string) string {
 	}
 }
 
-func detailsAppNextStepLine(app model.CareerApplication) string {
+func detailsAppNextStepLine(app model.DashboardRow) string {
 	summary := detailsAppNextStepSummary(app)
 	if summary == "" {
 		return ""
@@ -369,7 +369,7 @@ func detailsAppNextStepLine(app model.CareerApplication) string {
 	return "**Next step:** " + summary
 }
 
-func detailsAppNextStepSummary(app model.CareerApplication) string {
+func detailsAppNextStepSummary(app model.DashboardRow) string {
 	action := detailsAppActionSentence(app)
 	if action == "" {
 		return ""
@@ -388,7 +388,7 @@ func detailsAppNextStepSummary(app model.CareerApplication) string {
 	return strings.Join(parts, " ")
 }
 
-func detailsAppActionSentence(app model.CareerApplication) string {
+func detailsAppActionSentence(app model.DashboardRow) string {
 	switch {
 	case actionStateIs(app, "waiting", "snoozed"):
 		if app.WaitingOn != "" {
@@ -438,14 +438,14 @@ func detailsAppActionSentence(app model.CareerApplication) string {
 	}
 }
 
-func detailsAppRunCommand(app model.CareerApplication) string {
+func detailsAppRunCommand(app model.DashboardRow) string {
 	if app.NextCommand == "" || !needsManualAction(app) || canOpenNextArtifact(app) {
 		return ""
 	}
 	return app.NextCommand
 }
 
-func detailsAppPackReference(app model.CareerApplication) string {
+func detailsAppPackReference(app model.DashboardRow) string {
 	if !canOpenNextArtifact(app) {
 		return ""
 	}
@@ -465,7 +465,7 @@ func cleanDetailsText(s string) string {
 	return s
 }
 
-func loadDetailsNextPackLines(careerOpsPath string, app model.CareerApplication) []string {
+func loadDetailsNextPackLines(careerOpsPath string, app model.DashboardRow) []string {
 	if careerOpsPath == "" || app.NextPackPath == "" {
 		return nil
 	}
@@ -588,7 +588,7 @@ func parseCoverLetterPath(lines []string, careerOpsPath string) string {
 	return ""
 }
 
-func resolveViewerPDFPath(careerOpsPath string, app model.CareerApplication) string {
+func resolveViewerPDFPath(careerOpsPath string, app model.DashboardRow) string {
 	if careerOpsPath == "" {
 		return ""
 	}
@@ -667,6 +667,9 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			return m, func() tea.Msg { return ViewerClosedMsg{} }
 
 		case "c":
+			if !m.app.IsTrackedApplication() {
+				return m, nil
+			}
 			m.statusPicker = true
 			m.statusCursor = 0
 			currentNorm := data.NormalizeStatus(m.app.Status)
@@ -1717,7 +1720,9 @@ func (m ViewerModel) footerSegments(keyStyle, descStyle lipgloss.Style, compact 
 	if m.cvPDFPath != "" {
 		segments = append(segments, keyStyle.Render("d")+descStyle.Render(" PDF"))
 	}
-	segments = append(segments, keyStyle.Render("c")+descStyle.Render(" status"))
+	if m.app.IsTrackedApplication() {
+		segments = append(segments, keyStyle.Render("c")+descStyle.Render(" status"))
+	}
 	if m.coverLetterPath != "" {
 		segments = append(segments, keyStyle.Render("L")+descStyle.Render(" cover letter"))
 	}

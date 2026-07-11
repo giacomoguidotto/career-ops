@@ -100,7 +100,7 @@ func cleanLocationHint(raw string) string {
 	}
 }
 
-func applyLocationHint(app *model.CareerApplication, raw string) {
+func applyLocationHint(app *model.DashboardRow, raw string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return
@@ -143,7 +143,7 @@ func payCeiling(span string) float64 {
 
 // deriveNoteFields populates Location, WorkMode, PayRange, PaySource and
 // LastContact from the application's Notes (plus Role for work-mode keywords).
-func deriveNoteFields(app *model.CareerApplication) {
+func deriveNoteFields(app *model.DashboardRow) {
 	lower := strings.ToLower(app.Role + " " + app.Notes)
 
 	// Location: first "City, ST" in the notes, falling back to the role title

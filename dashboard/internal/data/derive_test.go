@@ -9,7 +9,7 @@ import (
 func TestDeriveNoteFields(t *testing.T) {
 	cases := []struct {
 		name     string
-		app      model.CareerApplication
+		app      model.DashboardRow
 		location string
 		workMode string
 		payRange string
@@ -18,7 +18,7 @@ func TestDeriveNoteFields(t *testing.T) {
 	}{
 		{
 			name: "remote with posted comma range and rejection date",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-04",
 				Notes: "Remote US (EST/CST). Base $174,986-209,983 + RSUs (POSTED). Rejected 2026-06-05 (not moving forward). Via Greenhouse",
 			},
@@ -29,7 +29,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "hybrid city state with estimate",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-03",
 				Notes: "Charlotte NC (Hybrid), via LinkedIn. Comp ~$130-170K (est). Application VIEWED by recruiter 2026-06-04",
 			},
@@ -41,7 +41,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "bare location implies full onsite, decimal K range",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-01",
 				Notes: "Austin TX (location mismatch). Salary $124.2-198.7K (POSTED)",
 			},
@@ -53,7 +53,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "lone amount fallback when no range, date falls back to applied",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-02",
 				Notes: "Via LinkedIn (recruiting agency). Sam stated $170K min floor",
 			},
@@ -63,7 +63,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "range preferred over earlier lone amount",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-05-31",
 				Notes: "Comp $100-175K base + 10% bonus + $300 health credit (recruiter-confirmed). Phone screen DONE 2026-06-03",
 			},
@@ -72,7 +72,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "city falls back to role title, timezone parens are not an estimate",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-05-31",
 				Role:  "Sr Software Engineer, Enterprise Systems — Charlotte, NC",
 				Notes: "Referral via friend. Remote US (EST/CST). Comp $100-175K base (recruiter-confirmed)",
@@ -85,7 +85,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "marketing role and interest prose are not estimate markers",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-01",
 				Role:  "Product Marketing Manager",
 				Notes: "Strong fit (AI-augmented interest). Salary $140-180K. Via Lever",
@@ -96,7 +96,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "no false-positive city from prose",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-01",
 				Notes: "Strong fit for Sams AI-augmented edge. Rejected by recruiter Nadia Kong",
 			},
@@ -106,7 +106,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "remote EU with EUR estimate range",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-10",
 				Notes: "Remote EU (Portugal eligible). Comp ~€130-170K (est). Applied 2026-06-10",
 			},
@@ -118,7 +118,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "international city hybrid with EUR posted",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-09",
 				Notes: "Berlin (Hybrid). Base €90-110K (POSTED). Via Greenhouse",
 			},
@@ -130,7 +130,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "CHF range, bare intl city implies onsite",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-08",
 				Notes: "Zurich. CHF 165-185K. Check Point-backed",
 			},
@@ -142,7 +142,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "GBP posted range, London",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-07",
 				Notes: "London. £175-225K (POSTED). 30+ teams",
 			},
@@ -154,7 +154,7 @@ func TestDeriveNoteFields(t *testing.T) {
 		},
 		{
 			name: "Portugal home market, city from role title",
-			app: model.CareerApplication{
+			app: model.DashboardRow{
 				Date:  "2026-06-06",
 				Role:  "Senior Engineering Manager — Porto",
 				Notes: "Onsite. Comp €60-90K (est, below floor)",
@@ -246,7 +246,7 @@ func TestApplyLocationHint(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			app := model.CareerApplication{}
+			app := model.DashboardRow{}
 			applyLocationHint(&app, tc.raw)
 			if app.Location != tc.location {
 				t.Errorf("Location = %q, want %q", app.Location, tc.location)

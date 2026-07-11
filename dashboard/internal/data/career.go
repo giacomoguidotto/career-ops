@@ -51,9 +51,10 @@ func resolveReportPath(careerOpsPath, trackerPath, link string) string {
 	return link
 }
 
-// ParseApplications reads applications.md and returns parsed applications.
-// It tries both {path}/applications.md and {path}/data/applications.md for compatibility.
-func ParseApplications(careerOpsPath string) []model.CareerApplication {
+// ParseDashboardRows projects tracker Applications and live evaluation work into
+// the mixed read model consumed by the TUI. It tries both tracker locations for
+// compatibility.
+func ParseDashboardRows(careerOpsPath string) []model.DashboardRow {
 	setStatesRoot(careerOpsPath)
 
 	filePath := filepath.Join(careerOpsPath, "applications.md")
@@ -68,7 +69,7 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	apps := make([]model.CareerApplication, 0)
+	apps := make([]model.DashboardRow, 0)
 	num := 0
 
 	// Map columns by header name rather than fixed position, so a customized or
@@ -103,14 +104,14 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 		if parsedNumber, err := strconv.Atoi(at("num")); err == nil {
 			trackerNumber = parsedNumber
 		}
-		app := model.CareerApplication{
+		app := model.DashboardRow{
 			Number:  trackerNumber,
 			Date:    at("date"),
 			Company: at("company"),
 			Role:    at("role"),
 			Status:  at("status"),
 			HasPDF:  strings.Contains(at("pdf"), "\u2705"),
-			Source:  "tracker",
+			Source:  model.DashboardSourceTracker,
 		}
 
 		// Parse score from the Score column.
@@ -204,7 +205,7 @@ type pipelineEntry struct {
 	role    string
 }
 
-func appendLiveQueueRows(careerOpsPath string, apps []model.CareerApplication) []model.CareerApplication {
+func appendLiveQueueRows(careerOpsPath string, apps []model.DashboardRow) []model.DashboardRow {
 	pipelinePending, pipelineByURL := readPipelineEntries(careerOpsPath)
 	seenReports, seenURLs := seenDashboardRows(apps)
 
@@ -246,14 +247,14 @@ func appendLiveQueueRows(careerOpsPath string, apps []model.CareerApplication) [
 		if entry.url == "" || seenURLs[entry.url] {
 			continue
 		}
-		app := model.CareerApplication{
+		app := model.DashboardRow{
 			Company:  entry.company,
 			Role:     entry.role,
 			Status:   "Pending",
 			ScoreRaw: "—",
 			JobURL:   entry.url,
 			Notes:    "Queued in data/pipeline.md",
-			Source:   "pipeline",
+			Source:   model.DashboardSourcePipeline,
 		}
 		if app.Company == "" {
 			app.Company = companyFromURL(entry.url)
@@ -268,7 +269,7 @@ func appendLiveQueueRows(careerOpsPath string, apps []model.CareerApplication) [
 	return apps
 }
 
-func seenDashboardRows(apps []model.CareerApplication) (map[string]bool, map[string]bool) {
+func seenDashboardRows(apps []model.DashboardRow) (map[string]bool, map[string]bool) {
 	seenReports := make(map[string]bool)
 	seenURLs := make(map[string]bool)
 	for _, app := range apps {
@@ -294,14 +295,14 @@ func canonicalReportNum(reportNum string) string {
 	return fmt.Sprintf("%03d", n)
 }
 
-func readUnmergedTrackerAdditions(careerOpsPath string) []model.CareerApplication {
+func readUnmergedTrackerAdditions(careerOpsPath string) []model.DashboardRow {
 	additionsDir := filepath.Join(careerOpsPath, "batch", "tracker-additions")
 	entries, err := os.ReadDir(additionsDir)
 	if err != nil {
 		return nil
 	}
 
-	var apps []model.CareerApplication
+	var apps []model.DashboardRow
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tsv") {
 			continue
@@ -319,14 +320,14 @@ func readUnmergedTrackerAdditions(careerOpsPath string) []model.CareerApplicatio
 			continue
 		}
 
-		app := model.CareerApplication{
+		app := model.DashboardRow{
 			Date:     strings.TrimSpace(fields[1]),
 			Company:  strings.TrimSpace(fields[2]),
 			Role:     strings.TrimSpace(fields[3]),
-			Status:   strings.TrimSpace(fields[4]),
+			Status:   "Unmerged Complete",
 			ScoreRaw: strings.TrimSpace(fields[5]),
 			HasPDF:   strings.Contains(fields[6], "\u2705"),
-			Source:   "tracker-addition",
+			Source:   model.DashboardSourceTrackerAddition,
 		}
 		if len(fields) > 8 {
 			app.Notes = strings.TrimSpace(fields[8])
@@ -380,14 +381,14 @@ func readReportURL(careerOpsPath, reportPath string) string {
 	return ""
 }
 
-func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineEntry) []model.CareerApplication {
+func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineEntry) []model.DashboardRow {
 	statePath := filepath.Join(careerOpsPath, "batch", "batch-state.tsv")
 	stateData, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil
 	}
 
-	var apps []model.CareerApplication
+	var apps []model.DashboardRow
 	for _, line := range strings.Split(string(stateData), "\n") {
 		fields := strings.Split(line, "\t")
 		if len(fields) < 9 || fields[0] == "id" {
@@ -404,7 +405,7 @@ func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineE
 		url := strings.TrimSpace(fields[1])
 		reportNum := canonicalReportNum(fields[5])
 		info := pipelineByURL[url]
-		app := model.CareerApplication{
+		app := model.DashboardRow{
 			Company:      info.company,
 			Role:         info.role,
 			Status:       dashboardBatchStatus(status),
@@ -412,7 +413,7 @@ func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineE
 			ReportNumber: reportNum,
 			JobURL:       url,
 			Notes:        batchStateNote(status, fields[7]),
-			Source:       "batch",
+			Source:       model.DashboardSourceBatch,
 		}
 		if app.Company == "" {
 			app.Company = companyFromURL(url)
@@ -445,7 +446,7 @@ func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineE
 func dashboardBatchStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case "completed":
-		return "Evaluated"
+		return "Unmerged Complete"
 	case "processing":
 		return "Processing"
 	case "failed":
@@ -463,7 +464,7 @@ func dashboardBatchStatus(status string) string {
 
 func isTerminalBatchStatus(status string) bool {
 	switch strings.TrimSpace(status) {
-	case "completed", "skipped":
+	case "skipped":
 		return true
 	default:
 		return false
@@ -484,10 +485,19 @@ func scoreRawFromBatchState(score string) string {
 func batchStateNote(status, rawError string) string {
 	status = strings.TrimSpace(status)
 	rawError = strings.TrimSpace(rawError)
-	if rawError != "" && rawError != "-" {
-		return rawError
+	reason := rawError
+	if reason == "" || reason == "-" {
+		reason = "Batch state: " + status
 	}
-	return "Batch state: " + status
+	switch status {
+	case "failed":
+		return reason + " · Retry: ./batch/batch-runner.sh --retry-failed"
+	case "paused_rate_limit":
+		return reason + " · Resume: ./batch/batch-runner.sh --resume-paused"
+	case "rate_limited":
+		return reason + " · The runner will retry; rerun the batch if it was interrupted"
+	}
+	return reason
 }
 
 func dateFromBatchState(value string) string {
@@ -737,7 +747,7 @@ func readScanHistory(careerOpsPath string) ([]byte, error) {
 }
 
 // enrichFromScanHistory fills JobURL and location metadata from scan-history.tsv.
-func enrichFromScanHistory(careerOpsPath string, apps []model.CareerApplication) {
+func enrichFromScanHistory(careerOpsPath string, apps []model.DashboardRow) {
 	scanData, err := readScanHistory(careerOpsPath)
 	if err != nil {
 		return
@@ -827,7 +837,7 @@ func normalizeCompany(name string) string {
 
 // enrichAppURLsByCompany fills in JobURL for apps that didn't get one via report_num mapping.
 // It matches by company name from batch-input.tsv notes.
-func enrichAppURLsByCompany(careerOpsPath string, apps []model.CareerApplication) {
+func enrichAppURLsByCompany(careerOpsPath string, apps []model.DashboardRow) {
 	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
@@ -917,7 +927,7 @@ type nextPackRecord struct {
 	Action string
 }
 
-func enrichNextActions(careerOpsPath string, apps []model.CareerApplication) {
+func enrichNextActions(careerOpsPath string, apps []model.DashboardRow) {
 	sm := states()
 	packs := loadNextPackPaths(careerOpsPath)
 	now := time.Now()
@@ -936,7 +946,7 @@ func enrichNextActions(careerOpsPath string, apps []model.CareerApplication) {
 	}
 }
 
-func applicationActionKeys(app model.CareerApplication) []string {
+func applicationActionKeys(app model.DashboardRow) []string {
 	var keys []string
 	add := func(key string) {
 		key = strings.TrimSpace(key)
@@ -973,14 +983,36 @@ func applicationActionKeys(app model.CareerApplication) []string {
 // matches what the automation will actually draft.
 // Pre-evaluation batch statuses are synthesized by the pipeline and handled up
 // front. This replaces the old hand-maintained status->action table.
-func deriveNextAction(app model.CareerApplication, now time.Time, sm *stateMachine) applicationActionRecord {
+func deriveNextAction(app model.DashboardRow, now time.Time, sm *stateMachine) applicationActionRecord {
 	switch NormalizeStatus(app.Status) {
-	case "failed", "rate_limited", "paused":
+	case "failed":
 		return applicationActionRecord{
 			ActionState: "blocked",
 			NextAction:  "none",
 			Owner:       "user",
-			Reason:      "Evaluation did not complete cleanly; inspect the pipeline state before advancing.",
+			Reason:      "Evaluation failed; retry with ./batch/batch-runner.sh --retry-failed.",
+		}
+	case "rate_limited":
+		return applicationActionRecord{
+			ActionState: "waiting",
+			NextAction:  "none",
+			Owner:       "agent",
+			WaitingOn:   "evaluation retry",
+			Reason:      "Evaluation is rate-limited; the batch runner will retry unless it was interrupted.",
+		}
+	case "paused":
+		return applicationActionRecord{
+			ActionState: "blocked",
+			NextAction:  "none",
+			Owner:       "user",
+			Reason:      "Evaluation paused at a usage limit; resume with ./batch/batch-runner.sh --resume-paused.",
+		}
+	case "unmerged_complete":
+		return applicationActionRecord{
+			ActionState: "needs_action",
+			NextAction:  "none",
+			Owner:       "agent",
+			Reason:      "Evaluation completed; run node merge-tracker.mjs to add it to the tracker.",
 		}
 	case "pending", "processing":
 		return applicationActionRecord{
@@ -1152,7 +1184,7 @@ func readNextPackAction(path string) string {
 	return strings.TrimSpace(match[1])
 }
 
-func lookupNextPackPath(packs map[string]nextPackRecord, app model.CareerApplication) string {
+func lookupNextPackPath(packs map[string]nextPackRecord, app model.DashboardRow) string {
 	if len(packs) == 0 {
 		return ""
 	}
@@ -1168,7 +1200,7 @@ func nextPackMatchesAction(pack nextPackRecord, nextAction string) bool {
 	return pack.Action == "" || nextAction == "" || pack.Action == nextAction
 }
 
-func nextCommandFor(app model.CareerApplication) string {
+func nextCommandFor(app model.DashboardRow) string {
 	if app.Number > 0 {
 		return fmt.Sprintf("/career-ops next %d", app.Number)
 	}
@@ -1182,9 +1214,8 @@ func nextCommandFor(app model.CareerApplication) string {
 }
 
 // ComputeMetrics calculates aggregate metrics from applications.
-func ComputeMetrics(apps []model.CareerApplication) model.PipelineMetrics {
+func ComputeMetrics(apps []model.DashboardRow) model.PipelineMetrics {
 	m := model.PipelineMetrics{
-		Total:    len(apps),
 		ByStatus: make(map[string]int),
 	}
 
@@ -1192,6 +1223,10 @@ func ComputeMetrics(apps []model.CareerApplication) model.PipelineMetrics {
 	var scored int
 
 	for _, app := range apps {
+		if !app.IsTrackedApplication() {
+			continue
+		}
+		m.Total++
 		status := NormalizeStatus(app.Status)
 		m.ByStatus[status]++
 
@@ -1237,6 +1272,8 @@ func NormalizeStatus(raw string) string {
 		return "rate_limited"
 	case "paused", "paused_rate_limit":
 		return "paused"
+	case "unmerged complete", "unmerged_complete":
+		return "unmerged_complete"
 	}
 
 	if st, ok := states().lookupStage(raw); ok {
@@ -1461,7 +1498,7 @@ func compactWhole(v float64) string {
 }
 
 // splitTrackerRow splits a tracker table line into trimmed cell values, using
-// the same delimiter logic as ParseApplications: a mixed "| " + tab-separated
+// the same delimiter logic as ParseDashboardRows: a mixed "| " + tab-separated
 // body, or a pure pipe-delimited row. Field 0 is the first real column (num), so
 // the returned indices match the legacy layout (Status is field 5).
 func splitTrackerRow(line string) []string {
@@ -1548,7 +1585,7 @@ func resolveTrackerColumns(lines []string) map[string]int {
 }
 
 // UpdateApplicationStatus updates the status of an application in applications.md.
-func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, newStatus string) error {
+func UpdateApplicationStatus(careerOpsPath string, app model.DashboardRow, newStatus string) error {
 	return UpdateApplicationStatusAndNotes(careerOpsPath, app, newStatus, "")
 }
 
@@ -1567,7 +1604,7 @@ func UpdateApplicationStatus(careerOpsPath string, app model.CareerApplication, 
 func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) string {
 	want := strings.TrimSpace(oldStatus)
 
-	// Mixed "| " + tab-separated format (mirrors ParseApplications). The body is
+	// Mixed "| " + tab-separated format (mirrors ParseDashboardRows). The body is
 	// tab-split, so cell index equals the field index.
 	if strings.Contains(line, "\t") {
 		prefix, body, found := strings.Cut(line, "|")
@@ -1594,7 +1631,7 @@ func replaceStatusInLine(line, oldStatus, newStatus string, statusField int) str
 }
 
 // statusCellIndex returns the index of the Status cell. It prefers the canonical
-// column (canonicalIdx, matching ParseApplications) and verifies it by value; if
+// column (canonicalIdx, matching ParseDashboardRows) and verifies it by value; if
 // that doesn't match — e.g. a custom tracker layout — it falls back to the first
 // cell that equals want exactly. Matching is whole-cell and case-insensitive,
 // never a substring, so a status word inside an earlier cell is never hit.
@@ -1643,32 +1680,41 @@ func StatusPriority(status string) int {
 		return 1
 	case "failed", "rate_limited", "paused":
 		return 2
-	case "interview":
+	case "unmerged_complete":
 		return 3
-	case "offer":
+	case "interview":
 		return 4
-	case "responded":
+	case "offer":
 		return 5
-	case "applied":
+	case "responded":
 		return 6
-	case "evaluated":
+	case "applied":
 		return 7
-	case "accepted":
+	case "evaluated":
 		return 8
-	case "skip":
+	case "accepted":
 		return 9
-	case "rejected":
+	case "skip":
 		return 10
-	case "discarded":
+	case "rejected":
 		return 11
-	default:
+	case "discarded":
 		return 12
+	default:
+		return 13
 	}
 }
 
 // ComputeProgressMetrics computes progress-oriented analytics from applications.
-func ComputeProgressMetrics(apps []model.CareerApplication) model.ProgressMetrics {
+func ComputeProgressMetrics(apps []model.DashboardRow) model.ProgressMetrics {
 	pm := model.ProgressMetrics{}
+	tracked := make([]model.DashboardRow, 0, len(apps))
+	for _, app := range apps {
+		if app.IsTrackedApplication() {
+			tracked = append(tracked, app)
+		}
+	}
+	apps = tracked
 
 	// Count by normalized status
 	statusCounts := make(map[string]int)
@@ -1798,7 +1844,10 @@ func safePct(part, whole int) float64 {
 }
 
 // UpdateApplicationStatusAndNotes updates both the status and notes of an application in applications.md.
-func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.CareerApplication, newStatus string, newNotes string) error {
+func UpdateApplicationStatusAndNotes(careerOpsPath string, app model.DashboardRow, newStatus string, newNotes string) error {
+	if !app.IsTrackedApplication() {
+		return fmt.Errorf("cannot mutate synthetic queue row from %s", app.Source)
+	}
 	filePath := filepath.Join(careerOpsPath, "applications.md")
 	content, err := os.ReadFile(filePath)
 	if err != nil {

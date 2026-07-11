@@ -28,7 +28,7 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 }
 
 func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
-	initialApps := []model.CareerApplication{
+	initialApps := []model.DashboardRow{
 		{
 			Company:    "Acme",
 			Role:       "Backend Engineer",
@@ -60,7 +60,7 @@ func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 	pm.cursor = 1
 	pm.reportCache["reports/002-beta.md"] = reportSummary{tldr: "cached"}
 
-	refreshedApps := []model.CareerApplication{
+	refreshedApps := []model.DashboardRow{
 		initialApps[0],
 		initialApps[1],
 		{
@@ -101,7 +101,7 @@ func TestRenderAppLineIncludesDateColumn(t *testing.T) {
 		40,
 	)
 
-	line := pm.renderAppLine(model.CareerApplication{
+	line := pm.renderAppLine(model.DashboardRow{
 		Number:  42,
 		Date:    "2026-04-13",
 		Company: "Anthropic",
@@ -128,7 +128,7 @@ func TestPendingAndScoredRowsKeepCompanyColumnAligned(t *testing.T) {
 		40,
 	)
 
-	scored := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+	scored := ansi.Strip(pm.renderAppLine(model.DashboardRow{
 		Number:  42,
 		Date:    "2026-04-13",
 		Company: "Anthropic",
@@ -136,7 +136,7 @@ func TestPendingAndScoredRowsKeepCompanyColumnAligned(t *testing.T) {
 		Status:  "Evaluated",
 		Score:   4.5,
 	}, false))
-	pending := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+	pending := ansi.Strip(pm.renderAppLine(model.DashboardRow{
 		Company: "Vercel",
 		Role:    "Pending Engineer",
 		Status:  "Pending",
@@ -198,7 +198,7 @@ func TestTabsUnderlineSpansFullWidth(t *testing.T) {
 }
 
 func TestPipelineTabsPutQueueFirstButDefaultToAll(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Acme", Role: "Pending Engineer", Status: "Pending"},
 		{Company: "Beta", Role: "Backend Engineer", Status: "Evaluated", Score: 4.2},
 	}
@@ -234,7 +234,7 @@ func TestPipelineTabsPutQueueFirstButDefaultToAll(t *testing.T) {
 func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 	useTrueColorRenderer(t)
 
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.2},
 		{Company: "Beta", Role: "Platform Engineer", Status: "Applied", Score: 4.6},
 	}
@@ -307,7 +307,7 @@ func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 }
 
 func TestGroupedDividerSpansFullTableWidth(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Number: 1, Date: "2026-06-20", Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.0},
 	}
 
@@ -343,7 +343,7 @@ func TestSelectedAppLineAppliesBackgroundAcrossStyledCells(t *testing.T) {
 	)
 	pm.reportCache["reports/001-acme.md"] = reportSummary{comp: "$150K-200K"}
 
-	line := pm.renderAppLine(model.CareerApplication{
+	line := pm.renderAppLine(model.DashboardRow{
 		Number:     1,
 		Date:       "2026-06-20",
 		Company:    "Acme",
@@ -362,7 +362,7 @@ func TestSelectedAppLineAppliesBackgroundAcrossStyledCells(t *testing.T) {
 }
 
 func TestSearchFiltersByCompanyRoleAndNotes(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6, Notes: "payments infra"},
 		{Company: "Anthropic", Role: "AI Safety Engineer", Status: "Applied", Score: 4.8, Notes: "policy work"},
 		{Company: "Acme Corp", Role: "Senior PM, Voice AI", Status: "Evaluated", Score: 4.2, Notes: "Series B in Madrid"},
@@ -402,7 +402,7 @@ func TestSearchFiltersByCompanyRoleAndNotes(t *testing.T) {
 }
 
 func TestSearchComposesWithActiveTab(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6},
 		{Company: "Stripe", Role: "Frontend Engineer", Status: "Applied", Score: 4.5},
 		{Company: "Anthropic", Role: "AI Engineer", Status: "Applied", Score: 4.8},
@@ -419,7 +419,7 @@ func TestSearchComposesWithActiveTab(t *testing.T) {
 }
 
 func TestSearchIsCaseInsensitive(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Anthropic", Role: "AI Engineer", Status: "Evaluated", Score: 4.8},
 	}
 
@@ -434,7 +434,7 @@ func TestSearchIsCaseInsensitive(t *testing.T) {
 }
 
 func TestSearchEnterCommitsAndEscClearsCommittedQuery(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6},
 		{Company: "Anthropic", Role: "AI Engineer", Status: "Evaluated", Score: 4.8},
 	}
@@ -479,7 +479,7 @@ func TestSearchEscInInputCancelsAndClears(t *testing.T) {
 	// Use multiple rows so the test catches a regression where Esc clears the query
 	// but forgets to re-apply the filter — the visible count would stay at 1
 	// otherwise even though the underlying state went stale.
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6},
 		{Company: "Globex", Role: "Platform Engineer", Status: "Evaluated", Score: 4.0},
 		{Company: "Anthropic", Role: "AI Engineer", Status: "Evaluated", Score: 4.8},
@@ -506,7 +506,7 @@ func TestSearchEscInInputCancelsAndClears(t *testing.T) {
 }
 
 func TestSearchResetsCursorOnQueryChange(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Acme", Role: "Backend Engineer", Status: "Evaluated", Score: 4.0},
 		{Company: "Beta", Role: "Frontend Engineer", Status: "Evaluated", Score: 4.1},
 		{Company: "Gamma", Role: "AI Engineer", Status: "Evaluated", Score: 4.2},
@@ -527,7 +527,7 @@ func TestSearchResetsCursorOnQueryChange(t *testing.T) {
 }
 
 func TestSearchStatePreservedAcrossReload(t *testing.T) {
-	initial := []model.CareerApplication{
+	initial := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend", Status: "Evaluated", Score: 4.6},
 		{Company: "Acme", Role: "AI", Status: "Evaluated", Score: 4.0},
 	}
@@ -536,8 +536,8 @@ func TestSearchStatePreservedAcrossReload(t *testing.T) {
 	pm.searchQuery = "stripe"
 	pm.applyFilterAndSort()
 
-	refreshed := append([]model.CareerApplication{}, initial...)
-	refreshed = append(refreshed, model.CareerApplication{Company: "Globex", Role: "Platform", Status: "Applied", Score: 4.3})
+	refreshed := append([]model.DashboardRow{}, initial...)
+	refreshed = append(refreshed, model.DashboardRow{Company: "Globex", Role: "Platform", Status: "Applied", Score: 4.3})
 
 	reloaded := pm.WithReloadedData(refreshed, model.PipelineMetrics{Total: len(refreshed)})
 
@@ -550,7 +550,7 @@ func TestSearchStatePreservedAcrossReload(t *testing.T) {
 }
 
 func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Company:    "Acme",
 			Role:       "Backend Engineer",
@@ -596,31 +596,45 @@ func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 	}
 }
 
-func TestQueueTabFiltersPendingAndProcessingRows(t *testing.T) {
-	apps := []model.CareerApplication{
+func TestQueueTabIsolatesEveryLiveQueueStateFromTrackerViews(t *testing.T) {
+	apps := []model.DashboardRow{
 		{Company: "Acme", Role: "Evaluated Role", Status: "Evaluated", Score: 4.0, Source: "tracker"},
 		{Company: "Beta", Role: "Pending Role", Status: "Pending", Source: "pipeline"},
 		{Company: "Gamma", Role: "Processing Role", Status: "Processing", Source: "batch"},
-		{Company: "Delta", Role: "Skipped Role", Status: "Skipped", Source: "batch"},
-		{Company: "Epsilon", Role: "Completed Role", Status: "Completed", Source: "batch"},
+		{Company: "Delta", Role: "Failed Role", Status: "Failed", Source: "batch"},
+		{Company: "Epsilon", Role: "Rate Limited Role", Status: "Rate Limited", Source: "batch"},
+		{Company: "Zeta", Role: "Paused Role", Status: "Paused", Source: "batch"},
+		{Company: "Eta", Role: "Complete Role", Status: "Unmerged Complete", Source: "tracker-addition"},
 	}
 
 	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{Total: len(apps)}, "..", 120, 40)
 	pm.activeTab = tabIndexForFilter(t, filterQueue)
 	pm.applyFilterAndSort()
 
-	if len(pm.filtered) != 2 {
-		t.Fatalf("expected queue tab to show 2 queue rows, got %+v", pm.filtered)
+	if len(pm.filtered) != 6 {
+		t.Fatalf("expected queue tab to show every synthetic queue row, got %+v", pm.filtered)
 	}
 	for _, app := range pm.filtered {
-		if app.Status != "Pending" && app.Status != "Processing" {
-			t.Fatalf("queue tab included non-queue row: %+v", app)
+		if app.Source == "tracker" {
+			t.Fatalf("queue tab included tracker application: %+v", app)
 		}
+	}
+
+	pm.activeTab = tabIndexForFilter(t, filterAll)
+	pm.applyFilterAndSort()
+	if len(pm.filtered) != 1 || pm.filtered[0].Source != "tracker" {
+		t.Fatalf("ALL tracker view included synthetic queue work: %+v", pm.filtered)
+	}
+
+	pm.activeTab = tabIndexForFilter(t, filterEvaluated)
+	pm.applyFilterAndSort()
+	if len(pm.filtered) != 1 || pm.filtered[0].Source != "tracker" {
+		t.Fatalf("EVALUATED tracker view included unmerged queue work: %+v", pm.filtered)
 	}
 }
 
 func TestStatusPickerDoesNotOpenForQueueRows(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Beta", Role: "Pending Role", Status: "Pending", Source: "pipeline"},
 	}
 
@@ -629,6 +643,62 @@ func TestStatusPickerDoesNotOpenForQueueRows(t *testing.T) {
 
 	if pm.statusPicker {
 		t.Fatal("status picker should not open for queue-only rows")
+	}
+}
+
+func TestQueueSelectionSurvivesRefreshWhenFilesInsertEarlierRows(t *testing.T) {
+	apps := make([]model.DashboardRow, 20)
+	for i := range apps {
+		apps[i] = model.DashboardRow{
+			Company: "Same", Role: "Role", Status: "Pending",
+			JobURL: "https://jobs.example.com/" + string(rune('a'+i)), Source: model.DashboardSourcePipeline,
+		}
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), apps, model.PipelineMetrics{}, "..", 120, 20)
+	pm.activeTab = tabIndexForFilter(t, filterQueue)
+	pm.viewMode = "flat"
+	pm.applyFilterAndSort()
+	pm.cursor = 12
+	pm.scrollOffset = 8
+	selectedURL := apps[12].JobURL
+
+	reloadedApps := append([]model.DashboardRow{{
+		Company: "Earlier", Role: "Role", Status: "Processing", JobURL: "https://jobs.example.com/new", Source: model.DashboardSourceBatch,
+	}}, apps...)
+	reloaded := pm.WithReloadedData(reloadedApps, model.PipelineMetrics{})
+	selected, ok := reloaded.CurrentApp()
+	if !ok || selected.JobURL != selectedURL {
+		t.Fatalf("refresh moved queue selection to %+v", selected)
+	}
+	if reloaded.activeTab != tabIndexForFilter(t, filterQueue) {
+		t.Fatalf("refresh changed queue tab to %d", reloaded.activeTab)
+	}
+	if reloaded.scrollOffset != 8 {
+		t.Fatalf("refresh changed queue page offset to %d, want 8", reloaded.scrollOffset)
+	}
+	line := reloaded.cursorLineEstimate()
+	if line < reloaded.scrollOffset || line >= reloaded.scrollOffset+reloaded.bodyViewportRows() {
+		t.Fatalf("selected queue row is outside the restored page: line=%d offset=%d rows=%d", line, reloaded.scrollOffset, reloaded.bodyViewportRows())
+	}
+}
+
+func TestQueuePreviewKeepsRecoveryGuidanceWhenReportIsCached(t *testing.T) {
+	app := model.DashboardRow{
+		Company: "Acme", Role: "AI Engineer", Status: "Paused", Source: model.DashboardSourceBatch,
+		ReportPath:   "reports/042-acme.md",
+		Notes:        "quota reset at 09:00 · Resume: ./batch/batch-runner.sh --resume-paused",
+		ActionReason: "Evaluation paused at a usage limit; resume with ./batch/batch-runner.sh --resume-paused.",
+	}
+	pm := NewPipelineModel(theme.NewTheme("catppuccin-mocha"), []model.DashboardRow{app}, model.PipelineMetrics{}, "..", 120, 40)
+	pm.activeTab = tabIndexForFilter(t, filterQueue)
+	pm.applyFilterAndSort()
+	pm.reportCache[app.ReportPath] = reportSummary{tldr: "partial evaluation report"}
+
+	preview := ansi.Strip(pm.renderPreview())
+	for _, want := range []string{"partial evaluation report", "quota reset at 09:00", "--resume-paused"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("queue preview hid %q when report was cached: %q", want, preview)
+		}
 	}
 }
 
@@ -642,7 +712,7 @@ func TestRenderAppLineIncludesNextColumn(t *testing.T) {
 		40,
 	)
 
-	line := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+	line := ansi.Strip(pm.renderAppLine(model.DashboardRow{
 		Number:      42,
 		Company:     "Acme",
 		Role:        "AI Engineer",
@@ -667,7 +737,7 @@ func TestRenderAppLineShowsReadyArtifactAsHumanStep(t *testing.T) {
 		40,
 	)
 
-	line := ansi.Strip(pm.renderAppLine(model.CareerApplication{
+	line := ansi.Strip(pm.renderAppLine(model.DashboardRow{
 		Number:       42,
 		Company:      "Acme",
 		Role:         "AI Engineer",
@@ -686,42 +756,42 @@ func TestRenderAppLineShowsReadyArtifactAsHumanStep(t *testing.T) {
 func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 	cases := []struct {
 		name string
-		app  model.CareerApplication
+		app  model.DashboardRow
 		want string
 	}{
 		{
 			name: "application generation",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_application_pack"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_application_pack"},
 			want: "Generate application",
 		},
 		{
 			name: "application send after artifact",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_application", NextPackPath: "output/next-packs/042-acme.md"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "send_application", NextPackPath: "output/next-packs/042-acme.md"},
 			want: "Send application",
 		},
 		{
 			name: "qualifying question draft",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "draft_qualifying_questions"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "draft_qualifying_questions"},
 			want: "Draft gating question",
 		},
 		{
 			name: "qualifying question send after artifact",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "send_qualifying_questions", NextPackPath: "output/next-packs/084-vercel.md"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "send_qualifying_questions", NextPackPath: "output/next-packs/084-vercel.md"},
 			want: "Send gating question",
 		},
 		{
 			name: "interview cheatsheet generation",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_interview_cheatsheet"},
 			want: "Generate interview cheatsheet",
 		},
 		{
 			name: "interview after cheatsheet",
-			app:  model.CareerApplication{ActionState: "needs_action", NextAction: "attend_interview_and_report", NextPackPath: "output/next-packs/042-acme.md"},
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "attend_interview_and_report", NextPackPath: "output/next-packs/042-acme.md"},
 			want: "Interview",
 		},
 		{
 			name: "waiting row",
-			app:  model.CareerApplication{ActionState: "waiting", NextAction: "follow_up", WaitingOn: "company response", NextPackPath: "output/next-packs/042-acme.md"},
+			app:  model.DashboardRow{ActionState: "waiting", NextAction: "follow_up", WaitingOn: "company response", NextPackPath: "output/next-packs/042-acme.md"},
 			want: "Wait for response",
 		},
 	}
@@ -736,7 +806,7 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 }
 
 func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
-	pm := previewModelWith(t, model.CareerApplication{
+	pm := previewModelWith(t, model.DashboardRow{
 		Company:      "Acme",
 		Role:         "AI Engineer",
 		Status:       "Application Ready",
@@ -762,7 +832,7 @@ func TestPreviewShowsNextCommandAndPackPath(t *testing.T) {
 }
 
 func TestNextKeyIsUnused(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
@@ -785,7 +855,7 @@ func TestNextKeyIsUnused(t *testing.T) {
 }
 
 func TestEnterUsesHumanDetailsTitle(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Number:     143,
 			Company:    "n8n",
@@ -814,7 +884,7 @@ func TestEnterUsesHumanDetailsTitle(t *testing.T) {
 }
 
 func TestCopyKeyOpensStatusPickerEvenWhenArtifactIsReady(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
@@ -836,7 +906,7 @@ func TestCopyKeyOpensStatusPickerEvenWhenArtifactIsReady(t *testing.T) {
 }
 
 func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Company:      "Acme",
 			Role:         "AI Engineer",
@@ -875,7 +945,7 @@ func TestHelpBarWrapsCommandsWithinWidth(t *testing.T) {
 }
 
 func TestShortPipelineListPinsFooterToViewportBottom(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{
 			Number:      98,
 			Date:        "2026-06-26",
@@ -926,7 +996,7 @@ func TestShortPipelineListPinsFooterToViewportBottom(t *testing.T) {
 // The help bar advertises only `q quit`, so Esc quitting silently was a bug
 // that surfaced as accidental exits when users hit Esc to "back out" of the UI.
 func TestEscWithoutQueryIsNoOp(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6},
 	}
 
@@ -951,7 +1021,7 @@ func TestEscWithoutQueryIsNoOp(t *testing.T) {
 }
 
 func TestGroupedPageNavigationMovesByVisibleRows(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "A", Role: "A", Status: "Interview", Score: 5.0, ReportPath: "reports/a.md", WorkMode: "Remote", Location: "Madrid"},
 		{Company: "B", Role: "B", Status: "Offer", Score: 4.9, ReportPath: "reports/b.md", WorkMode: "Remote", Location: "Madrid"},
 		{Company: "C", Role: "C", Status: "Responded", Score: 4.8, ReportPath: "reports/c.md", WorkMode: "Remote", Location: "Madrid"},
@@ -990,9 +1060,9 @@ func TestGroupedPageNavigationMovesByVisibleRows(t *testing.T) {
 }
 
 func TestPipelineSafePageKeysMirrorCtrlPageKeys(t *testing.T) {
-	apps := make([]model.CareerApplication, 20)
+	apps := make([]model.DashboardRow, 20)
 	for i := range apps {
-		apps[i] = model.CareerApplication{
+		apps[i] = model.DashboardRow{
 			Company: "Company",
 			Role:    "Role",
 			Status:  "Evaluated",
@@ -1020,7 +1090,7 @@ func TestPipelineSafePageKeysMirrorCtrlPageKeys(t *testing.T) {
 // loadCurrentReport. Reading reports per keystroke caused visible UI lag, so
 // the load is deferred to commit (Enter) / cancel (Esc) instead.
 func TestSearchTypingDoesNotLoadReports(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Stripe", Role: "Backend Engineer", Status: "Evaluated", Score: 4.6, ReportPath: "reports/001-stripe.md"},
 		{Company: "Anthropic", Role: "AI Engineer", Status: "Evaluated", Score: 4.8, ReportPath: "reports/002-anthropic.md"},
 	}
@@ -1066,12 +1136,12 @@ func TestSearchTypingDoesNotLoadReports(t *testing.T) {
 	}
 }
 
-func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
+func previewModelWith(t *testing.T, app model.DashboardRow) PipelineModel {
 	t.Helper()
 
 	pm := NewPipelineModel(
 		theme.NewTheme("catppuccin-mocha"),
-		[]model.CareerApplication{app},
+		[]model.DashboardRow{app},
 		model.PipelineMetrics{Total: 1},
 		"..",
 		120,
@@ -1083,7 +1153,7 @@ func previewModelWith(t *testing.T, app model.CareerApplication) PipelineModel {
 }
 
 func TestPreviewKeepsDiscardReasonWhenTlDrIsCached(t *testing.T) {
-	app := model.CareerApplication{
+	app := model.DashboardRow{
 		Company:    "Acme",
 		Role:       "Backend Engineer",
 		Status:     "Descartado 2026-03-12",
@@ -1109,7 +1179,7 @@ func TestPreviewKeepsDiscardReasonWhenTlDrIsCached(t *testing.T) {
 }
 
 func TestPreviewOutcomeShownWithoutReportSummary(t *testing.T) {
-	pm := previewModelWith(t, model.CareerApplication{
+	pm := previewModelWith(t, model.DashboardRow{
 		Company: "Beta",
 		Role:    "Platform Engineer",
 		Status:  "SKIP",
@@ -1127,7 +1197,7 @@ func TestPreviewOutcomeShownWithoutReportSummary(t *testing.T) {
 }
 
 func TestPreviewOutcomeOmittedForActiveApps(t *testing.T) {
-	app := model.CareerApplication{
+	app := model.DashboardRow{
 		Company:    "Gamma",
 		Role:       "AI Engineer",
 		Status:     "Applied 2026-04-01",
@@ -1145,7 +1215,7 @@ func TestPreviewOutcomeOmittedForActiveApps(t *testing.T) {
 }
 
 func TestPreviewOutcomeForStatusWithoutNotes(t *testing.T) {
-	pm := previewModelWith(t, model.CareerApplication{
+	pm := previewModelWith(t, model.DashboardRow{
 		Company: "Delta",
 		Role:    "SRE",
 		Status:  "**Rejected** 2026-05-02",
@@ -1162,7 +1232,7 @@ func TestPreviewOutcomeForStatusWithoutNotes(t *testing.T) {
 }
 
 func TestWithReloadedDataPreservesCursorWhenAppRemoved(t *testing.T) {
-	initialApps := []model.CareerApplication{
+	initialApps := []model.DashboardRow{
 		{
 			Company:    "Acme",
 			Role:       "Backend Engineer",
@@ -1198,7 +1268,7 @@ func TestWithReloadedDataPreservesCursorWhenAppRemoved(t *testing.T) {
 	pm.applyFilterAndSort()
 	pm.cursor = 1
 
-	refreshedApps := []model.CareerApplication{
+	refreshedApps := []model.DashboardRow{
 		initialApps[0],
 		{
 			Company:    "Beta",

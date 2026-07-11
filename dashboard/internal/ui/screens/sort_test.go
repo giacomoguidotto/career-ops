@@ -22,7 +22,7 @@ func TestSortCycleIncludesNewColumns(t *testing.T) {
 }
 
 func TestSortByPayLocationAndLastContact(t *testing.T) {
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "LowPay", Status: "Applied", PayMax: 150_000, WorkMode: "Full", Location: "Austin, TX", LastContact: "2026-06-01"},
 		{Company: "NoPay", Status: "Applied", PayMax: 0, WorkMode: "", LastContact: ""},
 		{Company: "HighPay", Status: "Applied", PayMax: 250_000, WorkMode: "Hybrid", Location: "Charlotte, NC", LastContact: "2026-06-05"},

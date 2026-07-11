@@ -16,7 +16,7 @@ func keyMsg(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
 
-func newPDFTestModel(t *testing.T, careerOpsPath string, apps []model.CareerApplication) PipelineModel {
+func newPDFTestModel(t *testing.T, careerOpsPath string, apps []model.DashboardRow) PipelineModel {
 	t.Helper()
 	pm := NewPipelineModel(
 		theme.NewTheme("catppuccin-mocha"),
@@ -44,7 +44,7 @@ func writePDFFixture(t *testing.T, root, rel string) {
 
 func TestPDFKeyFlashesWhenNoPDFExists(t *testing.T) {
 	root := t.TempDir()
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Globex", Role: "Engineer", Status: "Evaluated", Score: 4.0},
 	}
 
@@ -65,7 +65,7 @@ func TestPDFKeyFlashesWhenNoPDFExists(t *testing.T) {
 func TestPDFKeyOpensSingleMatchDirectly(t *testing.T) {
 	root := t.TempDir()
 	writePDFFixture(t, root, "output/cv-jane-doe-globex-2026-06-05.pdf")
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Globex", Role: "Engineer", Status: "Evaluated", Score: 4.0},
 	}
 
@@ -92,7 +92,7 @@ func TestPDFKeyOpensNewestForMultipleMatches(t *testing.T) {
 	// Write two PDFs for the same company with distinct dates so ordering is predictable.
 	writePDFFixture(t, root, "output/cv-jane-doe-anthropic-2026-06-05.pdf")
 	writePDFFixture(t, root, "output/cv-jane-doe-anthropic-2026-06-10.pdf")
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Anthropic", Role: "Staff UI Engineer", Status: "Evaluated", Score: 4.6},
 	}
 
@@ -117,7 +117,7 @@ func TestPDFKeyOpensNewestForMultipleMatches(t *testing.T) {
 
 func TestRegenerateKeyFlashesWithoutManifestEntry(t *testing.T) {
 	root := t.TempDir()
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Globex", Role: "Engineer", Status: "Evaluated", Score: 4.0, ReportNumber: "001"},
 	}
 
@@ -140,7 +140,7 @@ func TestRegenerateKeyEmitsGenerateMsgFromManifest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "data", "pdf-index.tsv"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	apps := []model.CareerApplication{
+	apps := []model.DashboardRow{
 		{Company: "Globex", Role: "Engineer", Status: "Evaluated", Score: 4.0, ReportNumber: "001"},
 	}
 
@@ -171,4 +171,3 @@ func TestRegenerateKeyEmitsGenerateMsgFromManifest(t *testing.T) {
 		t.Fatalf("expected failure flash to carry the error, got %q", failed.flash)
 	}
 }
-

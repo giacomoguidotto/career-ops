@@ -60,7 +60,7 @@ func normalizeReportKey(s string) string {
 // number first (the NNN in reports/NNN-….md) and falling back to the tracker
 // # column. The two usually agree but are scrambled in real trackers, and
 // callers passing --report may have used either — tolerate both.
-func (m PDFManifest) Lookup(app model.CareerApplication) (PDFManifestEntry, bool) {
+func (m PDFManifest) Lookup(app model.DashboardRow) (PDFManifestEntry, bool) {
 	if key := normalizeReportKey(app.ReportNumber); key != "" {
 		if entry, ok := m[key]; ok {
 			return entry, true
@@ -176,7 +176,7 @@ var rePDFDate = regexp.MustCompile(`(\d{4}-\d{2}-\d{2})\.pdf$`)
 //     Multiple matches are all returned (newest first) so the caller can
 //     offer a picker instead of guessing — one company can have several
 //     role-variant CVs from the same day.
-func ResolvePDFs(careerOpsPath string, app model.CareerApplication, manifest PDFManifest) []string {
+func ResolvePDFs(careerOpsPath string, app model.DashboardRow, manifest PDFManifest) []string {
 	if entry, ok := manifest.Lookup(app); ok {
 		if _, err := os.Stat(filepath.Join(careerOpsPath, filepath.FromSlash(entry.PDFPath))); err == nil {
 			return []string{entry.PDFPath}
@@ -268,7 +268,7 @@ func kebabCase(s string) string {
 // a companion PDF path derived from it (same base, .pdf extension). Returns
 // ("","") when no matching HTML file is found. Used by the D handler to allow
 // PDF generation for entries that have a tailored CV HTML but no prior PDF.
-func ResolveHTML(careerOpsPath string, app model.CareerApplication) (htmlPath, pdfPath string) {
+func ResolveHTML(careerOpsPath string, app model.DashboardRow) (htmlPath, pdfPath string) {
 	slug := kebabCase(app.Company)
 	if slug == "" {
 		return "", ""

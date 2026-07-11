@@ -67,7 +67,7 @@ func states() *stateMachine {
 }
 
 // locateStatesFile resolves templates/states.yml, preferring the repo root passed
-// by ParseApplications, then self-locating from the source tree (for `go test`),
+// by ParseDashboardRows, then self-locating from the source tree (for `go test`),
 // then the working directory.
 func locateStatesFile(root string) string {
 	rel := filepath.Join("templates", "states.yml")
