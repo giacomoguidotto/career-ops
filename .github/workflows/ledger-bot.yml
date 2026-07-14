@@ -30,6 +30,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           HAS_LEDGER_TOKEN: ${{ secrets.LEDGER_TOKEN != '' }}
+          REVALIDATE_SECRET: ${{ secrets.SIGNATURES_REVALIDATE_SECRET }}
         with:
           github-token: ${{ secrets.LEDGER_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -92,30 +93,19 @@ jobs:
               sha: cur.sha, branch: 'main',
               committer: { name: 'career-ops ledger', email: 'ledger@career-ops.org' }
             });
-            core.setOutput('login', login);
-            core.setOutput('result', 'committed');
-      - name: Revalidate website (wait for 200 BEFORE notifying)
-        if: steps.apply.outputs.result == 'committed'
-        run: |
-          for i in 1 2 3; do
-            curl -sf -X POST -H "x-revalidate-secret: ${{ secrets.SIGNATURES_REVALIDATE_SECRET }}" \
-              https://career-ops.org/api/revalidate-signatures && exit 0
-            echo "attempt $i failed; retrying in 5s"; sleep 5
-          done
-          echo "webhook down after 3 attempts — ISR bridge covers; notifying anyway"
-      - name: Notify signer + close
-        if: steps.apply.outputs.result == 'committed'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const nodeId = context.payload.discussion.node_id;
-            const login = '${{ steps.apply.outputs.login }}';
-            await github.graphql(
-              'mutation($id:ID!,$b:String!){addDiscussionComment(input:{discussionId:$id,body:$b}){comment{id}}}',
-              { id: nodeId, b: `Merged. Your signature: https://career-ops.org/manifesto/s/${login}` });
-            await github.graphql(
-              'mutation($id:ID!){closeDiscussion(input:{discussionId:$id}){discussion{id}}}',
-              { id: nodeId });
+            // Webhook: ESPERAR el 200 ANTES de notificar (la card debe estar
+            // personalizada al primer clic); si cae, el puente ISR cubre.
+            // Todo en el MISMO step: cero fontanería de outputs entre steps.
+            for (let i = 1; i <= 3; i++) {
+              try {
+                const r = await fetch('https://career-ops.org/api/revalidate-signatures',
+                  { method: 'POST', headers: { 'x-revalidate-secret': process.env.REVALIDATE_SECRET } });
+                if (r.ok) break;
+              } catch (e) { /* red caída: reintento */ }
+              if (i < 3) await new Promise(res => setTimeout(res, 5000));
+            }
+            await say(`Merged. Your signature: https://career-ops.org/manifesto/s/${login}`);
+            await close();
 
   # Vía PR orgánica: un maintainer/diputado comenta /approve sobre el PR validado
   # por signature-ci; la línea canónica se construye desde METADATOS del PR.
@@ -142,6 +132,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           HAS_LEDGER_TOKEN: ${{ secrets.LEDGER_TOKEN != '' }}
+          REVALIDATE_SECRET: ${{ secrets.SIGNATURES_REVALIDATE_SECRET }}
         with:
           github-token: ${{ secrets.LEDGER_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -182,25 +173,15 @@ jobs:
               author:    { name: login, email: `${u.id}+${login}@users.noreply.github.com` },
               committer: { name: 'career-ops ledger', email: 'ledger@career-ops.org' }
             });
-            core.setOutput('login', login);
-            core.setOutput('pr', String(prNumber));
-            core.setOutput('result', 'committed');
-      - name: Revalidate website (wait for 200 BEFORE notifying)
-        if: steps.applypr.outputs.result == 'committed'
-        run: |
-          for i in 1 2 3; do
-            curl -sf -X POST -H "x-revalidate-secret: ${{ secrets.SIGNATURES_REVALIDATE_SECRET }}" \
-              https://career-ops.org/api/revalidate-signatures && exit 0
-            echo "attempt $i failed; retrying in 5s"; sleep 5
-          done
-          echo "webhook down after 3 attempts — ISR bridge covers; notifying anyway"
-      - name: Notify signer + close PR
-        if: steps.applypr.outputs.result == 'committed'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = Number('${{ steps.applypr.outputs.pr }}');
-            const login = '${{ steps.applypr.outputs.login }}';
+            // Webhook (esperar 200) y notificación en el MISMO step — sin outputs cruzados
+            for (let i = 1; i <= 3; i++) {
+              try {
+                const r = await fetch('https://career-ops.org/api/revalidate-signatures',
+                  { method: 'POST', headers: { 'x-revalidate-secret': process.env.REVALIDATE_SECRET } });
+                if (r.ok) break;
+              } catch (e) { /* red caída: reintento */ }
+              if (i < 3) await new Promise(res => setTimeout(res, 5000));
+            }
             await github.rest.issues.createComment({ ...context.repo, issue_number: prNumber,
               body: `Merged. Your signature: https://career-ops.org/manifesto/s/${login}` });
             await github.rest.pulls.update({ ...context.repo, pull_number: prNumber, state: 'closed' });
