@@ -231,6 +231,30 @@ func TestPipelineTabsPutQueueFirstButDefaultToAll(t *testing.T) {
 	}
 }
 
+func TestPipelineTabsFollowFunnelAndTerminalOrder(t *testing.T) {
+	want := []string{
+		filterQueue,
+		filterAll,
+		filterEvaluated,
+		filterApplied,
+		filterInterview,
+		filterOffer,
+		filterAccepted,
+		filterRejected,
+		filterDiscarded,
+		filterSkip,
+	}
+
+	if len(pipelineTabs) != len(want) {
+		t.Fatalf("pipeline tab count = %d, want %d", len(pipelineTabs), len(want))
+	}
+	for i, filter := range want {
+		if pipelineTabs[i].filter != filter {
+			t.Fatalf("pipelineTabs[%d] = %q, want %q", i, pipelineTabs[i].filter, filter)
+		}
+	}
+}
+
 func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 	useTrueColorRenderer(t)
 
@@ -593,6 +617,34 @@ func TestRejectedAndDiscardedTabsFilterCorrectly(t *testing.T) {
 	pm.applyFilterAndSort()
 	if len(pm.filtered) != 1 || pm.filtered[0].Status != "Discarded" {
 		t.Fatalf("expected discarded tab to isolate discarded rows, got %+v", pm.filtered)
+	}
+}
+
+func TestOfferTabFiltersOfferStages(t *testing.T) {
+	apps := []model.DashboardRow{
+		{Company: "Acme", Role: "Backend Engineer", Status: "Interview Ready"},
+		{Company: "Beta", Role: "Platform Engineer", Status: "Offer"},
+		{Company: "Gamma", Role: "AI Engineer", Status: "Offer Ready"},
+	}
+
+	pm := NewPipelineModel(
+		theme.NewTheme("catppuccin-mocha"),
+		apps,
+		model.PipelineMetrics{Total: len(apps)},
+		"..",
+		120,
+		40,
+	)
+	pm.activeTab = tabIndexForFilter(t, filterOffer)
+	pm.applyFilterAndSort()
+
+	if len(pm.filtered) != 2 {
+		t.Fatalf("expected offer tab to include both offer stages, got %+v", pm.filtered)
+	}
+	for _, app := range pm.filtered {
+		if got := app.Status; got != "Offer" && got != "Offer Ready" {
+			t.Fatalf("offer tab included non-offer status %q", got)
+		}
 	}
 }
 

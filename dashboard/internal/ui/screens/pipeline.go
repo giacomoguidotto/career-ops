@@ -111,6 +111,7 @@ const (
 	filterEvaluated = "evaluated"
 	filterApplied   = "applied"
 	filterInterview = "interview"
+	filterOffer     = "offer"
 	filterAccepted  = "accepted"
 	filterSkip      = "skip"
 	filterRejected  = "rejected"
@@ -129,10 +130,11 @@ var pipelineTabs = []pipelineTab{
 	{filterEvaluated, "EVALUATED"},
 	{filterApplied, "APPLIED"},
 	{filterInterview, "INTERVIEW"},
+	{filterOffer, "OFFER"},
 	{filterAccepted, "ACCEPTED"},
-	{filterSkip, "SKIP"},
 	{filterRejected, "REJECTED"},
 	{filterDiscarded, "DISCARDED"},
+	{filterSkip, "SKIP"},
 }
 
 func pipelineTabIndex(filter string) int {
