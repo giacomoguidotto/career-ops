@@ -200,9 +200,10 @@ func ParseDashboardRows(careerOpsPath string) []model.DashboardRow {
 }
 
 type pipelineEntry struct {
-	url     string
-	company string
-	role    string
+	url       string
+	company   string
+	role      string
+	processed bool
 }
 
 func appendLiveQueueRows(careerOpsPath string, apps []model.DashboardRow) []model.DashboardRow {
@@ -404,7 +405,10 @@ func readBatchStateRows(careerOpsPath string, pipelineByURL map[string]pipelineE
 
 		url := strings.TrimSpace(fields[1])
 		reportNum := canonicalReportNum(fields[5])
-		info := pipelineByURL[url]
+		info, inPipeline := pipelineByURL[url]
+		if status == "completed" && inPipeline && info.processed {
+			continue
+		}
 		app := model.DashboardRow{
 			Company:      info.company,
 			Role:         info.role,
@@ -550,6 +554,7 @@ func readPipelineEntries(careerOpsPath string) ([]pipelineEntry, map[string]pipe
 		if entry.url == "" {
 			continue
 		}
+		entry.processed = checked
 		byURL[entry.url] = entry
 		if unchecked && !checked {
 			pending = append(pending, entry)

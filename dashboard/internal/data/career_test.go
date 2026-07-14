@@ -376,6 +376,9 @@ func TestParseDashboardRowsIncludesLiveQueueRows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tempDir, "reports", "005-epsilon.md"), []byte("**URL:** https://jobs.example.com/5\n"), 0o644); err != nil {
 		t.Fatalf("failed to write report 005: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(tempDir, "reports", "007-eta.md"), []byte("**URL:** https://jobs.example.com/7\n"), 0o644); err != nil {
+		t.Fatalf("failed to write report 007: %v", err)
+	}
 
 	addition := "2\t2026-06-22\tBeta\tUnmerged Role\tEvaluated\t3.5/5\t❌\t[002](reports/002-beta.md)\tUnmerged tracker addition\n"
 	if err := os.WriteFile(filepath.Join(tempDir, "batch", "tracker-additions", "2.tsv"), []byte(addition), 0o644); err != nil {
@@ -400,7 +403,8 @@ func TestParseDashboardRowsIncludesLiveQueueRows(t *testing.T) {
 		"2\thttps://jobs.example.com/2\tcompleted\t2026-06-22T07:00:00Z\t2026-06-22T07:10:00Z\t002\t3.5\t-\t0\n" +
 		"4\thttps://jobs.example.com/4\tprocessing\t2026-06-22T08:00:00Z\t-\t004\t-\t-\t0\n" +
 		"5\thttps://jobs.example.com/5\tcompleted\t2026-06-22T08:10:00Z\t2026-06-22T08:12:00Z\t005\t2.5\t-\t0\n" +
-		"6\thttps://jobs.example.com/6\tskipped\t2026-06-22T08:12:00Z\t2026-06-22T08:14:00Z\t006\t2.0\tbelow-min-score\t0\n"
+		"6\thttps://jobs.example.com/6\tskipped\t2026-06-22T08:12:00Z\t2026-06-22T08:14:00Z\t006\t2.0\tbelow-min-score\t0\n" +
+		"7\thttps://jobs.example.com/7\tcompleted\t2026-06-22T08:14:00Z\t2026-06-22T08:16:00Z\t007\t3.0\t-\t0\n"
 	if err := os.WriteFile(filepath.Join(tempDir, "batch", "batch-state.tsv"), []byte(state), 0o644); err != nil {
 		t.Fatalf("failed to write batch state: %v", err)
 	}
@@ -426,11 +430,14 @@ func TestParseDashboardRowsIncludesLiveQueueRows(t *testing.T) {
 	if got := byURL["https://jobs.example.com/3"]; got.source != "pipeline" || got.status != "pending" || got.company != "Gamma" {
 		t.Fatalf("expected URL 3 to come from pending pipeline row, got %+v", got)
 	}
-	if got := byURL["https://jobs.example.com/5"]; got.source != "batch" || got.status != "unmerged_complete" {
-		t.Fatalf("completed batch URL 5 without a tracker row should remain visible as unmerged work: %+v", got)
+	if _, ok := byURL["https://jobs.example.com/5"]; ok {
+		t.Fatalf("processed completed batch URL 5 should not reappear as unmerged work: %+v", byURL["https://jobs.example.com/5"])
 	}
 	if _, ok := byURL["https://jobs.example.com/6"]; ok {
 		t.Fatalf("terminal skipped batch URL 6 should come from tracker merge, not batch-state fallback: %+v", byURL["https://jobs.example.com/6"])
+	}
+	if got := byURL["https://jobs.example.com/7"]; got.source != "batch" || got.status != "unmerged_complete" {
+		t.Fatalf("completed batch URL 7 without a pipeline tombstone should remain visible as unmerged work: %+v", got)
 	}
 }
 
