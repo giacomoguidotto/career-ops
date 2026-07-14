@@ -39,6 +39,14 @@ if (
 } else {
   fail('batch worker prompt does not use the canonical report-number tracker filename');
 }
+const reportHeaderStart = batchPrompt.indexOf('Report header:');
+const reportHeaderEnd = batchPrompt.indexOf('\nThen include:', reportHeaderStart);
+const reportHeaderTemplate = batchPrompt.slice(reportHeaderStart, reportHeaderEnd);
+if ((reportHeaderTemplate.match(/^```$/gm) || []).length === 1) {
+  pass('batch Machine Summary example has exactly one closing fence');
+} else {
+  fail('batch Machine Summary example must contain exactly one closing fence');
+}
 
 const tmp = mkdtempSync(join(tmpdir(), 'co-batch-codex-'));
 const batchDir = join(tmp, 'batch');
@@ -86,6 +94,7 @@ try {
     "}",
     "const count = process.argv[2] === '--count' ? Number(process.argv[3]) : 1;",
     "appendFileSync(marker, `reserve ${count}\\n`);",
+    "if (process.env.RESERVE_FAIL_ON_COUNT === String(count)) process.exit(9);",
     "const max = Math.max(0, ...readdirSync(reports).map(name => Number(name.match(/^(\\d+)-/)?.[1] || 0)));",
     "const nums = Array.from({ length: count }, (_, i) => String(max + i + 1).padStart(3, '0'));",
     "for (const num of nums) writeFileSync(join(reports, `${num}-RESERVED.md`), '');",
@@ -206,6 +215,36 @@ try {
     pass('Codex output uses the canonical report reservation, state, tracker addition, and merge path');
   } else {
     fail(`Codex artifacts did not complete the canonical path: ${JSON.stringify(state)}`);
+  }
+
+  writeFileSync(join(batchDir, 'batch-input.tsv'), [
+    'id\turl\tsource\tnotes',
+    ...Array.from({ length: 51 }, (_, index) => `${index + 100}\thttps://example.com/jobs/reservation-${index}\tfixture\t-`),
+  ].join('\n') + '\n');
+  writeFileSync(join(tmp, 'batch-events.txt'), '');
+  const reservationFailure = spawnSync(getBash(), [
+    toBashPath(runner),
+    '--cli', 'codex',
+    '--model', 'gpt-5.5',
+    '--reasoning-effort', 'high',
+    '--parallel', '2',
+    '--skip-pdf',
+  ], { cwd: tmp, env: { ...env, RESERVE_FAIL_ON_COUNT: '1' }, encoding: 'utf-8' });
+  const reservationEvents = readFileSync(join(tmp, 'batch-events.txt'), 'utf-8').trim().split('\n');
+  const leakedReservations = Array.from(
+    { length: 50 },
+    (_, index) => join(reportsDir, `${String(index + 44).padStart(3, '0')}-RESERVED.md`),
+  ).filter(path => existsSync(path));
+  if (
+    reservationFailure.status !== 0 &&
+    reservationEvents[0] === 'reserve 50' &&
+    reservationEvents[1] === 'reserve 1' &&
+    reservationEvents.filter(event => event.startsWith('release ')).length === 50 &&
+    leakedReservations.length === 0
+  ) {
+    pass('a later reservation chunk failure releases every number claimed by earlier chunks');
+  } else {
+    fail(`chunked reservation failure leaked claims: status=${reservationFailure.status}, events=${JSON.stringify(reservationEvents)}, leaked=${JSON.stringify(leakedReservations)}`);
   }
 
   writeFileSync(join(batchDir, 'batch-input.tsv'), [

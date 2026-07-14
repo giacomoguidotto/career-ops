@@ -58,6 +58,12 @@ The runner sends Codex the same self-contained batch instructions and runtime
 profile context as the default Claude worker. Reports, tracker additions, state,
 retry handling, and the final tracker merge use the same canonical paths.
 
+Standalone batch inputs are remote job URLs, so Codex workers have network
+access to fetch the posting and perform the company and compensation research
+required by the batch contract. Workers are still ephemeral, ignore user-level
+Codex configuration, load no MCP servers, and run in the workspace-write
+sandbox. Treat batch URLs and job descriptions as untrusted input.
+
 ## Notes
 
 - If your Codex environment exposes slash commands, the shared `/career-ops` router semantics still apply.

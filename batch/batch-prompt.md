@@ -326,7 +326,6 @@ via: {agency/recruiter firm as a quoted string, or null for direct applications}
 company_confidential: {true when the end employer is unknown (company is "?"), else false}
 advertised_comp: {verbatim JD salary/range as a quoted string (e.g. "80-90k EUR"), or null when the JD states nothing}
 ```
-```
 
 Then include:
 

@@ -436,6 +436,10 @@ run_worker() {
     codex)
       # Codex has no append-system-prompt-file equivalent. Feed the complete
       # self-contained mode/profile context plus the offer task through stdin.
+      # Network access is intentional: standalone runs start with an empty JD
+      # scratch file, and the batch contract requires fetching the posting plus
+      # company/compensation research. Ephemeral mode, ignored user config, no
+      # MCP servers, and the workspace-write sandbox limit the worker instead.
       local -a codex_args=(
         exec
         --ephemeral
@@ -532,12 +536,17 @@ mark_paused_rate_limit() {
 # allocator caps one request at 50 slots, so larger batches reserve in chunks.
 reserve_report_nums() {
   local needed="$1"
+  local -a claimed_nums=()
 
   while (( needed > 0 )); do
     local chunk="$needed"
     (( chunk > 50 )) && chunk=50
     local claimed
     if ! claimed=$(node "$PROJECT_DIR/reserve-report-num.mjs" --count "$chunk"); then
+      local claimed_num
+      for claimed_num in "${claimed_nums[@]}"; do
+        release_report_num "$claimed_num" || true
+      done
       return 1
     fi
 
@@ -557,6 +566,7 @@ reserve_report_nums() {
         continue
       fi
       printf '%s\n' "$report_num"
+      claimed_nums+=("$report_num")
       needed=$((needed - 1))
     done
   done
