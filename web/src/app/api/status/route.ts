@@ -28,6 +28,9 @@ export async function POST(req: Request) {
   if (!canon) {
     return NextResponse.json({ error: `not a canonical status: ${status}` }, { status: 400 });
   }
+  if (canon === "Approached") {
+    return NextResponse.json({ error: "Approached requires a typed, confirmed Approach Attempt" }, { status: 400 });
+  }
 
   const file = path.join(careerOpsRoot(), "data", "applications.md");
   let md: string;

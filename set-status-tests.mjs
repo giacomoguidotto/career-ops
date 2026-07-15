@@ -89,10 +89,10 @@ const TRACKER_10 = `# Applications Tracker
 // ── 1. Update by report number ──────────────────────────────────
 {
   const sb = makeSandbox(TRACKER_9);
-  const r = runSetStatus(['2', 'Applied'], sb);
+  const r = runSetStatus(['2', 'Approached'], sb);
   const content = readTracker(sb);
-  if (r.code === 0 && /\| 2 \| 2026-06-02 \| Globex \| Platform Engineer \| 4.0\/5 \| Applied \|/.test(content)) {
-    pass('by-num: status updated to Applied');
+  if (r.code === 0 && /\| 2 \| 2026-06-02 \| Globex \| Platform Engineer \| 4.0\/5 \| Approached \|/.test(content)) {
+    pass('by-num: status updated to Approached');
   } else {
     fail(`by-num: code=${r.code}; row not updated correctly\n${r.stdout}${r.stderr}`);
   }
@@ -120,8 +120,8 @@ const TRACKER_10 = `# Applications Tracker
 {
   const sb = makeSandbox(TRACKER_9);
   const r = runSetStatus(['2', 'aplicado'], sb);
-  if (r.code === 0 && /\| Globex \| Platform Engineer \| 4.0\/5 \| Applied \|/.test(readTracker(sb))) {
-    pass('alias: "aplicado" resolves to canonical "Applied"');
+  if (r.code === 0 && /\| Globex \| Platform Engineer \| 4.0\/5 \| Approached \|/.test(readTracker(sb))) {
+    pass('alias: "aplicado" resolves to canonical "Approached"');
   } else {
     fail(`alias: code=${r.code}\n${r.stdout}${r.stderr}`);
   }
@@ -144,13 +144,13 @@ const TRACKER_10 = `# Applications Tracker
 // ── 5. Not found: number and company ────────────────────────────
 {
   const sb = makeSandbox(TRACKER_9);
-  const r1 = runSetStatus(['99', 'Applied'], sb);
+  const r1 = runSetStatus(['99', 'Approached'], sb);
   if (r1.code === 2) {
     pass('not-found: unknown report number exits 2');
   } else {
     fail(`not-found num: code=${r1.code} (want 2)\n${r1.stdout}${r1.stderr}`);
   }
-  const r2 = runSetStatus(['hooli', 'Applied'], sb);
+  const r2 = runSetStatus(['hooli', 'Approached'], sb);
   if (r2.code === 2) {
     pass('not-found: unknown company exits 2');
   } else {
@@ -162,14 +162,14 @@ const TRACKER_10 = `# Applications Tracker
 // ── 6. Ambiguous company: candidates listed, --role disambiguates ─
 {
   const sb = makeSandbox(TRACKER_9);
-  const r = runSetStatus(['acme', 'Applied'], sb);
+  const r = runSetStatus(['acme', 'Approached'], sb);
   if (r.code === 3 && r.stderr.includes('#1') && r.stderr.includes('#3') && r.stderr.includes('Backend Engineer') && r.stderr.includes('Data Engineer')) {
     pass('ambiguous: exit 3 with numbered candidate list');
   } else {
     fail(`ambiguous: code=${r.code} (want 3)\n${r.stdout}${r.stderr}`);
   }
-  const r2 = runSetStatus(['acme', 'Applied', '--role', 'Data Engineer'], sb);
-  if (r2.code === 0 && /\| 3 \| 2026-06-03 \| Acme \| Data Engineer \| 3.9\/5 \| Applied \|/.test(readTracker(sb))) {
+  const r2 = runSetStatus(['acme', 'Approached', '--role', 'Data Engineer'], sb);
+  if (r2.code === 0 && /\| 3 \| 2026-06-03 \| Acme \| Data Engineer \| 3.9\/5 \| Approached \|/.test(readTracker(sb))) {
     pass('ambiguous: --role disambiguates to the right row');
   } else {
     fail(`ambiguous --role: code=${r2.code}\n${r2.stdout}${r2.stderr}`);
@@ -180,7 +180,7 @@ const TRACKER_10 = `# Applications Tracker
 // ── 7. Note append: idempotent, separator, pipe-sanitized ───────
 {
   const sb = makeSandbox(TRACKER_9);
-  runSetStatus(['1', 'Applied', '--note', 'sent via referral'], sb);
+  runSetStatus(['1', 'Approached', '--note', 'sent via referral'], sb);
   const after1 = readTracker(sb);
   if (/\| strong infra fit; sent via referral \|/.test(after1)) {
     pass('note: appended to existing notes with "; "');
@@ -188,7 +188,7 @@ const TRACKER_10 = `# Applications Tracker
     fail(`note: append missing\n${after1}`);
   }
   // Retry with the identical note must not duplicate it.
-  runSetStatus(['1', 'Applied', '--note', 'sent via referral'], sb);
+  runSetStatus(['1', 'Approached', '--note', 'sent via referral'], sb);
   const after2 = readTracker(sb);
   if ((after2.match(/sent via referral/g) || []).length === 1) {
     pass('note: identical retry does not duplicate the note');
@@ -204,7 +204,7 @@ const TRACKER_10 = `# Applications Tracker
     fail('note: semicolon-bearing note duplicated on retry');
   }
   // Pipes/newlines in a note would corrupt the table — must be sanitized.
-  runSetStatus(['2', 'Applied', '--note', 'weird | note'], sb);
+  runSetStatus(['2', 'Approached', '--note', 'weird | note'], sb);
   const after3 = readTracker(sb);
   if (!/weird \| note/.test(after3) && /weird \/ note/.test(after3)) {
     pass('note: literal pipe sanitized');
@@ -213,7 +213,7 @@ const TRACKER_10 = `# Applications Tracker
   }
   // A literal newline would split the row into two lines and break the table:
   // the stored row must stay a single line with the newline collapsed.
-  runSetStatus(['2', 'Applied', '--note', 'first line\nsecond line'], sb);
+  runSetStatus(['2', 'Approached', '--note', 'first line\nsecond line'], sb);
   const after4 = readTracker(sb);
   const row2 = after4.split('\n').filter(l => /^\| 2 \|/.test(l));
   if (row2.length === 1 && row2[0].includes('first line second line')) {
@@ -230,7 +230,7 @@ const TRACKER_10 = `# Applications Tracker
   // Row 1 notes: "strong infra fit". A note that is a mere substring of an
   // existing entry is NOT a duplicate — only whole "; "-delimited entries
   // (or the entire field) count.
-  const r = runSetStatus(['1', 'Applied', '--note', 'infra'], sb);
+  const r = runSetStatus(['1', 'Approached', '--note', 'infra'], sb);
   if (r.code === 0 && /\| strong infra fit; infra \|/.test(readTracker(sb))) {
     pass('note-dedup: substring of an existing entry still appends');
   } else {
@@ -239,7 +239,7 @@ const TRACKER_10 = `# Applications Tracker
   // The exact same note re-added must still be suppressed. "infra" appears
   // twice after the append (inside "infra fit" + the new entry); a duplicate
   // append would make it three.
-  runSetStatus(['1', 'Applied', '--note', 'infra'], sb);
+  runSetStatus(['1', 'Approached', '--note', 'infra'], sb);
   if ((readTracker(sb).match(/infra/g) || []).length === 2) {
     pass('note-dedup: exact retry still idempotent');
   } else {
@@ -251,9 +251,9 @@ const TRACKER_10 = `# Applications Tracker
 // ── 8. No-op re-run: exit 0, file byte-identical ────────────────
 {
   const sb = makeSandbox(TRACKER_9);
-  runSetStatus(['2', 'Applied'], sb);
+  runSetStatus(['2', 'Approached'], sb);
   const before = readTracker(sb);
-  const r = runSetStatus(['2', 'Applied', '--json'], sb);
+  const r = runSetStatus(['2', 'Approached', '--json'], sb);
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   if (r.code === 0 && readTracker(sb) === before && parsed && parsed.changed === false) {
@@ -261,10 +261,10 @@ const TRACKER_10 = `# Applications Tracker
   } else {
     fail(`no-op: code=${r.code} changed=${parsed?.changed}\n${r.stdout}${r.stderr}`);
   }
-  // #1430 hook must fire only on a real transition into Applied — a re-run
+  // #1430 hook must fire only on a real transition into Approached — a re-run
   // must not invite the consumer to seed a duplicate follow-up.
   if (parsed && parsed.followupSeedCandidate === undefined) {
-    pass('no-op: followupSeedCandidate absent on idempotent Applied re-run');
+    pass('no-op: followupSeedCandidate absent on idempotent Approached re-run');
   } else {
     fail(`no-op: followupSeedCandidate leaked on re-run\n${r.stdout}`);
   }
@@ -275,7 +275,7 @@ const TRACKER_10 = `# Applications Tracker
 {
   const sb = makeSandbox(TRACKER_9);
   const before = readTracker(sb);
-  const r = runSetStatus(['2', 'Applied', '--dry-run', '--json'], sb);
+  const r = runSetStatus(['2', 'Approached', '--dry-run', '--json'], sb);
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   if (r.code === 0 && readTracker(sb) === before && parsed && parsed.changed === true && parsed.dryRun === true) {
@@ -286,15 +286,15 @@ const TRACKER_10 = `# Applications Tracker
   rmSync(sb.dir, { recursive: true, force: true });
 }
 
-// ── 10. JSON output shape + #1430 follow-up hook ────────────────
+// ── 10. JSON output shape; attempts are recorded separately ─────
 {
   const sb = makeSandbox(TRACKER_9);
-  const r = runSetStatus(['2', 'Applied', '--json'], sb);
+  const r = runSetStatus(['2', 'Approached', '--json'], sb);
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   if (parsed && parsed.num === 2 && parsed.company === 'Globex' && parsed.oldStatus === 'Evaluated'
-      && parsed.newStatus === 'Applied' && parsed.changed === true && parsed.followupSeedCandidate === true) {
-    pass('json: full output shape + followupSeedCandidate on Applied');
+      && parsed.newStatus === 'Approached' && parsed.changed === true && parsed.followupSeedCandidate === undefined) {
+    pass('json: full output shape without the obsolete follow-up seed hook');
   } else {
     fail(`json: bad shape\n${r.stdout}${r.stderr}`);
   }
@@ -302,17 +302,17 @@ const TRACKER_10 = `# Applications Tracker
   let parsed2 = null;
   try { parsed2 = JSON.parse(r2.stdout); } catch {}
   if (parsed2 && parsed2.followupSeedCandidate === undefined) {
-    pass('json: no followupSeedCandidate on non-Applied transitions');
+    pass('json: no followupSeedCandidate on other transitions');
   } else {
     fail(`json: followupSeedCandidate leaked on Rejected\n${r2.stdout}`);
   }
   rmSync(sb.dir, { recursive: true, force: true });
 }
 
-// ── 10b. Applied reports surface same-company coordination Applications ─
+// ── 10b. Approached reports surface same-company coordination Applications ─
 {
   const sb = makeSandbox(TRACKER_9);
-  const r = runSetStatus(['1', 'Applied', '--json'], sb);
+  const r = runSetStatus(['1', 'Approached', '--json'], sb);
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   const coordination = parsed?.candidacyCoordination;
@@ -326,15 +326,15 @@ const TRACKER_10 = `# Applications Tracker
     && coordination.sameCompanyApplications[0]?.role === 'Data Engineer'
     && coordination.sameCompanyApplications[0]?.status === 'Evaluated'
   ) {
-    pass('coordination: Applied JSON surfaces same-company Applications for Hiring-surface research');
+    pass('coordination: Approached JSON surfaces same-company Applications for Hiring-surface research');
   } else {
-    fail(`coordination: Applied JSON missing sibling review payload\n${r.stdout}${r.stderr}`);
+    fail(`coordination: Approached JSON missing sibling review payload\n${r.stdout}${r.stderr}`);
   }
 
-  // Repeating "I applied" against an already-Applied row must still remind the
+  // Repeating "I approached" against an already-Approached row must still remind the
   // calling agent about sibling coordination even though follow-up seeding stays
   // idempotent and does not fire again.
-  const r2 = runSetStatus(['1', 'Applied', '--json'], sb);
+  const r2 = runSetStatus(['1', 'Approached', '--json'], sb);
   let parsed2 = null;
   try { parsed2 = JSON.parse(r2.stdout); } catch {}
   if (
@@ -343,9 +343,9 @@ const TRACKER_10 = `# Applications Tracker
     && parsed2?.followupSeedCandidate === undefined
     && parsed2?.candidacyCoordination?.sameCompanyApplications?.[0]?.num === 3
   ) {
-    pass('coordination: idempotent Applied report still surfaces sibling review');
+    pass('coordination: idempotent Approached report still surfaces sibling review');
   } else {
-    fail(`coordination: idempotent Applied report lost sibling review\n${r2.stdout}${r2.stderr}`);
+    fail(`coordination: idempotent Approached report lost sibling review\n${r2.stdout}${r2.stderr}`);
   }
   rmSync(sb.dir, { recursive: true, force: true });
 }
@@ -353,7 +353,7 @@ const TRACKER_10 = `# Applications Tracker
 // ── 11. Ambiguous + --json: machine-readable candidates ─────────
 {
   const sb = makeSandbox(TRACKER_9);
-  const r = runSetStatus(['acme', 'Applied', '--json'], sb);
+  const r = runSetStatus(['acme', 'Approached', '--json'], sb);
   let parsed = null;
   try { parsed = JSON.parse(r.stdout || r.stderr); } catch {}
   if (r.code === 3 && parsed && parsed.code === 'ambiguous' && Array.isArray(parsed.candidates)
@@ -398,14 +398,14 @@ const TRACKER_10 = `# Applications Tracker
   // "--note --dry-run" once consumed "--dry-run" as the note text — silently
   // disabling dry-run and turning a preview into a real write. It must be a
   // usage error, and nothing may be written.
-  const r = runSetStatus(['2', 'Applied', '--note', '--dry-run'], sb);
+  const r = runSetStatus(['2', 'Approached', '--note', '--dry-run'], sb);
   if (r.code === 1 && readTracker(sb) === before) {
     pass('flag-eating: --note followed by a flag exits 1 without writing');
   } else {
     fail(`flag-eating: code=${r.code} (want 1) written=${readTracker(sb) !== before}\n${r.stdout}${r.stderr}`);
   }
   // Missing value at the end of argv is the same usage error.
-  const r2 = runSetStatus(['2', 'Applied', '--role'], sb);
+  const r2 = runSetStatus(['2', 'Approached', '--role'], sb);
   if (r2.code === 1 && /--role/.test(r2.stderr) && readTracker(sb) === before) {
     pass('flag-eating: trailing --role without value exits 1');
   } else {
@@ -427,7 +427,7 @@ const TRACKER_10 = `# Applications Tracker
   }
   // failUsage can fire mid-parse ("--note --json" fails before --json is
   // reached), so JSON mode must be detected from the raw argv.
-  const r2 = runSetStatus(['2', 'Applied', '--note', '--json'], sb);
+  const r2 = runSetStatus(['2', 'Approached', '--note', '--json'], sb);
   let parsed2 = null;
   try { parsed2 = JSON.parse(r2.stdout); } catch {}
   if (r2.code === 1 && parsed2 && parsed2.code === 'usage') {
@@ -446,7 +446,7 @@ const TRACKER_10 = `# Applications Tracker
   // time out and fail through the structured error path instead of throwing.
   mkdirSync(sb.lock, { recursive: true });
   writeFileSync(join(sb.lock, 'owner.json'), JSON.stringify({ pid: process.pid, token: 'test', tracker: sb.tracker }));
-  const r = runSetStatus(['2', 'Applied', '--json'], sb, { CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS: '300' });
+  const r = runSetStatus(['2', 'Approached', '--json'], sb, { CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS: '300' });
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   if (r.code === 4 && parsed && parsed.code === 'lock-timeout' && readTracker(sb) === before) {
@@ -468,7 +468,7 @@ const TRACKER_10 = `# Applications Tracker
   const blocker = join(sb.dir, 'career-ops-merge-tracker-blocker');
   writeFileSync(blocker, 'not a directory');
   const badLock = join(blocker, 'career-ops-merge-tracker-bad.lock');
-  const r = runSetStatus(['2', 'Applied', '--json'], { ...sb, lock: badLock });
+  const r = runSetStatus(['2', 'Approached', '--json'], { ...sb, lock: badLock });
   let parsed = null;
   try { parsed = JSON.parse(r.stdout); } catch {}
   if (r.code === 1 && parsed && parsed.code === 'lock-error') {
@@ -526,7 +526,7 @@ const TRACKER_10 = `# Applications Tracker
       : chmodSync(roDir, 0o755);
     denyWrite();
     try {
-      const r = runSetStatus(['2', 'Applied', '--json'], { tracker, lock });
+      const r = runSetStatus(['2', 'Approached', '--json'], { tracker, lock });
       let parsed = null;
       try { parsed = JSON.parse(r.stdout); } catch {}
       if (r.code === 1 && parsed && parsed.code === 'write-failure') {

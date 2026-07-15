@@ -2,6 +2,10 @@
 
 > Apply `voice-dna.md` (if present) to free-text answers and cover-letter fields — full guardrail, conversational voice included (Tier 1 + Tier 2). See `_shared.md` → Voice DNA.
 
+> Before authoring any pre-response text, run `modes/communication-planner.md`.
+> The planner owns register, objective, proof anchors, evidence sufficiency, and
+> route order. This mode executes the formal-application route it receives.
+
 Interactive mode for when the candidate is filling out an application form in Chrome. It reads what is on the screen, loads the previous context of the job, and generates personalized responses for each form question.
 
 ## Requirements
@@ -20,9 +24,10 @@ Interactive mode for when the candidate is filling out an application form in Ch
 5b. PRE-SCAN   → Scan page for knock-out questions (degree, experience, work authorization/visa, sponsorship, salary floors)
 6. ANALYZE     → Identify ALL visible form questions
 6b. INSTRUCTIONS → Capture + honor the posting's explicit application asks (blurb, favorite X, subject-line keyword, channel)
-7. GENERATE    → For each question, generate a personalized response in the posting's register
-8. PRESENT     → Show formatted responses for copy-paste
-9. PERSIST     → Save the final filled/submitted answers into the report
+7. PLAN        → Apply the shared Communication Planner to register, proof, and route timing
+8. GENERATE    → For each question, generate a personalized response in the posting's register
+9. PRESENT     → Show formatted responses for copy-paste
+10. PERSIST    → Save the final filled/submitted answers into the report
 ```
 
 ## Step 5 — Preflight gate

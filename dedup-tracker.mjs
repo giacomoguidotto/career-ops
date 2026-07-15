@@ -32,10 +32,9 @@ mkdirSync(dirname(APPS_FILE), { recursive: true });
 
 // Pipeline-advancement order keyed by the state machine's dashboard_group
 // (higher = more advanced). Ranking a group rather than each label means the
-// finer stages inherit the right rank automatically: Application Ready and the
-// Qualifying Ready/Sent pre-application subloop roll up to `evaluated` (not yet
-// in motion), Outreach Ready to `applied`, Offer Ready to `offer`. Applied ranks
-// above the terminal Rejected because an active application outweighs a closed
+// finer stages inherit the right rank automatically: Approach Ready rolls up to
+// `evaluated` (not yet in motion), while Approached records confirmed pursuit.
+// Approached ranks above the terminal Rejected because an active opportunity
 // one. Accepted is the most advanced (happy-path terminal) so it is never dropped
 // by a fuzzy title match.
 const GROUP_RANK = {
@@ -43,7 +42,7 @@ const GROUP_RANK = {
   discarded: 0,
   rejected: 1,
   evaluated: 2,
-  applied: 3,
+  approached: 3,
   responded: 4,
   interview: 5,
   offer: 6,
@@ -88,15 +87,15 @@ function statusRank(status) {
 /**
  * Check whether a status represents a real application already in motion.
  *
- * Rows at Applied or later have user-visible history that dedup must preserve
+ * Rows at Approached or later have user-visible history that dedup must preserve
  * unless the duplicate relationship is exact. This guard prevents fuzzy title
  * matches from silently deleting an active application record.
  *
  * @param {string} status - Raw status value from the tracker row.
- * @returns {boolean} True when the row is Applied or a later stage (incl. Accepted).
+ * @returns {boolean} True when the row is Approached or a later stage (incl. Accepted).
  */
 function isAdvancedStatus(status) {
-  return statusRank(status) >= GROUP_RANK.applied;
+  return statusRank(status) >= GROUP_RANK.approached;
 }
 
 /**

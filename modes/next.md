@@ -4,22 +4,26 @@ Advance an existing opportunity to its next useful human-review step.
 
 ## Purpose
 
-`next` is the post-evaluation orchestrator. It reads the tracker, the canonical
-state machine in `templates/states.yml`, reports, and existing modes, then
-produces the smallest useful draft pack for the current stage. It does not
+`next` is the post-evaluation orchestrator. It reads the tracker, confirmed
+Approach Attempts, the canonical state machine in `templates/states.yml`,
+reports, and existing modes, then produces the smallest useful draft plan or
+downstream pack for the current stage. It does not
 discover jobs, evaluate new postings, submit applications, send messages, or
 record real-world actions without confirmation.
 
-## Ready Block Contract
+## Approach Plan and Ready Block Contract
 
-Every output must be usable without scavenger-hunting through reports, and
+Every pre-response output MUST first apply `modes/communication-planner.md`.
+That shared planner owns register, objective, proof anchors, evidence
+sufficiency, and ranked route order for application, qualifying, contact, and
+follow-up work. Every output must be usable without scavenger-hunting through reports, and
 without a second research step before the user can act.
 
 - Put the decision and next human action at the top.
 - Include a quick-reference block with the role, score, report, blocker, and the
   exact next step.
-- **Linear action order:** order the pack by the current `suggests` action and
-  the next human move, not by a fixed application-template order. Put any
+- **Linear action order:** order the pack by the ranked Approach Plan and the
+  next human move, not by a fixed application-template order. Put any
   preflight block immediately before the action it governs, then the action the
   user should do now, then conditional follow-on or backup actions. For
   `send_application`, use an optional `### Before You Apply` only when a real
@@ -92,7 +96,8 @@ without a second research step before the user can act.
   A pack that drops an explicit ask (e.g. omits the ice cream flavor) is a defect,
   not a stylistic choice. If an ask needs a fact only the user has, leave a clearly
   labelled `[your answer]` slot rather than silently skipping it.
-- **Match the posting's register.** Read `apply_tone` (or infer the JD's register)
+- **Match the posting's register.** Use the Communication Planner, read
+  `apply_tone` (or infer the JD's register)
   and write the blurb and free-text answers to match it. A casual, playful ask from
   a tiny founder-led team gets a warm, human, first-person note — not a formal
   cover-letter register. A formal enterprise JD gets a composed one. Mirror the
@@ -120,6 +125,9 @@ without a second research step before the user can act.
   Founder or hiring-manager notes should sound genuinely excited about the role
   and the work, while still naming only source-backed proof points from the
   CV/profile/report.
+- **Show capability without announcing it.** Select one or two proof anchors and
+  weave them into a smart discourse. A cold skills inventory, keyword chain, or
+  paragraph of unsupported self-description is a defective plan.
 - Apply `modes/contact.md` step 7 whenever a sendable contact message appears.
   The pack must embed the primary and backup send guidance in ordered sections,
   not as a separate recommendation block or contact list. Default to one first
@@ -163,8 +171,11 @@ destination, or decision.
 ## Inputs
 
 - Optional argument: tracker number, report number, company, role, or `auto`.
-- `data/applications.md` -- canonical lifecycle tracker; each row carries one
+- `data/applications.md` -- compatibility path for the canonical Opportunity
+  tracker; each row carries one
   `stage`.
+- `data/approach-attempts.md` -- append-only user-confirmed real-world Approach
+  Attempts. Drafts and recommendations never appear here.
 - `data/candidacy-clusters.md` -- durable, user-layer coordination between
   related Applications that may share a recruiter, hiring manager, or hiring process.
 - `candidacy-select.mjs` -- deterministic, read-only eligibility preflight. Its
@@ -179,15 +190,17 @@ destination, or decision.
   read it before resolving any action because it overrides the defaults below.
 - `config/profile.yml`, `modes/_profile.md`, `cv.md`, and `article-digest.md`
   for candidate context.
+- Optional Communication Strategy supplied in the current invocation. Its
+  absence is never a blocker; use `modes/communication-planner.md` defaults.
 
 ## State Model
 
-Every application carries exactly ONE `stage` in `data/applications.md`. The stage
+Every Opportunity carries exactly ONE `stage` in `data/applications.md`. The stage
 is a node in the canonical state machine defined in `templates/states.yml`, and
 that table is the single source of routing truth. `next` never re-derives routing;
 it looks up the current stage and reads its fields:
 
-- `owner` -- who advances the stage: `agent`, `user`, `company`, or `none`.
+- `owner` -- who advances the stage: `agent`, `user`, `external`, or `none`.
 - `suggests` -- the proactive next thing: an artifact to draft (agent stages) or a
   real-world action for the user to perform and report (user stages).
 - `on_demand` -- reactive assists available on request but never run proactively
@@ -201,13 +214,13 @@ The owner determines how the stage advances:
   never a real-world action, so it is safe to auto-write.
 - `user` -- blocked on the user doing the real-world action and reporting it. `next`
   may draft or prepare, but only the user's report advances the stage.
-- `company` -- a pure wait. No task; a due follow-up surfaces as a reminder, not a
-  stage change. Advances only when the user reports a company event.
+- `external` -- a pure wait. No task; a due review surfaces as a reminder, not a
+  stage change. Advances only when the user reports an external event.
 - `none` -- terminal.
 
 The automation invariant: an unattended `auto` run may only ever transition OUT OF
 an `agent`-owned stage. In `auto` mode, `next` finds agent-owned stages and runs
-their generation step; it never writes a `user`- or `company`-owned advance.
+their generation step; it never writes a `user`- or `external`-owned advance.
 
 Completion criterion: every routing decision cites the current stage's row in
 `templates/states.yml`; `next` never invents a status or an action outside it.
@@ -356,8 +369,8 @@ Before selecting or generating an artifact, apply `modes/_custom.md` ->
 the default decision routing later in this file. In particular, when that policy
 disables automatic qualifying questions:
 
-- `Apply` and `Consider` both route to `generate_application_pack`; `Consider` is
-  a lower-priority Application, not another Stage.
+- `Apply` and `Consider` both route to `generate_approach_plan`; `Consider` is
+  a lower-priority Opportunity, not another Stage.
 - Score controls ordering only. Do not route an otherwise eligible low-scoring
   row to `skip`, `discarded`, or a qualifying question because of score alone.
 - When an older tracker sentence conflicts with a later
@@ -367,8 +380,8 @@ disables automatic qualifying questions:
   contradictory-legal-signal question and rewrite the decision to `Apply`,
   `Consider`, or `Skip` before advancement. Never route `Research first` directly
   to `draft_qualifying_questions`.
-- Use `draft_qualifying_questions` only when the user explicitly requests that
-  on-demand action for a specific role.
+- Treat a qualifying question as one ranked Approach route when it is useful,
+  never as a lifecycle subloop.
 
 If `_custom.md` is absent or silent on advancement, use the default routing below.
 
@@ -394,14 +407,11 @@ raw set of Agent-owned tracker rows is not a valid selection input.
 For an unattended `auto` run, honor the automation invariant: select only
 `agent`-owned stages ready for their generation step, highest-value first:
 
-1. `evaluated` rows (draft the application pack), sorted by score and boosted by
-   the current report/tracker `APPLY` or `CONSIDER` decision. Resolve the current
-   decision using the advancement-policy precedence above. Under the default
-   policy only, when `final_decision` is `Research first` and the row has NOT
-   already qualified (no `[qualifying-sent …]` marker), draft a qualifying
-   question (`draft_qualifying_questions`) and advance it into the qualifying
-   subloop. The loop guard keeps a returned `qualifying_sent → evaluated` row
-   from re-qualifying forever.
+1. `evaluated` rows (draft the ranked Approach Plan), sorted by score and boosted
+   by the current report/tracker `APPLY` or `CONSIDER` decision. Resolve the
+   current decision using the advancement-policy precedence above. A `Research
+   first` conclusion may make a qualifying question the highest-ranked route,
+   but it remains inside the plan.
 2. `responded` rows (draft the interview cheatsheet).
 3. `offer` rows (draft negotiation prep).
 
@@ -410,14 +420,12 @@ active scoring/advancement policy permits it; that gate is automation policy, no
 a stage.
 
 For an interactive run with no target, additionally surface the smallest useful
-next step for active non-agent rows: `applied` rows with an overdue follow-up
-reminder, `qualifying_sent` rows whose gating question is stale (past
-`qualifying_stale_days`, surfaced by `followup-cadence.mjs` as an
-apply-or-discard decision), and user-owned `_ready` rows whose waiting artifact
-and blocker should be re-presented. Cap the whole set at three.
+next step for active non-agent rows: `approached` rows whose review is due or
+cold, and user-owned `_ready` rows whose waiting artifact and blocker should be
+re-presented. Cap the whole set at three.
 
 Do not select `skip`, `rejected`, or `discarded` rows, and never advance a `user`-
-or `company`-owned stage in `auto`, unless the user explicitly asks.
+or `external`-owned stage in `auto`, unless the user reports the factual event.
 
 Completion criterion: the selected target set is unambiguous and small enough to
 produce useful packs.
@@ -431,14 +439,10 @@ table:
 - `agent` stage -> draft the `suggests` artifact. This is what an `auto` run does.
 - `user` stage -> the `suggests` value is the real-world action the user must take;
   re-present the waiting artifact and the blocker, but do not advance the stage.
-- `company` stage (`applied`) -> no action. If the follow-up cadence is due, surface
-  a follow-up reminder; the user may on-demand request `draft_outreach`.
-- `company` stage (`qualifying_sent`) -> no action; a pre-application wait on the
-  recruiter's answer. If `followup-cadence.mjs` flags it stale (past
-  `qualifying_stale_days`), surface an apply-or-discard decision: recommend
-  applying anyway when the gate was marginal (comp/level curiosity), or
-  discarding when it was a hard blocker (work authorization, relocation) still
-  unanswered. Read the report's `final_decision`/gating notes to judge which.
+- `external` stage (`approached`) -> no factual lifecycle action. Run the
+  Communication Planner's Wait Review over confirmed attempts and cadence. Not
+  due means preserve the wait. Due means draft the best next route. Cold means
+  recommend another route, deprioritization, or discard for the user to decide.
 - `none` stage -> nothing to do.
 
 Use report `Machine Summary`, tracker notes, and follow-up cadence as supporting
@@ -453,35 +457,31 @@ Before drafting, load the behavior owner for the chosen `suggests` action:
 
 | `suggests` action | Load |
 |-------------------|------|
-| `generate_application_pack` | `modes/apply.md`, `modes/contact.md`, optionally `modes/cover.md` |
-| `draft_qualifying_questions` | `modes/contact.md` (recruiter discovery) + the report's `final_decision`/gating notes — draft ONE tight qualifying question |
-| `send_qualifying_questions` | the drafted qualifying pack in `output/next-packs/` (verify it is ready to send) |
-| `send_application` | the drafted pack in `output/next-packs/` (verify it is ready to send) |
-| `draft_outreach`, `send_outreach` | `modes/contact.md` |
-| `follow_up` | `modes/followup.md` |
+| `generate_approach_plan` | `modes/communication-planner.md`, `modes/apply.md`, `modes/contact.md`, `modes/followup.md`, optionally `modes/cover.md` |
+| `execute_approach` | the ranked plan in `output/next-packs/` (verify the selected route is executable) |
+| `review_approach` | `modes/communication-planner.md` Wait Review, `approach-evidence.mjs`, attempts, cadence, and the current plan |
 | `generate_interview_cheatsheet`, `regenerate_cheatsheet` | `modes/interview-prep.md`, the report, and `modes/heuristics/recruiter-side.md` |
 | `attend_interview_and_report` | the drafted cheatsheet in `output/next-packs/` |
 | `generate_negotiation_prep` | report, `config/profile.yml`, `modes/_profile.md`, and current market research |
 | `negotiate_and_report` | the drafted negotiation prep in `output/next-packs/` |
 
 Loading a behavior owner means running its relevant steps, not just reading its
-file. In particular, `generate_application_pack`, `draft_qualifying_questions`,
-and any `draft_outreach`, `send_outreach`, or `follow_up` action MUST run
+file. In particular, `generate_approach_plan` and every sendable route inside it MUST run
 `modes/contact.md` step 1 (contact discovery) and step 7 (send action sections)
 so the pack names a real recruiter or hiring manager, links
 their profile, carries a real deliverable address when email is used, and tells
 the candidate which target/channel/timing to use first in the ordered send
 sections. Do not emit an email draft you have no address to send to. Under the
-default advancement policy, when the report's `final_decision` is `Research
-first` and the row has not already qualified, draft
-`draft_qualifying_questions` instead of the application pack. When `_custom.md`
-disables automatic qualifying, follow the precedence section above instead.
+The planner decides whether a qualifying question, parallel contact, formal
+application, referral, personalized medium, or follow-up is ranked first.
 
 Pack contents by `suggests` artifact (agent stages draft these; the paired user
 `_ready` stage re-presents the already-drafted artifact plus the exact real-world
 action and what to confirm, it does not invent a new pack):
 
-- `generate_application_pack` (at `evaluated`) -> application pack:
+- `generate_approach_plan` (at `evaluated`) -> ranked Approach Plan containing
+  every useful route. Include the required `## Communication Plan` and
+  `## Ranked Approaches` contract before the route-specific sections below:
   - optional `### Before You Apply`: only unresolved input, confirmations, or
     blockers that must be handled before opening/submitting the form; omit the
     section when there is no actual pre-application action
@@ -502,8 +502,7 @@ action and what to confirm, it does not invent a new pack):
     multiple visible founders, draft one tailored message per relevant founder
     (typically the CEO plus the technical/eng founder for an engineering role)
     and place them in primary/backup send order.
-- `draft_qualifying_questions` (at `evaluated`, when the active advancement
-  policy or an explicit user request permits it) -> qualifying pack:
+- qualifying-question route inside the plan:
   - `### Before You Send`: the gate being tested, which answer clears it, and
     which answer kills or pauses the application
   - `### Send the Gating Question`: the named recruiter/hiring manager and their
@@ -518,12 +517,12 @@ action and what to confirm, it does not invent a new pack):
   - conditional application form mirror only when useful: after the gating send
     section, show the form URL and the fields that become relevant after the gate
     clears as a `Question | Answer | Notes` table
-- `draft_outreach` (on-demand at `applied`) -> outreach pack:
+- outreach route inside the plan or a due Wait Review:
   - primary and optional backup outreach action sections, each addressed to a
     real named contact from discovery. For a founder-led startup with no recruiter
     and multiple visible founders, draft one tailored message per relevant
     founder and place them in primary/backup send order.
-- `follow_up` (reminder at `applied`) -> follow-up pack:
+- follow-up route inside a due Wait Review:
   - `### Before You Follow Up`: cadence, previous touch, and any close/deprioritize
     check
   - `### Send the Follow-Up`: the follow-up destination — the address the
@@ -563,7 +562,7 @@ Markdown destination from the pack directory and verify that the target exists;
 fix or omit any broken link. This applies to CVs/resumes, cover letters, reports,
 interview prep, and every other generated artifact.
 
-Save each produced pack to:
+Save each produced Approach Plan or downstream pack to the compatibility path:
 
 ```text
 output/next-packs/{tracker_num}-{company-slug}.md
@@ -573,7 +572,7 @@ Use the tracker number when available so the Go dashboard can find the pack and
 open it from the selected row. If no tracker number exists, use the report
 number. The final response must include the saved path.
 
-**Saving the pack is not the end of the step. The instant an agent-owned pack is
+**Saving the plan or pack is not the end of the step. The instant an agent-owned artifact is
 saved you MUST advance its row (step 6). Producing the pack and advancing the row
 are one inseparable action — never do the first without the second.** A drafted
 pack left on an un-advanced `evaluated`, `responded`, or `offer` row is a bug: the
@@ -582,12 +581,33 @@ unattended automations that delegate to this mode) re-drafts the same pack forev
 
 Pack format:
 
-In the application template below, omit `### Before You Apply` and its body
+In the Approach Plan template below, omit `### Before You Apply` and its body
 entirely when no unresolved preflight remains. The placeholder demonstrates the
 shape only; it does not make the section mandatory.
 
 ````markdown
 ## Next: {Company} -- {Role} (#{tracker_num})
+
+**Strategy:** {register}; signal: {one or two proof anchors}; first route: {route}
+
+## Communication Plan
+
+**Context:** {room and recipient logic}
+**Register:** {how the communication should feel}
+**Objective:** {one result to earn}
+**Proof anchors:** {one or two source-backed anchors}
+**Evidence basis:** {personal evidence conclusion or explicit insufficiency}
+**Missing blockers:** {none or exact blockers}
+
+## Ranked Approaches
+
+### 1. Best: {route label}
+- **Route:** {typed route}
+- **To:** {real recipient and destination}
+- **Channel:** {channel}
+- **Timing:** {now / condition}
+- **Why first:** {one line}
+- **Report back:** `I approached #{tracker_num} via {route/channel} on {date}.`
 
 **Decision:** {draft / send / follow up / prep / negotiate / close}
 **Next step:** {one short human sentence}
@@ -694,14 +714,12 @@ by the current stage's `next_states` and the owner's required trigger has happen
   node advance-stage.mjs {tracker_num}
   ```
 
-  It reads `templates/states.yml`, advances the row (`evaluated → application_ready`
-  or, for a drafted qualifying question, `evaluated → qualifying_ready`;
+  It reads `templates/states.yml`, advances the row (`evaluated → approach_ready`;
   `responded → interview_ready`; `offer → offer_ready`), and syncs the saved pack's
   `**Stage:**/**Owner:**/**Suggests:**` header to the destination stage so the
-  dashboard keeps the pack openable and shows the right next step (e.g. "Send
-  application"). The advancer routes an `evaluated` row by the drafted pack's
-  `**Suggests:**` artifact — `generate_application_pack` → `application_ready`,
-  `draft_qualifying_questions` → `qualifying_ready` — so write that header to match
+  dashboard keeps the plan openable and shows the right next step. The drafted
+  Approach Plan carries `**Suggests:** generate_approach_plan`, which routes to
+  `approach_ready`, so write that header to match
   the artifact you drafted. This is a safe draft-exists write, allowed in `auto`.
   Never leave a drafted pack on an un-advanced `evaluated`/`responded`/`offer` row.
   To advance every row that already has a drafted pack in one pass, run
@@ -712,18 +730,17 @@ by the current stage's `next_states` and the owner's required trigger has happen
   never pass that flag. The CLI accepts it only for one explicit tracker number
   on a human TTY, rejects `--reconcile` and `--json`, and requires the user to
   type the tracker number as confirmation.
-- User stage: advance only after the user reports the real-world action -- "I sent
-  the application" -> `applied`; "I sent the qualifying questions" -> `qualifying_sent`
-  (also append a `[qualifying-sent YYYY-MM-DD]` marker to the row's notes — it
-  anchors the staleness nudge in `followup-cadence.mjs`); "I sent the outreach" ->
-  back to `applied`; "I did the interview" -> `interview_ready`, `offer`, or
-  `rejected`; "I accepted" -> `accepted`. Record the date in the date column.
-- Company stage (`applied`): advance only when the user reports a company event.
-- Company stage (`qualifying_sent`): advance only when the user reports the
-  recruiter's answer -- a cleared gate -> `evaluated` (now draft the application
-  pack; the `[qualifying-sent …]` marker keeps it from re-qualifying), a dealbreaker
-  -> `skip` or `discarded`.
-- If the user sent a follow-up, append `data/follow-ups.md`.
+- `approach_ready` user stage: after the user reports a real-world action, record
+  exactly that action with `node record-approach.mjs`. The first confirmed attempt
+  moves the Opportunity to `approached`; additional attempts append facts and keep
+  the same Stage. Formal application, qualifying question, outreach, referral,
+  personalized media, in-person contact, and follow-up are typed attempts.
+- `external` stage (`approached`): change factual Stage only when the user reports
+  a substantive reply, rejection, or another external event. A due date or cold
+  cadence refreshes the plan, never the Stage.
+- Continue writing `data/follow-ups.md` for compatibility when a confirmed attempt
+  is a follow-up, but `data/approach-attempts.md` is the canonical pre-response
+  interaction history.
 - If the user discards an opportunity, set the stage to `discarded` or `skip` only
   when they ask.
 

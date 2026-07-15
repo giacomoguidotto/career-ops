@@ -6,9 +6,7 @@ import { careerOpsRoot } from "@/lib/career-ops";
 /**
  * ACL for templates/states.yml — the SINGLE SOURCE OF TRUTH for canonical
  * application states (career-ops writer + dashboard reader both read it). Per the
- * web↔core contract we READ it live and never hardcode the list (the maintainer
- * once mis-listed it from memory — the file had one more). The FALLBACK below is
- * only a last resort if the file is unreadable, and is kept identical to the file.
+ * web↔core contract we READ it live and never hardcode the list.
  */
 export type CanonicalState = {
   id: string;
@@ -17,17 +15,6 @@ export type CanonicalState = {
   description: string;
   group: string;
 };
-
-const FALLBACK: CanonicalState[] = [
-  { id: "evaluated", label: "Evaluated", aliases: ["evaluada"], description: "Offer evaluated with report, pending decision", group: "evaluated" },
-  { id: "applied", label: "Applied", aliases: ["aplicado", "enviada", "aplicada", "sent"], description: "Application submitted", group: "applied" },
-  { id: "responded", label: "Responded", aliases: ["respondido"], description: "Company has responded (not yet interview)", group: "responded" },
-  { id: "interview", label: "Interview", aliases: ["entrevista"], description: "Active interview process", group: "interview" },
-  { id: "offer", label: "Offer", aliases: ["oferta"], description: "Offer received", group: "offer" },
-  { id: "rejected", label: "Rejected", aliases: ["rechazado", "rechazada"], description: "Rejected by company", group: "rejected" },
-  { id: "discarded", label: "Discarded", aliases: ["descartado", "descartada", "cerrada", "cancelada"], description: "Discarded by candidate or offer closed", group: "discarded" },
-  { id: "skip", label: "SKIP", aliases: ["no_aplicar", "no aplicar", "skip", "monitor"], description: "Doesn't fit, don't apply", group: "skip" },
-];
 
 let cache: CanonicalState[] | null = null;
 
@@ -57,8 +44,8 @@ export function readCanonicalStates(): CanonicalState[] {
   } catch {
     /* fall through to fallback */
   }
-  cache = FALLBACK;
-  return FALLBACK;
+  cache = [];
+  return cache;
 }
 
 export function canonicalLabels(): string[] {

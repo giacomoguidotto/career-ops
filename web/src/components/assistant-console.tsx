@@ -125,7 +125,7 @@ function msgText(m: Msg): string {
   return m.parts.filter((p): p is Extract<Part, { type: "text" }> => p.type === "text").map((p) => p.text).join(" ").trim();
 }
 
-export function AssistantConsole() {
+export function AssistantConsole({ canonicalStatuses }: { canonicalStatuses: string[] }) {
   const [open, setOpen] = useState(false);
   const [cliId, setCliId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -237,6 +237,7 @@ export function AssistantConsole() {
       startJob,
       inbox: pipelineRef.current.inbox,
       applications: pipelineRef.current.applications,
+      canonicalStatuses,
       jobForUrl: (url) => {
         const m = jobsRef.current.filter((j) => j.input === url).sort((a, b) => b.startedAt - a.startedAt);
         return m[0];

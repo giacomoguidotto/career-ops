@@ -1,10 +1,13 @@
 # Personal data (user fills these)
+node_modules
+**/node_modules/
 cv.md
 article-digest.md
 data/applications.md
 data/application-actions.yml
 data/applications.db
 data/follow-ups.md
+data/approach-attempts.md
 data/candidacy-clusters.md
 data/salary-observations.tsv
 data/pipeline.md

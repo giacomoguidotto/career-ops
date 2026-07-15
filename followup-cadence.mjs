@@ -2,13 +2,8 @@
 /**
  * followup-cadence.mjs — Follow-up Cadence Tracker for career-ops
  *
- * Parses applications.md + follow-ups.md, calculates follow-up cadence
- * for active applications, extracts contacts, and flags overdue entries.
- *
- * It also nudges the pre-application `qualifying_sent` wait: a gating question
- * unanswered past `qualifying_stale` days (default 7) surfaces as an overdue
- * apply-or-discard decision, anchored on the `[qualifying-sent YYYY-MM-DD]`
- * marker in the row's notes.
+ * Parses the Opportunity tracker, append-only Approach Attempts, and legacy
+ * follow-ups, then derives waiting, due, and cold review attention states.
  *
  * Run: node followup-cadence.mjs             (JSON to stdout)
  *      node followup-cadence.mjs --summary   (human-readable dashboard)
@@ -22,12 +17,14 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { dashboardGroup, resolveState } from './tracker-utils.mjs';
+import { readApproachAttempts } from './approach-attempts.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
   ? join(CAREER_OPS, 'data/applications.md')
   : join(CAREER_OPS, 'applications.md');
 const FOLLOWUPS_FILE = join(CAREER_OPS, 'data/follow-ups.md');
+const ATTEMPTS_FILE = join(CAREER_OPS, 'data/approach-attempts.md');
 const PROFILE_FILE = process.env.CAREER_OPS_PROFILE || join(CAREER_OPS, 'config/profile.yml');
 
 
@@ -91,11 +88,11 @@ export function resolveCadenceConfig({ profilePath = PROFILE_FILE, appliedDays =
 const CADENCE = resolveCadenceConfig();
 
 // --- Status normalization (dashboard_group per templates/states.yml) ---
-// Follow-up cadence is about rows where the ball is with the company. We key it
+// Review cadence is about rows where the ball is with an external party. We key it
 // on the coarse dashboard_group from the state machine (via tracker-utils), so
-// the finer stages roll up correctly: Outreach Ready → applied, Interview Ready
+// the finer stages roll up correctly: legacy Applied → approached, Interview Ready
 // → interview. Unknown statuses fall back to their cleaned lowercase word.
-const ACTIONABLE_STATUSES = ['applied', 'responded', 'interview'];
+const ACTIONABLE_STATUSES = ['approached', 'responded', 'interview'];
 
 export function normalizeStatus(raw) {
   const cleaned = String(raw ?? '').replace(/\*\*/g, '').trim().toLowerCase()
@@ -254,7 +251,7 @@ export function resolveReportPath(reportField, appsFile = APPS_FILE, repoRoot = 
 
 // --- Compute urgency ---
 export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount) {
-  if (status === 'applied') {
+  if (status === 'approached' || status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return 'cold';
     if (followupCount === 0 && daysSinceApp >= CADENCE.applied_first) return 'overdue';
     if (followupCount > 0 && daysSinceLastFollowup !== null && daysSinceLastFollowup >= CADENCE.applied_subsequent) return 'overdue';
@@ -282,7 +279,7 @@ export function computeQualifyingUrgency(daysSinceSent, cadence = CADENCE) {
 
 // --- Compute next follow-up date ---
 export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
-  if (status === 'applied') {
+  if (status === 'approached' || status === 'applied') {
     if (followupCount >= CADENCE.applied_max_followups) return null; // cold
     if (followupCount === 0) return addDays(parseDate(appDate), CADENCE.applied_first);
     if (lastFollowupDate) return addDays(parseDate(lastFollowupDate), CADENCE.applied_subsequent);
@@ -306,6 +303,7 @@ function analyze() {
   }
 
   const followups = parseFollowups();
+  const approachAttempts = readApproachAttempts(ATTEMPTS_FILE);
   const overrides = parseOverrides();
 
   // Group follow-ups by app number
@@ -313,6 +311,11 @@ function analyze() {
   for (const fu of followups) {
     if (!followupsByApp.has(fu.appNum)) followupsByApp.set(fu.appNum, []);
     followupsByApp.get(fu.appNum).push(fu);
+  }
+  const attemptsByOpportunity = new Map();
+  for (const attempt of approachAttempts) {
+    if (!attemptsByOpportunity.has(attempt.opportunity)) attemptsByOpportunity.set(attempt.opportunity, []);
+    attemptsByOpportunity.get(attempt.opportunity).push(attempt);
   }
 
   const now = today();
@@ -357,21 +360,26 @@ function analyze() {
     const normalized = normalizeStatus(app.status);
     if (!ACTIONABLE_STATUSES.includes(normalized)) continue;
 
-    // Prefer the "Applied YYYY-MM-DD" date from notes; fall back to the column.
-    const appliedDate = parseAppliedDate(app.notes) || app.date;
+    const attempts = (attemptsByOpportunity.get(app.num) || []).sort((a, b) => b.date.localeCompare(a.date));
+    const latestAttempt = attempts[0] || null;
+    // Confirmed attempts are authoritative. Legacy Applied notes remain a
+    // compatibility fallback until migration is applied.
+    const appliedDate = latestAttempt?.date?.slice(0, 10) || parseAppliedDate(app.notes) || app.date;
     const appDate = parseDate(appliedDate);
     if (!appDate) continue;
 
     const daysSinceApp = daysBetween(appDate, now);
     const appFollowups = followupsByApp.get(app.num) || [];
-    const followupCount = appFollowups.length;
+    const attemptFollowups = attempts.filter((attempt) => attempt.type === 'follow_up');
+    const followupCount = attempts.length > 0 ? attemptFollowups.length : appFollowups.length;
 
     // Find most recent follow-up
     let lastFollowupDate = null;
     let daysSinceLastFollowup = null;
-    if (appFollowups.length > 0) {
-      const sorted = appFollowups.sort((a, b) => (a.date > b.date ? -1 : 1));
-      lastFollowupDate = sorted[0].date;
+    const latestFollowupDate = attemptFollowups.map((attempt) => attempt.date.slice(0, 10)).sort().at(-1)
+      || appFollowups.map((followup) => followup.date).sort().at(-1);
+    if (latestFollowupDate) {
+      lastFollowupDate = latestFollowupDate;
       const lastDate = parseDate(lastFollowupDate);
       if (lastDate) daysSinceLastFollowup = daysBetween(lastDate, now);
     }
@@ -411,6 +419,10 @@ function analyze() {
       notes: app.notes,
       reportPath,
       contacts,
+      attemptCount: attempts.length,
+      latestAttempt,
+      channelsTried: [...new Set(attempts.map((attempt) => attempt.channel))],
+      formalSubmitted: attempts.some((attempt) => attempt.type === 'formal_application'),
       daysSinceApplication: daysSinceApp,
       daysSinceLastFollowup,
       followupCount,

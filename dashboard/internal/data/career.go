@@ -194,6 +194,7 @@ func ParseDashboardRows(careerOpsPath string) []model.DashboardRow {
 	enrichAppURLsByCompany(careerOpsPath, apps)
 
 	apps = appendLiveQueueRows(careerOpsPath, apps)
+	enrichApproachAttempts(careerOpsPath, apps)
 	enrichNextActions(careerOpsPath, apps)
 
 	return apps
@@ -936,9 +937,14 @@ func enrichNextActions(careerOpsPath string, apps []model.DashboardRow) {
 	sm := states()
 	packs := loadNextPackPaths(careerOpsPath)
 	now := time.Now()
+	cadence := loadApproachCadence(careerOpsPath)
+	overrides := loadApproachReviewOverrides(careerOpsPath)
 
 	for i := range apps {
-		rec := deriveNextAction(apps[i], now, sm)
+		rec := deriveNextActionWithCadence(apps[i], now, sm, cadence)
+		if override, ok := overrides[apps[i].Number]; ok {
+			rec = applyApproachReviewOverride(rec, apps[i], now, override)
+		}
 
 		apps[i].ActionState = rec.ActionState
 		apps[i].NextAction = rec.NextAction
@@ -989,6 +995,10 @@ func applicationActionKeys(app model.DashboardRow) []string {
 // Pre-evaluation batch statuses are synthesized by the pipeline and handled up
 // front. This replaces the old hand-maintained status->action table.
 func deriveNextAction(app model.DashboardRow, now time.Time, sm *stateMachine) applicationActionRecord {
+	return deriveNextActionWithCadence(app, now, sm, defaultApproachCadence())
+}
+
+func deriveNextActionWithCadence(app model.DashboardRow, now time.Time, sm *stateMachine, cadence approachCadence) applicationActionRecord {
 	switch NormalizeStatus(app.Status) {
 	case "failed":
 		return applicationActionRecord{
@@ -1038,20 +1048,11 @@ func deriveNextAction(app model.DashboardRow, now time.Time, sm *stateMachine) a
 	switch st.Owner {
 	case "agent":
 		// The automation generates the suggested artifact, then auto-advances.
-		// Preview exception — Research-first routing (mirrors modes/next.md): at
-		// `evaluated`, a row whose report decided "Research first" (encoded in the
-		// tracker note prefix) and that has not already qualified (no
-		// [qualifying-sent] marker) will have the agent draft a qualifying question,
-		// not an application pack. Showing generate_application_pack there would
-		// mislabel the real next step. The loop-guard (marker present) keeps a
-		// cleared gate showing the application draft.
-		action := st.Suggests
-		if st.ID == "evaluated" && isResearchFirstNote(app.Notes) && !hasQualifyingSentMarker(app.Notes) {
-			action = "draft_qualifying_questions"
-		}
+		// Research-first and qualifying choices live inside the Approach Plan,
+		// not in a parallel lifecycle branch.
 		return applicationActionRecord{
 			ActionState: "needs_action",
-			NextAction:  action,
+			NextAction:  st.Suggests,
 			Owner:       "agent",
 			Reason:      reason,
 		}
@@ -1063,28 +1064,49 @@ func deriveNextAction(app model.DashboardRow, now time.Time, sm *stateMachine) a
 			Owner:       "user",
 			Reason:      reason,
 		}
-	case "company":
-		// Pure wait; surface a follow-up reminder once the cadence is due.
-		anchor := app.LastContact
-		if anchor == "" {
-			anchor = app.Date
-		}
-		due := addDays(anchor, 7)
-		if due == "" || !dateAfter(due, now) {
+	case "external":
+		// Pure wait; derive review attention from confirmed Approach Attempts.
+		if app.AttemptCount == 0 {
 			return applicationActionRecord{
 				ActionState: "needs_action",
-				NextAction:  "follow_up",
+				NextAction:  "review_approach",
+				Owner:       "user",
+				Reason:      "Approached has no confirmed attempt; review migration ambiguity and the current plan.",
+			}
+		}
+		anchor := app.LatestAttemptDate
+		if anchor == "" {
+			anchor = app.LastContact
+		}
+		if app.FollowupAttemptCount >= cadence.MaxFollowups {
+			return applicationActionRecord{
+				ActionState: "needs_action",
+				NextAction:  "review_approach",
+				Owner:       "user",
+				Reason:      "Approach is cold after the configured follow-up limit; recommend a different route, deprioritization, or discard.",
+			}
+		}
+		days := cadence.FirstDays
+		if app.FollowupAttemptCount > 0 {
+			days = cadence.SubsequentDays
+		}
+		due := addDays(anchor, days)
+		if due == "" || !dateAfter(due, now) {
+			reason := "Approach review is due; generate the best next route from confirmed attempts."
+			return applicationActionRecord{
+				ActionState: "needs_action",
+				NextAction:  "review_approach",
 				Owner:       "user",
 				DueAfter:    due,
-				Reason:      "Application is past the default follow-up cadence.",
+				Reason:      reason,
 			}
 		}
 		return applicationActionRecord{
 			ActionState: "waiting",
-			NextAction:  "follow_up",
-			Owner:       "company",
+			NextAction:  "review_approach",
+			Owner:       "external",
 			DueAfter:    due,
-			WaitingOn:   "company response",
+			WaitingOn:   "external response",
 			Reason:      reason,
 		}
 	default: // owner: none -- terminal
@@ -1693,7 +1715,7 @@ func StatusPriority(status string) int {
 		return 5
 	case "responded":
 		return 6
-	case "applied":
+	case "approached":
 		return 7
 	case "evaluated":
 		return 8
@@ -1751,31 +1773,31 @@ func ComputeProgressMetrics(apps []model.DashboardRow) model.ProgressMetrics {
 	}
 
 	// Funnel: each stage counts all apps that reached at least that stage.
-	// An app in "interview" has passed through evaluated -> applied -> responded ->
+	// An Opportunity in "interview" has passed through evaluated -> approached -> responded ->
 	// interview; an "accepted" app also passed through offer. Stages map back to
 	// their dashboard_group via NormalizeStatus, so the finer stage vocabulary
-	// (application_ready, interview_ready, ...) rolls up into these buckets.
+	// (approach_ready, interview_ready, ...) rolls up into these buckets.
 	total := len(apps)
 	accepted := statusCounts["accepted"]
 	offer := statusCounts["offer"] + accepted
 	interview := statusCounts["interview"] + offer
 	responded := statusCounts["responded"] + interview
-	applied := statusCounts["applied"] + responded + statusCounts["rejected"]
+	approached := statusCounts["approached"] + responded + statusCounts["rejected"]
 
 	pm.FunnelStages = []model.FunnelStage{
 		{Label: "Evaluated", Count: total, Pct: 100.0},
-		{Label: "Applied", Count: applied, Pct: safePct(applied, total)},
-		{Label: "Responded", Count: responded, Pct: safePct(responded, applied)},
-		{Label: "Interview", Count: interview, Pct: safePct(interview, applied)},
-		{Label: "Offer", Count: offer, Pct: safePct(offer, applied)},
-		{Label: "Accepted", Count: accepted, Pct: safePct(accepted, applied)},
+		{Label: "Approached", Count: approached, Pct: safePct(approached, total)},
+		{Label: "Responded", Count: responded, Pct: safePct(responded, approached)},
+		{Label: "Interview", Count: interview, Pct: safePct(interview, approached)},
+		{Label: "Offer", Count: offer, Pct: safePct(offer, approached)},
+		{Label: "Accepted", Count: accepted, Pct: safePct(accepted, approached)},
 	}
 
-	// Rates (relative to applied)
-	if applied > 0 {
-		pm.ResponseRate = float64(responded) / float64(applied) * 100
-		pm.InterviewRate = float64(interview) / float64(applied) * 100
-		pm.OfferRate = float64(offer) / float64(applied) * 100
+	// Rates (relative to Approached Opportunities)
+	if approached > 0 {
+		pm.ResponseRate = float64(responded) / float64(approached) * 100
+		pm.InterviewRate = float64(interview) / float64(approached) * 100
+		pm.OfferRate = float64(offer) / float64(approached) * 100
 	}
 
 	// Score distribution

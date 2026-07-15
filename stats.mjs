@@ -24,29 +24,31 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { normalizeStatus } from './followup-cadence.mjs';
+import { parseApproachAttempts } from './approach-attempts.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const APPS_FILE = join(ROOT, 'data', 'applications.md');
 const SCAN_HISTORY_FILE = join(ROOT, 'data', 'scan-history.tsv');
 const FOLLOWUPS_FILE = join(ROOT, 'data', 'follow-ups.md');
+const ATTEMPTS_FILE = join(ROOT, 'data', 'approach-attempts.md');
 const SCAN_RUNS_FILE = join(ROOT, 'data', 'scan-runs.tsv');
 const PORTALS_FILE = join(ROOT, 'portals.yml');
 
-const CANONICAL_STATUSES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Rejected', 'Discarded', 'SKIP'];
+const CANONICAL_STATUSES = ['Evaluated', 'Approached', 'Responded', 'Interview', 'Offer', 'Accepted', 'Rejected', 'Discarded', 'SKIP'];
 
 // In-flight applications. Deliberately NARROWER than the dashboard's
 // ActiveApps (which also counts Evaluated): an evaluated-but-never-sent row is
 // a candidate, not an application in flight.
-const ACTIVE_STATUSES = new Set(['Applied', 'Responded', 'Interview', 'Offer']);
+const ACTIVE_STATUSES = new Set(['Approached', 'Responded', 'Interview', 'Offer']);
 
-// Rows that count toward avgScoreApplied — jobs the user actually pursued.
+// Rows that count toward avgScoreApproached — opportunities the user pursued.
 // Plain avgScore mixes in SKIP/Discarded and understates real fit.
-const PURSUED_STATUSES = new Set(['Applied', 'Responded', 'Interview', 'Offer', 'Rejected']);
+const PURSUED_STATUSES = new Set(['Approached', 'Responded', 'Interview', 'Offer', 'Accepted', 'Rejected']);
 
 const round1 = (n) => Math.round(n * 10) / 10;
 const pct = (part, total) => (total > 0 ? round1((part / total) * 100) : 0);
 
-/** Canonical display form ("aplicado" → "Applied", "skip" → "SKIP"); unknown → "Unknown" (counted, never dropped). */
+/** Canonical display form (legacy "aplicado" → "Approached", "skip" → "SKIP"); unknown → "Unknown". */
 function canonicalStatus(raw) {
   const norm = normalizeStatus(String(raw ?? ''));
   if (norm === 'skip') return 'SKIP';
@@ -90,7 +92,7 @@ export function computeTrackerStats(content) {
     total,
     byStatus,
     avgScore: scoreCount > 0 ? round1(scoreSum / scoreCount) : null,
-    avgScoreApplied: pursuedCount > 0 ? round1(pursuedSum / pursuedCount) : null,
+    avgScoreApproached: pursuedCount > 0 ? round1(pursuedSum / pursuedCount) : null,
     topScore: topScore > 0 ? topScore : null,
     pdfPct: pct(withPdf, total),
     reportPct: pct(withReport, total),
@@ -115,11 +117,11 @@ export function trackerStatusByNum(content) {
 /**
  * Cumulative funnel: everX = "reached stage X or beyond, ever". The math
  * mirrors the dashboard's ComputeProgressMetrics (career.go): Rejected counts
- * into everApplied (a rejection proves a submission), and each later stage
- * sums itself plus everything beyond it. Rates are relative to everApplied.
+ * into everApproached (a rejection proves pursuit), and each later stage
+ * sums itself plus everything beyond it. Rates are relative to everApproached.
  *
- * Keys are deliberately NOT bare status names — `tracker.byStatus.Applied` is
- * "currently in Applied" while `everApplied` is "ever applied"; the same word
+ * Keys are deliberately NOT bare status names — `tracker.byStatus.Approached` is
+ * "currently Approached" while `everApproached` is "ever approached"; the same word
  * for two different numbers would read as a bug.
  *
  * Known limitation: statuses are snapshots, so a Rejected row that never got a
@@ -132,19 +134,19 @@ export function trackerStatusByNum(content) {
  */
 export function computeFunnel(byStatus) {
   const n = (k) => byStatus[k] || 0;
-  const everApplied = n('Applied') + n('Responded') + n('Interview') + n('Offer') + n('Rejected');
-  const everResponded = n('Responded') + n('Interview') + n('Offer');
-  const everInterview = n('Interview') + n('Offer');
-  const everOffer = n('Offer');
+  const everApproached = n('Approached') + n('Responded') + n('Interview') + n('Offer') + n('Accepted') + n('Rejected');
+  const everResponded = n('Responded') + n('Interview') + n('Offer') + n('Accepted');
+  const everInterview = n('Interview') + n('Offer') + n('Accepted');
+  const everOffer = n('Offer') + n('Accepted');
   return {
-    everApplied,
+    everApproached,
     everResponded,
     everInterview,
     everOffer,
-    responseRate: pct(everResponded, everApplied),
-    interviewRate: pct(everInterview, everApplied),
-    offerRate: pct(everOffer, everApplied),
-    smallSample: everApplied < 10,
+    responseRate: pct(everResponded, everApproached),
+    interviewRate: pct(everInterview, everApproached),
+    offerRate: pct(everOffer, everApproached),
+    smallSample: everApproached < 10,
   };
 }
 
@@ -258,35 +260,45 @@ export function computePortalStats(portalsYmlContent, scanStats, producingCompan
 // ── Follow-up compliance ────────────────────────────────────────────
 
 /**
- * Follow-up compliance from follow-ups.md (same table shape followup-cadence
- * parses: | num | appNum | date | company | role | channel | contact | notes |).
- * appliedWithoutFollowup counts tracker rows currently in Applied with zero
+ * Follow-up compliance from the canonical Approach Attempt ledger. Legacy
+ * follow-ups.md is accepted only as a fallback when the ledger is absent.
+ * approachedWithoutFollowup counts tracker rows currently Approached with zero
  * logged follow-ups — the rows the followup mode would flag as aging silently.
  *
- * @param {string} followupsContent - Raw follow-ups.md text.
+ * @param {string} attemptsContent - Raw approach-attempts.md text.
  * @param {Map<number,string>} trackerByNum - From trackerStatusByNum().
+ * @param {string|null} legacyFollowupsContent - Raw follow-ups.md fallback.
  */
-export function computeFollowupStats(followupsContent, trackerByNum) {
+export function computeFollowupStats(attemptsContent, trackerByNum, legacyFollowupsContent = null) {
   const byApp = new Map();
   let totalFollowups = 0;
-  for (const line of String(followupsContent ?? '').replace(/\r/g, '').split('\n')) {
-    if (!line.startsWith('|')) continue;
-    const parts = line.split('|').map((s) => s.trim());
-    if (parts.length < 8) continue;
-    const num = parseInt(parts[1], 10);
-    const appNum = parseInt(parts[2], 10);
-    if (Number.isNaN(num) || Number.isNaN(appNum)) continue; // header/separator
-    totalFollowups++;
-    byApp.set(appNum, (byApp.get(appNum) || 0) + 1);
+  const attempts = parseApproachAttempts(attemptsContent);
+  if (attempts.length > 0) {
+    for (const attempt of attempts) {
+      if (attempt.type !== 'follow_up') continue;
+      totalFollowups++;
+      byApp.set(attempt.opportunity, (byApp.get(attempt.opportunity) || 0) + 1);
+    }
+  } else {
+    for (const line of String(legacyFollowupsContent ?? '').replace(/\r/g, '').split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const parts = line.split('|').map((s) => s.trim());
+      if (parts.length < 8) continue;
+      const num = parseInt(parts[1], 10);
+      const appNum = parseInt(parts[2], 10);
+      if (Number.isNaN(num) || Number.isNaN(appNum)) continue;
+      totalFollowups++;
+      byApp.set(appNum, (byApp.get(appNum) || 0) + 1);
+    }
   }
-  let appliedWithoutFollowup = 0;
+  let approachedWithoutFollowup = 0;
   for (const [num, status] of trackerByNum) {
-    if (status === 'Applied' && !byApp.has(num)) appliedWithoutFollowup++;
+    if (status === 'Approached' && !byApp.has(num)) approachedWithoutFollowup++;
   }
   return {
     totalFollowups,
     appsWithFollowups: byApp.size,
-    appliedWithoutFollowup,
+    approachedWithoutFollowup,
     avgPerApp: byApp.size > 0 ? round1(totalFollowups / byApp.size) : 0,
   };
 }
@@ -349,6 +361,7 @@ export function computeAllStats({
   appsFile = APPS_FILE,
   scanHistoryFile = SCAN_HISTORY_FILE,
   followupsFile = FOLLOWUPS_FILE,
+  attemptsFile = ATTEMPTS_FILE,
   scanRunsFile = SCAN_RUNS_FILE,
   portalsFile = PORTALS_FILE,
 } = {}) {
@@ -356,6 +369,7 @@ export function computeAllStats({
   const apps = read(appsFile);
   const scanHist = read(scanHistoryFile);
   const fups = read(followupsFile);
+  const attempts = read(attemptsFile);
   const portals = read(portalsFile);
   const runs = read(scanRunsFile);
   const tracker = apps ? computeTrackerStats(apps) : null;
@@ -367,6 +381,7 @@ export function computeAllStats({
         tracker: !!apps,
         scanHistory: !!scanHist,
         followups: !!fups,
+        approachAttempts: !!attempts,
         portals: !!portals,
         scanRuns: !!runs,
       },
@@ -375,7 +390,7 @@ export function computeAllStats({
     funnel: tracker ? computeFunnel(tracker.byStatus) : null,
     scan,
     portals: portals ? computePortalStats(portals, scan, scanHist ? scanCompanyNames(scanHist) : []) : null,
-    followups: fups && apps ? computeFollowupStats(fups, trackerStatusByNum(apps)) : null,
+    followups: apps && (attempts || fups) ? computeFollowupStats(attempts, trackerStatusByNum(apps), fups) : null,
     runs: runs ? computeRunStats(runs) : null,
   };
 }
@@ -389,7 +404,7 @@ function printSummary(stats) {
   const t = stats.tracker;
   if (t) {
     const fit = t.avgScore != null
-      ? ` | avg fit ${t.avgScore}/5${t.avgScoreApplied != null ? ` (pursued roles ${t.avgScoreApplied}/5)` : ''} | top ${t.topScore}`
+      ? ` | avg fit ${t.avgScore}/5${t.avgScoreApproached != null ? ` (pursued roles ${t.avgScoreApproached}/5)` : ''} | top ${t.topScore}`
       : '';
     console.log(`Tracker:    ${t.total} total | ${t.activeApps} active${fit}`);
     const statusLine = Object.entries(t.byStatus).filter(([, c]) => c > 0).map(([s, c]) => `${s} ${c}`).join(' · ');
@@ -400,7 +415,7 @@ function printSummary(stats) {
   const f = stats.funnel;
   if (f) {
     const small = f.smallSample ? ' (small sample — rates indicative only)' : '';
-    console.log(`Funnel:     ever applied ${f.everApplied} → responded ${f.everResponded} (${f.responseRate}%) → interview ${f.everInterview} (${f.interviewRate}%) → offer ${f.everOffer} (${f.offerRate}%)${small}`);
+    console.log(`Funnel:     ever approached ${f.everApproached} → responded ${f.everResponded} (${f.responseRate}%) → interview ${f.everInterview} (${f.interviewRate}%) → offer ${f.everOffer} (${f.offerRate}%)${small}`);
   }
   const s = stats.scan;
   if (s) {
@@ -417,7 +432,7 @@ function printSummary(stats) {
   }
   const fu = stats.followups;
   if (fu) {
-    console.log(`Follow-ups: ${fu.totalFollowups} sent across ${fu.appsWithFollowups} apps | ${fu.appliedWithoutFollowup} Applied apps with none | avg ${fu.avgPerApp}/app`);
+    console.log(`Follow-ups: ${fu.totalFollowups} sent across ${fu.appsWithFollowups} opportunities | ${fu.approachedWithoutFollowup} Approached opportunities with none | avg ${fu.avgPerApp}/opportunity`);
   } else {
     console.log('Follow-ups: — no data (data/follow-ups.md missing)');
   }

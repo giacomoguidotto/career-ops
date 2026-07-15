@@ -1,13 +1,13 @@
 # Career-Ops — Canonical Lifecycle State Machine
-# Schema version: 2
+# Schema version: 3
 #
-# Single source of truth for the per-application state machine. Both the writer
+# Single source of truth for the per-opportunity state machine. Both the writer
 # (career-ops modes) and every reader (the Go dashboard, automations) MUST derive
 # routing from THIS table and never re-encode it.
 #
 # This file replaces the old two-layer model (a lifecycle status in
 # applications.md plus an action_state/next_action sidecar). There is now ONE
-# `stage` per application. The stage IS the state machine node; each node declares
+# `stage` per opportunity. The stage IS the state machine node; each node declares
 # its owner, and the owner determines how the stage advances.
 #
 # ── Ground rules: owner determines the advancement mechanism ──────────────────
@@ -25,30 +25,29 @@
 #                   here's what happened"). Only that report advances the stage.
 #                   An automation must never advance a user-owned stage.
 #
-#   owner: company  No task for anyone. A pure wait. Advances only when the user
-#                   reports a company-side event. No automation, no obligation.
-#                   Time-based nudges are reminders (followup-cadence.mjs), not
-#                   tasks and not stage changes.
+#   owner: external No task for anyone. A pure wait on a founder, recruiter,
+#                   referrer, hiring team, or another external party. Advances
+#                   only when the user reports a real-world event. No automation,
+#                   no obligation. Time-based nudges are derived attention states,
+#                   not lifecycle changes.
 #
 #   owner: none     Terminal. No further transitions.
 #
 # The automation invariant that falls out of this: an automation may only ever
 # transition OUT OF an `agent`-owned stage. It must never write a `user`- or
-# `company`-owned advance. This is what tells an automation what to do: find
+# `external`-owned advance. This is what tells an automation what to do: find
 # agent-owned stages and run their generation step.
 #
 # ── Fields ────────────────────────────────────────────────────────────────────
 #
 #   id              Machine key. Stored in applications.md (case-insensitive).
 #   label           Display/canonical text written to the tracker Status column.
-#   owner           agent | user | company | none  (see ground rules above).
+#   owner           agent | user | external | none  (see ground rules above).
 #   suggests        The proactive next thing. For agent stages: the artifact the
 #                   automation generates. For user stages: the real-world action
 #                   the user performs and reports. null for company/none.
 #   produced_by     Only on a `_ready` stage reachable from an agent stage that
-#                   can draft MORE THAN ONE artifact (today just `evaluated`,
-#                   which drafts an application pack OR — when the report's
-#                   final_decision is "Research first" — a qualifying question).
+#                   can draft MORE THAN ONE artifact.
 #                   Names the draft action that yields this stage, so the
 #                   deterministic advancer (advance-stage.mjs) routes to the
 #                   correct `_ready` stage by the artifact it just drafted.
@@ -57,9 +56,8 @@
 #                   proactively; the user asks for them (e.g. outreach drafting,
 #                   regenerating a cheatsheet for the next round).
 #   next_states     Allowed successor ids.
-#   dashboard_group Coarse funnel bucket. `_ready` and subloop stages map back to
-#                   their world-stage so the 5-stage funnel and status sorting are
-#                   unchanged by the finer vocabulary.
+#   dashboard_group Coarse funnel bucket. Ready stages map back to the nearest
+#                   world stage so the funnel stays coarser than lifecycle detail.
 #   aliases         Legacy/i18n status strings that normalize to this id.
 #
 # ── Tracker rule ──────────────────────────────────────────────────────────────
@@ -67,107 +65,61 @@
 # (case-insensitive). No markdown bold (**), no dates, no extra text. Dates go in
 # the date column.
 
-version: 2
+version: 3
 
 states:
-  # ── Spine: evaluated → application_ready → applied → responded →
+  # ── Spine: evaluated → approach_ready → approached → responded →
   #           interview_ready → offer → offer_ready → accepted ──────────────────
-  # Pre-application subloop off `evaluated`: qualifying_ready → qualifying_sent
-  # (opt-in gating-question check before applying).
 
   - id: evaluated
     label: Evaluated
     owner: agent
-    suggests: generate_application_pack
-    on_demand: [draft_qualifying_questions]
-    next_states: [application_ready, qualifying_ready, skip, discarded]
+    suggests: generate_approach_plan
+    on_demand: []
+    next_states: [approach_ready, skip, discarded]
     dashboard_group: evaluated
     aliases: [evaluada, completed, condicional, hold, evaluar, verificar]
     description: >
       Offer evaluated with a report; ready for the automation to draft an
-      application pack. Scoring/strategy policy may route a row somewhere other
-      than the default draft — a sub-threshold row to discard/skip, or a report
-      whose final_decision is "Research first" into the qualifying subloop
-      (draft_qualifying_questions) to clear a gating question before investing in
-      an application. Those gates live in the automation, not in this table.
+      ranked Approach Plan. Scoring and strategy policy may route a row to a
+      closeout instead. Qualifying questions, referrals, outreach, formal
+      applications, and other routes belong inside the plan rather than creating
+      lifecycle subloops.
 
-  - id: application_ready
-    label: Application Ready
+  - id: approach_ready
+    label: Approach Ready
     owner: user
-    suggests: send_application
-    produced_by: generate_application_pack
+    suggests: execute_approach
+    produced_by: generate_approach_plan
     on_demand: []
-    next_states: [applied, discarded]
+    next_states: [approached, discarded]
     dashboard_group: evaluated
-    aliases: [app_ready, application_drafted]
+    aliases:
+      [application_ready, application ready, app_ready, application_drafted,
+       qualifying_ready, qualifying ready, qualifying_drafted,
+       outreach_ready, outreach ready, outreach_drafted]
     description: >
-      Application pack drafted and waiting for the user to submit it and report
-      "I sent the application". Not yet applied — still an evaluated-group row.
+      A ranked Approach Plan exists and is waiting for the user to execute one or
+      more routes and report exactly what happened. No real-world attempt exists
+      yet. The plan may include formal application, outreach, referral, qualifying,
+      personalized media, or another context-appropriate route.
 
-  # ── Pre-application subloop off `evaluated`: qualify the role with a gating
-  #    question (work authorization, relocation, seniority, comp floor) before
-  #    investing in a full application. Opt-in and skippable — the default spine
-  #    (evaluated → application_ready) is untouched. ──────────────────────────
-
-  - id: qualifying_ready
-    label: Qualifying Ready
-    owner: user
-    suggests: send_qualifying_questions
-    produced_by: draft_qualifying_questions
-    on_demand: []
-    next_states: [qualifying_sent, evaluated, skip, discarded]
-    dashboard_group: evaluated
-    aliases: [qualifying_drafted]
-    description: >
-      A gating/qualifying question has been drafted for the recruiter — an opt-in
-      subloop off `evaluated`, taken when the report's final_decision is "Research
-      first" or on request. Waiting for the user to send it and report "I sent the
-      questions", which moves the row to `qualifying_sent`. Abandoning the subloop
-      returns to `evaluated` to draft the application. Still an evaluated-group row.
-
-  - id: qualifying_sent
-    label: Qualifying Sent
-    owner: company
+  - id: approached
+    label: Approached
+    owner: external
     suggests: null
-    on_demand: []
-    next_states: [evaluated, application_ready, skip, discarded]
-    dashboard_group: evaluated
-    aliases: [qualifying_awaiting]
+    on_demand: [review_approach]
+    next_states: [approached, responded, rejected, discarded]
+    dashboard_group: approached
+    aliases:
+      [applied, aplicado, enviada, aplicada, sent, qualifying_sent,
+       qualifying sent, qualifying_awaiting]
     description: >
-      Qualifying question sent to the recruiter; a pure pre-application wait. No
-      task for user or agent. followup-cadence.mjs nudges after
-      `qualifying_stale_days` (default 7) with an apply-or-discard decision: if the
-      gate was marginal, apply anyway; if it was a hard blocker still unanswered,
-      discard. Advances only when the user reports the recruiter's answer — a
-      cleared gate returns to `evaluated` to draft the application, a dealbreaker
-      goes to skip/discarded. Still an evaluated-group row.
-
-  - id: applied
-    label: Applied
-    owner: company
-    suggests: null
-    on_demand: [draft_outreach, follow_up]
-    next_states: [outreach_ready, responded, rejected, discarded]
-    dashboard_group: applied
-    aliases: [aplicado, enviada, aplicada, sent]
-    description: >
-      Application submitted; the ball is with the company. Pure wait — no task
-      for user or agent. The user may on-demand ask to draft outreach; a due
-      follow-up surfaces as a reminder (followup-cadence.mjs), not a task.
-      Advances when the user reports a company event.
-
-  - id: outreach_ready
-    label: Outreach Ready
-    owner: user
-    suggests: send_outreach
-    on_demand: []
-    next_states: [applied, responded, rejected, discarded]
-    dashboard_group: applied
-    aliases: [outreach_drafted]
-    description: >
-      Outreach message drafted (an on-demand subloop off `applied`) and waiting
-      for the user to send it and report "I sent the outreach", which returns the
-      row to the `applied` wait. Still an applied-group row.
+      At least one real-world Approach Attempt has been confirmed and the next
+      substantive hiring event has not happened. Further attempts append facts
+      while the Stage remains Approached. Waiting, review due, and stale review
+      are derived attention states from attempt history and cadence. The external
+      party owns the wait; only the user can report a new event.
 
   - id: responded
     label: Responded

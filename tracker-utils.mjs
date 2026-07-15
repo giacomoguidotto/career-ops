@@ -47,11 +47,12 @@ let _statesCache = null;
  * @typedef {object} StateRecord
  * @property {string} id - Canonical stage id (e.g. `evaluated`).
  * @property {string} label - Human label (e.g. `Evaluated`).
- * @property {string} owner - `agent` | `user` | `company` | `none`.
+ * @property {string} owner - `agent` | `user` | `external` | `none`.
  * @property {string|null} suggests - The stage's proactive next action, or null.
  * @property {string|null} producedBy - For a `_ready` stage reachable from an
  *   agent stage that can draft more than one artifact, the draft action that
  *   yields it (states.yml `produced_by`); null when the pairing is unambiguous.
+ * @property {string[]} onDemand - Reactive assists available at the stage.
  * @property {string[]} nextStates - Allowed successor stage ids.
  * @property {string} group - dashboard_group.
  */
@@ -94,6 +95,7 @@ export function loadStates(options = {}) {
       owner: s.owner || 'none',
       suggests: s.suggests || null,
       producedBy: s.produced_by || null,
+      onDemand: (s.on_demand || []).map((v) => String(v)),
       nextStates: (s.next_states || []).map((v) => String(v)),
       group,
     };

@@ -21,13 +21,14 @@ These files contain your personal data, customizations, and work product. Update
 | `config/plugins.yml` | Your plugin activation toggles (opt-in; seeded from `config/plugins.example.yml`) |
 | `plugins.local/` | Your own / private plugins (never auto-updated) |
 | `plugins.lock` | Integrity pins + recorded consent for your enabled plugins (generated; never auto-updated) |
-| `data/applications.md` | Your application tracker (source of truth) |
+| `data/applications.md` | Your Opportunity tracker (source of truth; compatibility filename) |
 | `data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync` — safe to delete) |
 | `data/pipeline.md` | Your URL inbox |
 | `data/scan-history.tsv` | Your scan history |
 | `data/scan-runs.tsv` | Your per-run scan counters (appended by `scan.mjs`, read by `stats.mjs`) |
 | `data/follow-ups.md` | Your follow-up history |
-| `data/candidacy-clusters.md` | Your evidence-backed coordination registry for related Applications: Hiring-surface membership, active Primary Application, Outreach anchor, sources, and review date |
+| `data/approach-attempts.md` | Your append-only, user-confirmed real-world Approach Attempt history |
+| `data/candidacy-clusters.md` | Your evidence-backed coordination registry for related Opportunities: Hiring-surface membership, active Primary Opportunity, Outreach anchor, sources, and review date |
 | `data/offers/*` | Your received offers/contracts, promise notes, prep reports, and reply drafts (PII — gitignored, written by the `offer-prep` mode) |
 | `data/salary-observations.tsv` | Your append-only compensation observation log: `{tracker#}\t{date}\t{desired\|advertised\|actual}\t{amount}\t{currency}\t{source}\t{note}`. Written by interactive modes when a figure is stated/confirmed; never edited in place. Advertised figures come from reports' `advertised_comp` instead — reports are themselves observation sources. Read by `salary-gap.mjs` |
 | `writing-samples/*` | Your personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
@@ -65,6 +66,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `modes/offer-prep.md` | Offer-stage contract reading companion instructions |
 | `modes/interview/*` | Interview prep planning, practice, and debrief skills |
 | `modes/next.md` | Status-driven advancement instructions |
+| `modes/communication-planner.md` | Shared pre-response register, proof, route-ranking, and evidence-sufficiency contract |
 | `candidacy-select.mjs` / `candidacy-select.test.mjs` | Deterministic, read-only Hiring-surface eligibility preflight and its regression suite |
 | `modes/de/*` | German language modes |
 | `modes/fr/*` | French language modes |

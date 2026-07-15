@@ -13,31 +13,31 @@ try {
     '',
     '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
     '|---|------|---------|------|-------|--------|-----|--------|-------|',
-    '| 1 | 2026-06-01 | Acme | Eng | 4.5/5 | Applied | ✅ | [1](../reports/001-acme-2026-06-01.md) | note |',
+    '| 1 | 2026-06-01 | Acme | Eng | 4.5/5 | Approached | ✅ | [1](../reports/001-acme-2026-06-01.md) | note |',
     '| 2 | 2026-06-02 | Beta | Eng | 3.8/5 | Evaluated | ❌ | [2](../reports/002-beta-2026-06-02.md) | note |',
-    '| 3 | 2026-06-03 | Gama | Eng | 4.2/5 | Interview | ✅ | ❌ | note |',
+    '| 3 | 2026-06-03 | Gama | Eng | 4.2/5 | Interview Ready | ✅ | ❌ | note |',
   ].join('\r\n');
   const t = stats.computeTrackerStats(trackerMd);
-  if (t.total === 3 && t.byStatus.Applied === 1 && t.byStatus.Evaluated === 1
-      && t.byStatus.Interview === 1 && t.avgScore === 4.2 && t.avgScoreApplied === 4.4
+  if (t.total === 3 && t.byStatus.Approached === 1 && t.byStatus.Evaluated === 1
+      && t.byStatus.Interview === 1 && t.avgScore === 4.2 && t.avgScoreApproached === 4.4
       && t.topScore === 4.5 && t.pdfPct === 66.7 && t.reportPct === 66.7 && t.activeApps === 2) {
     pass('computeTrackerStats counts statuses, scores, pdf/report pct, active apps (CRLF input)');
   } else {
     fail(`computeTrackerStats wrong output: ${JSON.stringify(t)}`);
   }
 
-  // Funnel — Rejected counts into everApplied (mirrors dashboard ComputeProgressMetrics).
-  const f = stats.computeFunnel({ Applied: 4, Responded: 2, Interview: 1, Offer: 1, Rejected: 2, Evaluated: 9 });
-  if (f.everApplied === 10 && f.everResponded === 4 && f.everInterview === 2 && f.everOffer === 1
+  // Funnel — Rejected counts into everApproached (mirrors dashboard ComputeProgressMetrics).
+  const f = stats.computeFunnel({ Approached: 4, Responded: 2, Interview: 1, Offer: 1, Rejected: 2, Evaluated: 9 });
+  if (f.everApproached === 10 && f.everResponded === 4 && f.everInterview === 2 && f.everOffer === 1
       && f.responseRate === 40 && f.offerRate === 10 && f.smallSample === false) {
     pass('computeFunnel cumulative ever* stages match the dashboard math');
   } else {
     fail(`computeFunnel wrong output: ${JSON.stringify(f)}`);
   }
-  if (stats.computeFunnel({ Applied: 3 }).smallSample === true) {
-    pass('computeFunnel flags small samples (everApplied < 10)');
+  if (stats.computeFunnel({ Approached: 3 }).smallSample === true) {
+    pass('computeFunnel flags small samples (everApproached < 10)');
   } else {
-    fail('computeFunnel should flag everApplied < 10 as smallSample');
+    fail('computeFunnel should flag everApproached < 10 as smallSample');
   }
 
   // Lifetime scan totals — CRLF input, torn row skipped, fingerprint column tolerated.
@@ -88,19 +88,20 @@ try {
   }
 
   // Follow-up compliance.
-  const followupsMd = [
-    '# Follow-ups',
-    '| # | App | Date | Company | Role | Channel | Contact | Notes |',
-    '|---|-----|------|---------|------|---------|---------|-------|',
-    '| 1 | 1 | 2026-06-10 | Acme | Eng | email | jane | pinged |',
-    '| 2 | 1 | 2026-06-17 | Acme | Eng | email | jane | pinged again |',
-    '| 3 | 3 | 2026-06-12 | Gama | Eng | linkedin | bob | intro |',
+  const attemptsMd = [
+    '# Approach Attempts',
+    '| id | opportunity | occurredAt | type | channel | recipient | result | followUpTo | notes |',
+    '|---|---|---|---|---|---|---|---|---|',
+    '| A001 | 1 | 2026-06-01 | formal_application | ats | Acme | submitted |  | sent |',
+    '| A002 | 1 | 2026-06-10 | follow_up | email | jane | sent | A001 | pinged |',
+    '| A003 | 1 | 2026-06-17 | follow_up | email | jane | sent | A002 | pinged again |',
+    '| A004 | 3 | 2026-06-12 | follow_up | linkedin | bob | sent | A001 | intro |',
   ].join('\n');
-  const trackerByNum = new Map([[1, 'Applied'], [2, 'Applied'], [3, 'Interview']]);
-  const fu = stats.computeFollowupStats(followupsMd, trackerByNum);
+  const trackerByNum = new Map([[1, 'Approached'], [2, 'Approached'], [3, 'Interview Ready']]);
+  const fu = stats.computeFollowupStats(attemptsMd, trackerByNum);
   if (fu.totalFollowups === 3 && fu.appsWithFollowups === 2
-      && fu.appliedWithoutFollowup === 1 && fu.avgPerApp === 1.5) {
-    pass('computeFollowupStats compliance from follow-ups.md');
+      && fu.approachedWithoutFollowup === 1 && fu.avgPerApp === 1.5) {
+    pass('computeFollowupStats compliance from canonical Approach Attempts');
   } else {
     fail(`computeFollowupStats wrong output: ${JSON.stringify(fu)}`);
   }

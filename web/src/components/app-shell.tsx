@@ -18,7 +18,7 @@ import { UsageMeter } from "@/components/usage-meter";
 import { instrumentSerif } from "@/lib/fonts";
 import { NAV_ITEMS, isActivePath } from "@/lib/nav-items";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, canonicalStatuses }: { children: React.ReactNode; canonicalStatuses: string[] }) {
   const pathname = usePathname();
   return (
     <JobsProvider>
@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
         <main className="flex-1 overflow-x-hidden">{children}</main>
-        <AssistantConsole />
+        <AssistantConsole canonicalStatuses={canonicalStatuses} />
         <FirstScoreView />
         <BetaBanner />
       </div>

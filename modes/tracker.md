@@ -1,4 +1,4 @@
-# Mode: tracker — Applications Tracker
+# Mode: tracker: Opportunity Tracker
 
 Read and display `data/applications.md`.
 
@@ -20,15 +20,11 @@ With the optional Via column (intermediary channel, #1596) after Company:
 
 Possible states (single source of truth: `templates/states.yml`):
 
-Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`
-Subloops: `Qualifying Ready` → `Qualifying Sent` off `Evaluated`; `Outreach Ready` off `Applied`. Terminals: `Rejected` / `Discarded` / `SKIP`.
+Spine: `Evaluated` → `Approach Ready` → `Approached` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Terminals: `Rejected` / `Discarded` / `SKIP`.
 
-- `Evaluated` = offer evaluated with report; agent drafts the application pack (or a qualifying question when the report says `Research first`)
-- `Application Ready` = pack drafted; waiting for the user to submit and report
-- `Qualifying Ready` = gating question drafted; waiting for the user to send it to the recruiter
-- `Qualifying Sent` = gating question sent; pre-application wait on the recruiter (stale after `qualifying_stale_days`, default 7, → apply-or-discard nudge)
-- `Applied` = the candidate submitted their application; ball is with the company
-- `Outreach Ready` = outreach drafted; waiting for the user to send it
+- `Evaluated` = opportunity evaluated with report; agent drafts a ranked Approach Plan
+- `Approach Ready` = plan drafted; waiting for the user to execute one or more routes and report exactly what happened
+- `Approached` = at least one confirmed Approach Attempt exists; waiting, review due, and stale are derived from attempt history
 - `Responded` = company responded (not yet interview); agent drafts a cheatsheet
 - `Interview Ready` = cheatsheet drafted; waiting for the user to interview and report (loops for extra rounds)
 - `Offer` = job offer received; agent drafts negotiation prep
@@ -40,7 +36,7 @@ Subloops: `Qualifying Ready` → `Qualifying Sent` off `Evaluated`; `Outreach Re
 
 Each state declares an `owner` in `states.yml`: `agent` stages are drafted by
 automation; `user` stages wait on the user reporting a real-world action;
-`company` stages are a pure wait. Write EXACTLY one label above into the Status
+`external` stages are a pure wait. Write EXACTLY one label above into the Status
 column (no bold, no dates, no extra text).
 
 If the user asks to update a state, edit the corresponding row.
@@ -51,12 +47,16 @@ A plain-language report such as "I just applied to #313", "I sent the outreach",
 or "the recruiter replied" is an instruction to record confirmed reality, not
 merely news to acknowledge.
 
-1. Resolve the exact row and transition it through the canonical writer, for
-   example `node set-status.mjs 313 Applied --json`. Seed follow-up cadence when
-   the transition enters `Applied`, using the real submission date.
-2. Always inspect the JSON `candidacyCoordination` payload, including on an
-   idempotent Applied update. `sameCompanyApplications` are research leads, not
-   an automatic cluster.
+1. Resolve the exact row and record only the confirmed action through the
+   canonical writer, for example:
+   `node record-approach.mjs 313 formal_application --channel ats --recipient "BLP Digital hiring team" --occurred-at 2026-07-09 --result submitted --json`.
+   The first Attempt moves the Opportunity to `Approached`; later Attempts keep
+   that Stage. Drafts and recommendations never create Attempts.
+   Do not use `node set-status.mjs` to create `Approached`; the Attempt writer
+   owns that factual transition.
+2. Read the writer's `candidacyCoordination` result, including
+   `sameCompanyApplications`, then inspect the updated attempt ledger.
+   Same-company rows are research leads, not an automatic cluster.
 3. Execute the canonical research, fallback, and persistence contract in
    `modes/next.md` -> Candidacy Coordination. Read or update
    `data/candidacy-clusters.md`; do not abbreviate the Hiring-surface review just
@@ -64,7 +64,7 @@ merely news to acknowledge.
 4. Run `node candidacy-select.mjs --json` after persisting the review. Report its
    eligible/suppressed result for the affected company and resolve any
    `researchRequired` membership drift before recommending another Application.
-5. The newly applied Application becomes the active Primary Application for its
+5. The newly approached Opportunity becomes the active Primary Opportunity for its
    Hiring surface unless a more progressed member already reserves the cluster.
    Record the Outreach anchor when the user also confirms a first touch.
 6. Reconcile guidance, not facts: this coordination review never changes a
@@ -73,7 +73,7 @@ merely news to acknowledge.
    If a sibling pack already exists, flag it as an interactive alternate instead
    of telling the candidate to send it automatically.
 
-Report the recorded transition, follow-up seed, Primary Application, any
+Report the recorded Attempt, derived review timing, Primary Opportunity, any
 suppressed siblings, and the evidence/fallback used. Initial Outreach belongs to
 the cluster's contact history; it is not a cadence Follow-up.
 

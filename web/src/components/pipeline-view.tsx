@@ -16,10 +16,11 @@ const TABS = [
   "INBOX",
   "ALL",
   "EVALUATED",
-  "APPLIED",
+  "APPROACHED",
   "RESPONDED",
   "INTERVIEW",
   "OFFER",
+  "ACCEPTED",
   "REJECTED",
   "DISCARDED",
   "SKIP",
@@ -227,6 +228,16 @@ export function PipelineView({
                       <span className={cn("size-1.5 shrink-0 rounded-full", statusDot(r.status))} />
                       {r.status}
                     </span>
+                    {r.attemptCount ? (
+                      <span className="mt-1 block text-[11px] text-faint">
+                        {r.approachAttention === "cold" ? "cold review" : r.approachAttention === "review_due" ? "review due" : "waiting"}
+                        {` · ${r.attemptCount} attempt${r.attemptCount === 1 ? "" : "s"}`}
+                        {r.attemptChannels?.length ? ` · ${r.attemptChannels.join(", ")}` : ""}
+                        {r.formalSubmitted ? " · formal submitted" : ""}
+                        {r.latestAttempt ? ` · latest ${r.latestAttempt.type} ${r.latestAttempt.date}` : ""}
+                        {r.nextReview ? ` · next ${r.nextReview}` : ""}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-faint tabular-nums">{r.date}</td>
                 </tr>

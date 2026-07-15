@@ -107,16 +107,17 @@ const (
 
 // Filter modes
 const (
-	filterAll       = "all"
-	filterEvaluated = "evaluated"
-	filterApplied   = "applied"
-	filterInterview = "interview"
-	filterOffer     = "offer"
-	filterAccepted  = "accepted"
-	filterSkip      = "skip"
-	filterRejected  = "rejected"
-	filterDiscarded = "discarded"
-	filterQueue     = "queue"
+	filterAll        = "all"
+	filterEvaluated  = "evaluated"
+	filterApproached = "approached"
+	filterApplied    = filterApproached // compatibility for persisted/test tab references
+	filterInterview  = "interview"
+	filterOffer      = "offer"
+	filterAccepted   = "accepted"
+	filterSkip       = "skip"
+	filterRejected   = "rejected"
+	filterDiscarded  = "discarded"
+	filterQueue      = "queue"
 )
 
 type pipelineTab struct {
@@ -128,7 +129,7 @@ var pipelineTabs = []pipelineTab{
 	{filterQueue, "QUEUE"},
 	{filterAll, "ALL"},
 	{filterEvaluated, "EVALUATED"},
-	{filterApplied, "APPLIED"},
+	{filterApproached, "APPROACHED"},
 	{filterInterview, "INTERVIEW"},
 	{filterOffer, "OFFER"},
 	{filterAccepted, "ACCEPTED"},
@@ -160,7 +161,7 @@ type ColumnID int
 
 const (
 	// Optional columns — user-toggleable via the column picker (C key).
-	ColDate        ColumnID = iota // APPLIED date
+	ColDate        ColumnID = iota // tracker date
 	ColLocation                    // LOCATION city+state
 	ColPay                         // PAY range
 	ColHasReport                   // RPT: ✓/—
@@ -179,7 +180,7 @@ type colDef struct {
 }
 
 var optionalCols = []colDef{
-	{ColDate, "APPLIED", "", 10, true},
+	{ColDate, "DATE", "", 10, true},
 	{ColLocation, "LOCATION", "", 20, true},
 	{ColPay, "PAY", "", 16, true},
 	{ColHasReport, "RPT", "✓/—", 4, false},
@@ -188,10 +189,12 @@ var optionalCols = []colDef{
 	{ColNext, "NEXT STEP", "action", 22, true},
 }
 
-var statusOptions = []string{"Evaluated", "Application Ready", "Applied", "Outreach Ready", "Responded", "Interview Ready", "Offer", "Offer Ready", "Accepted", "Rejected", "Discarded", "SKIP"}
+// Approached is intentionally absent: entering it requires a typed, confirmed
+// Approach Attempt through record-approach.mjs, not a bare status mutation.
+var statusOptions = []string{"Evaluated", "Approach Ready", "Responded", "Interview Ready", "Offer", "Offer Ready", "Accepted", "Rejected", "Discarded", "SKIP"}
 
 // statusGroupOrder defines display order for grouped view.
-var statusGroupOrder = []string{"processing", "pending", "failed", "rate_limited", "paused", "unmerged_complete", "interview", "offer", "accepted", "responded", "applied", "evaluated", "skip", "rejected", "discarded"}
+var statusGroupOrder = []string{"processing", "pending", "failed", "rate_limited", "paused", "unmerged_complete", "interview", "offer", "accepted", "responded", "approached", "evaluated", "skip", "rejected", "discarded"}
 
 // PipelineModel implements the career pipeline dashboard screen.
 type PipelineModel struct {
@@ -1889,13 +1892,22 @@ func artifactBackedNextAction(action string) bool {
 
 func nextActionLabel(app model.DashboardRow) string {
 	if actionStateIs(app, "waiting", "snoozed") {
-		return "Wait for response"
+		return "Waiting for response"
 	}
 	if app.NextAction == "" || app.NextAction == "none" {
 		return "-"
 	}
 
 	switch app.NextAction {
+	case "generate_approach_plan":
+		return "Generate approach plan"
+	case "execute_approach":
+		return "Your turn"
+	case "review_approach":
+		if strings.Contains(strings.ToLower(app.ActionReason), "cold") {
+			return "Stale review"
+		}
+		return "Review due"
 	case "generate_application_pack":
 		return "Generate application"
 	case "send_application":
@@ -1941,11 +1953,18 @@ func nextActionDetail(app model.DashboardRow) string {
 	if app.ActionDue != "" {
 		parts = append(parts, "due: "+app.ActionDue)
 	}
-	if app.ActionOwner != "" {
+	if app.ActionOwner != "" && app.ActionOwner != "external" {
 		parts = append(parts, "owner: "+app.ActionOwner)
 	}
 	if app.WaitingOn != "" && !needsManualAction(app) {
 		parts = append(parts, "waiting on: "+app.WaitingOn)
+	}
+	if app.AttemptCount > 0 {
+		parts = append(parts, fmt.Sprintf("attempts: %d via %s", app.AttemptCount, strings.Join(app.AttemptChannels, ",")))
+		parts = append(parts, fmt.Sprintf("latest: %s %s to %s (%s)", app.LatestAttemptType, app.LatestAttemptDate, app.LatestAttemptRecipient, app.LatestAttemptResult))
+	}
+	if app.FormalSubmitted {
+		parts = append(parts, "formal: submitted")
 	}
 	return strings.Join(parts, " | ")
 }
@@ -2438,7 +2457,7 @@ func (m PipelineModel) statusColorMap() map[string]lipgloss.Color {
 		"interview":         m.theme.Green,
 		"offer":             m.theme.Green,
 		"accepted":          m.theme.Pink,
-		"applied":           m.theme.Sky,
+		"approached":        m.theme.Sky,
 		"responded":         m.theme.Blue,
 		"evaluated":         m.theme.Text,
 		"skip":              m.theme.Red,
@@ -2516,8 +2535,8 @@ func statusLabel(norm string) string {
 		return "Accepted"
 	case "responded":
 		return "Responded"
-	case "applied":
-		return "Applied"
+	case "approached":
+		return "Approached"
 	case "evaluated":
 		return "Evaluated"
 	case "skip":

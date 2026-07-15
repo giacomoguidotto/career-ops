@@ -94,7 +94,8 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 
 | File | Function |
 |------|----------|
-| `data/applications.md` | Application tracker |
+| `data/applications.md` | Opportunity tracker (compatibility filename) |
+| `data/approach-attempts.md` | Append-only confirmed Approach Attempts |
 | `data/pipeline.md` | Inbox of pending URLs |
 | `data/scan-history.tsv` | Scanner dedup history |
 | `portals.yml` | Query and company config |
@@ -109,7 +110,10 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `stats.mjs` | Lifetime pipeline stats aggregator (JSON or `--summary`) — tracker roll-up, canonical `ever*` funnel, lifetime scan totals, portal coverage, follow-up compliance, scan-run trends |
 | `data/scan-runs.tsv` | Per-run scan counters (appended by `scan.mjs`, read by `stats.mjs`) |
 | `followup-cadence.mjs` | Follow-up cadence calculator (JSON output) |
-| `followup-seed.mjs` | Seeds `data/follow-ups.md` with a pinned first follow-up date when a row turns Applied (JSON output) |
+| `record-approach.mjs` | Records a confirmed Approach Attempt and moves the Opportunity to `Approached` |
+| `migrate-approaches.mjs` | Previews or applies the legacy Application/Applied migration |
+| `approach-evidence.mjs` | Audits whether channel-outcome evidence is sufficient for a conclusion |
+| `followup-seed.mjs` | Legacy compatibility utility for old pinned follow-up data |
 | `set-status.mjs` | Canonical CLI to update a tracker row: `node set-status.mjs <report#\|company> <State> [--note]` — strict states.yml validation, shared tracker lock, atomic write |
 | `candidacy-select.mjs` | Read-only deterministic preflight for Agent-owned advancement — emits exclusive `eligible`, `suppressed`, and `researchRequired` sets after Hiring-surface coordination |
 | `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email (company name, date, req ID) against `data/applications.md`, ranking candidates when a company has multiple tracker entries (JSON or `--summary` table output) |
@@ -443,15 +447,16 @@ runs never use `advance-stage.mjs --coordination-override`.
 
 ## User-Reported Candidacy Events
 
-When the user reports a real-world event such as "I just applied to #313", treat
-it as a request to perform the canonical write, not as an FYI. Run
-`node set-status.mjs <num> Applied --json`, seed follow-ups when appropriate, and
-always inspect its `candidacyCoordination` payload, including on idempotent
-Applied updates. Then execute `modes/tracker.md` -> User-reported candidacy events.
-`sameCompanyApplications` opens the required Hiring-surface review; it never
+When the user reports an Approach Attempt such as "I applied to #313" or "I sent
+the founder a LinkedIn message", treat it as a request to perform the canonical
+write, not as an FYI. Record exactly the confirmed action with
+`node record-approach.mjs`; never infer an unmentioned route, recipient, result,
+or date. Then execute `modes/tracker.md` -> User-reported candidacy events.
+Inspect the writer's `candidacyCoordination` result and its
+`sameCompanyApplications`; they open the required Hiring-surface review and never
 proves one cluster by itself. `modes/next.md` -> Candidacy Coordination is the
 canonical selection, research, fallback, persistence, and Outreach-anchor
-contract. Coordination never changes a sibling Application's factual Stage or
+contract persisted in `data/candidacy-clusters.md`. Coordination never changes a sibling Application's factual Stage or
 adds a coordination-only Stage to `templates/states.yml`.
 After persisting the review, rerun `node candidacy-select.mjs --json` and report
 the affected company's eligible/suppressed result before recommending next work.
@@ -460,16 +465,13 @@ the affected company's eligible/suppressed result before recommending next work.
 
 **Source of truth:** `templates/states.yml` (full descriptions, owners, and aliases)
 
-Spine: `Evaluated` → `Application Ready` → `Applied` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Subloops: `Qualifying Ready` → `Qualifying Sent` off `Evaluated` (opt-in gating-question check before applying); `Outreach Ready` off `Applied`. Terminals: `Rejected` / `Discarded` / `SKIP`.
+Spine: `Evaluated` → `Approach Ready` → `Approached` → `Responded` → `Interview Ready` → `Offer` → `Offer Ready` → `Accepted`. Terminals: `Rejected` / `Discarded` / `SKIP`.
 
 | State | When to use |
 |-------|-------------|
-| `Evaluated` | Report completed; agent drafts the application pack (or, when the report's `final_decision` is `Research first`, a qualifying question) |
-| `Application Ready` | Pack drafted; waiting for the user to submit and report |
-| `Qualifying Ready` | Gating question drafted; waiting for the user to send it to the recruiter |
-| `Qualifying Sent` | Gating question sent; pre-application wait on the recruiter. Stale after `qualifying_stale_days` (default 7) → apply-or-discard nudge |
-| `Applied` | Application sent; ball is with the company |
-| `Outreach Ready` | Outreach drafted; waiting for the user to send it |
+| `Evaluated` | Report completed; agent drafts a ranked Approach Plan |
+| `Approach Ready` | Plan drafted; waiting for the user to execute one or more routes and report them |
+| `Approached` | At least one confirmed Approach Attempt exists; waiting/review state is derived from attempt history |
 | `Responded` | Company responded; agent drafts an interview cheatsheet |
 | `Interview Ready` | Cheatsheet drafted; waiting for the user to interview and report |
 | `Offer` | Offer received; agent drafts negotiation prep |

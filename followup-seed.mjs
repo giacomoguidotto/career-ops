@@ -397,8 +397,8 @@ export async function seedFollowup(appNum, options = {}) {
   }
 
   const normalized = normalizeStatus(row.status);
-  if (normalized !== 'applied' && !options.force) {
-    throw new SeedError('NOT_APPLIED', `Application #${appNum} is not Applied (status: "${row.status.trim()}"); use --force to seed anyway`);
+  if (normalized !== 'approached' && !options.force) {
+    throw new SeedError('NOT_APPROACHED', `Opportunity #${appNum} is not Approached (status: "${row.status.trim()}"); use --force to seed anyway`);
   }
 
   const appliedDate = resolveAppliedDate(row, options.date);
@@ -454,7 +454,7 @@ export async function seedBackfill(options = {}) {
     throw new SeedError('ROW_NOT_FOUND', `Tracker not found at ${trackerPath}`);
   }
   const rows = readTrackerRows(trackerPath);
-  const appliedRows = rows.filter(r => normalizeStatus(r.status) === 'applied');
+  const appliedRows = rows.filter(r => normalizeStatus(r.status) === 'approached');
   const cadence = resolveCadenceConfig({ profilePath: options.profilePath });
   const setDate = todayStr();
 

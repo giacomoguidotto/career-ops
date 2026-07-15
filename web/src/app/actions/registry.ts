@@ -14,11 +14,8 @@ import type { Job } from "@/components/jobs/job-store";
 export const AUTO_FIRE_MAX = 3; // fire ≤3 evaluations silently; confirm above that
 export const BATCH_CAP = 12; // hard ceiling on a single fan-out
 
-// Canonical states (templates/states.yml) — the web validates against the same set.
-const CANON_STATUS = ["Evaluated", "Applied", "Responded", "Interview", "Offer", "Rejected", "Discarded", "SKIP"];
-
 const TAB_VALUES = [
-  "INBOX", "ALL", "EVALUATED", "APPLIED", "RESPONDED", "INTERVIEW", "OFFER", "REJECTED", "DISCARDED", "SKIP",
+  "INBOX", "ALL", "EVALUATED", "APPROACHED", "RESPONDED", "INTERVIEW", "OFFER", "ACCEPTED", "REJECTED", "DISCARDED", "SKIP",
 ] as const;
 const SORT_VALUES = ["company", "role", "score", "status", "date"] as const;
 
@@ -37,6 +34,7 @@ export type ActionCtx = {
   startJob: (opts: StartJobInput) => string | null;
   inbox: InboxJob[];
   applications: Application[]; // tracker snapshot — resolve #n → company/role for confirms
+  canonicalStatuses: string[]; // server projection of templates/states.yml
   jobForUrl: (url: string) => Job | undefined; // skip-if-done / retry logic
   rememberFact: (fact: string) => void;
   writeStatus: (n: string, status: string) => void; // UPDATE-only writeback via /api/status
@@ -256,8 +254,9 @@ const ACTIONS: Record<string, ActionDef> = {
     run: (raw, ctx) => {
       const n = String(raw.n ?? "").trim();
       const status = String(raw.status ?? "").trim();
-      const canon = CANON_STATUS.find((s) => s.toLowerCase() === status.toLowerCase());
+      const canon = ctx.canonicalStatuses.find((s) => s.toLowerCase() === status.toLowerCase());
       if (!n || !canon) return { status: "ignored", note: "need an application # and a canonical status" };
+      if (canon === "Approached") return { status: "ignored", note: "record a confirmed Approach Attempt instead of setting Approached directly" };
       const app = ctx.applications.find((a) => a.n === n);
       const label = app ? `${app.company} · ${app.role}` : `#${n}`;
       return {

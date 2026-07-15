@@ -27,6 +27,14 @@ func tabIndexForFilter(t *testing.T, filter string) int {
 	return -1
 }
 
+func TestStatusPickerCannotCreateApproachedWithoutAttempt(t *testing.T) {
+	for _, option := range statusOptions {
+		if option == "Approached" {
+			t.Fatal("bare status picker must record a confirmed Attempt instead of setting Approached")
+		}
+	}
+}
+
 func TestWithReloadedDataPreservesStateAndSelection(t *testing.T) {
 	initialApps := []model.DashboardRow{
 		{
@@ -265,8 +273,8 @@ func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 	metrics := model.PipelineMetrics{
 		Total: len(apps),
 		ByStatus: map[string]int{
-			"evaluated": 1,
-			"applied":   1,
+			"evaluated":  1,
+			"approached": 1,
 		},
 	}
 
@@ -282,7 +290,7 @@ func TestMetricsLineRightAlignsSortViewAndShownCount(t *testing.T) {
 	if got := lipgloss.Width(line); got != pm.width {
 		t.Fatalf("metrics line width = %d, want %d; line=%q", got, pm.width, plain)
 	}
-	if !strings.Contains(plain, "Evaluated:1") || !strings.Contains(plain, "Applied:1") {
+	if !strings.Contains(plain, "Evaluated:1") || !strings.Contains(plain, "Approached:1") {
 		t.Fatalf("expected metrics to remain on the left side, got %q", plain)
 	}
 	if !strings.HasSuffix(strings.TrimRight(plain, " "), right) {
@@ -844,7 +852,7 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 		{
 			name: "waiting row",
 			app:  model.DashboardRow{ActionState: "waiting", NextAction: "follow_up", WaitingOn: "company response", NextPackPath: "output/next-packs/042-acme.md"},
-			want: "Wait for response",
+			want: "Waiting for response",
 		},
 	}
 

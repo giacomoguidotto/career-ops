@@ -39,6 +39,18 @@ type DashboardRow struct {
 	ActionReason string
 	NextPackPath string // output/next-packs/... when a generated pack exists
 	NextCommand  string // /career-ops next {num}
+	// Confirmed pre-response Approach Attempt projection.
+	AttemptCount              int
+	FollowupAttemptCount      int
+	LatestFollowupAttemptDate string
+	LatestAttemptID           string
+	LatestAttemptDate         string
+	LatestAttemptType         string
+	LatestAttemptChannel      string
+	LatestAttemptRecipient    string
+	LatestAttemptResult       string
+	AttemptChannels           []string
+	FormalSubmitted           bool
 }
 
 // DashboardRowSource identifies the durable source projected into a row.
@@ -80,9 +92,9 @@ type ProgressMetrics struct {
 	WeeklyActivity []WeekActivity
 
 	// Rates
-	ResponseRate  float64 // Responded / Applied
-	InterviewRate float64 // Interview / Applied
-	OfferRate     float64 // Offer / Applied
+	ResponseRate  float64 // Responded / Approached
+	InterviewRate float64 // Interview / Approached
+	OfferRate     float64 // Offer / Approached
 
 	// Averages
 	AvgScore    float64

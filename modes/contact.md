@@ -2,6 +2,10 @@
 
 > Apply `voice-dna.md` (if present) to every generated message — full guardrail, conversational voice included (Tier 1 + Tier 2). See `_shared.md` → Voice DNA.
 
+> Apply `modes/communication-planner.md` before drafting. The shared planner owns
+> register, objective, proof anchors, route priority, and evidence sufficiency;
+> this mode discovers the destination and executes the selected contact route.
+
 This mode has two variants that share the same persona engine (recruiter → hard
 requirements; hiring manager → impact/vision):
 

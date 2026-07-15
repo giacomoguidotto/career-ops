@@ -6,10 +6,11 @@ export const dynamic = "force-dynamic";
 
 const STAGES: { key: string; label: string }[] = [
   { key: "EVALUATED", label: "Evaluated" },
-  { key: "APPLIED", label: "Applied" },
+  { key: "APPROACHED", label: "Approached" },
   { key: "RESPONDED", label: "Responded" },
   { key: "INTERVIEW", label: "Interview" },
   { key: "OFFER", label: "Offer" },
+  { key: "ACCEPTED", label: "Accepted" },
   { key: "REJECTED", label: "Rejected" },
   { key: "DISCARDED", label: "Discarded" },
 ];

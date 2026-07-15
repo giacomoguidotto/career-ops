@@ -1141,7 +1141,7 @@ const contactMode = readFile('modes/contact.md');
 const nextMode = readFile('modes/next.md');
 const offerDeepLinkMode = readFile('modes/offer.md');
 if (
-  nextMode.includes('## Ready Block Contract') &&
+  nextMode.includes('## Approach Plan and Ready Block Contract') &&
   nextMode.includes('### Copy-Paste:') &&
   nextMode.includes('one-page interview cheatsheet') &&
   !/\bKB\b|recall/i.test(nextMode)
@@ -1720,7 +1720,7 @@ if (
 
 if (
   nextMode.includes('modes/_custom.md') &&
-  nextMode.includes('`Apply` and `Consider` both route to `generate_application_pack`') &&
+  nextMode.includes('`Apply` and `Consider` both route to `generate_approach_plan`') &&
   /later\s+`\[re-evaluated YYYY-MM-DD\]` marker/.test(nextMode) &&
   /Never route `Research first` directly\s+to `draft_qualifying_questions`/.test(nextMode)
 ) {
@@ -3603,7 +3603,7 @@ try {
   }
 
   // Status normalization (strips bold + trailing date, lowercases, maps aliases)
-  if (cadence.normalizeStatus('**Applied** 2026-05-01') === 'applied') {
+  if (cadence.normalizeStatus('**Applied** 2026-05-01') === 'approached') {
     pass('normalizeStatus strips bold + trailing date and lowercases');
   } else {
     fail(`normalizeStatus produced ${cadence.normalizeStatus('**Applied** 2026-05-01')}`);
@@ -4209,15 +4209,15 @@ try {
       '# Applications Tracker\n\n' +
       '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
       '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
-      '| 21 | 2026-01-08 | Acme | Full Stack Engineer, Foundation | 3.9/5 | Applied | ❌ | [21](../reports/021-foundation.md) | applied sibling |\n' +
+      '| 21 | 2026-01-08 | Acme | Full Stack Engineer, Foundation | 3.9/5 | Approached | ❌ | [21](../reports/021-foundation.md) | approached sibling |\n' +
       '| 22 | 2026-01-08 | Acme | Full Stack Engineer, Guarded Releases | 4.3/5 | Evaluated | ❌ | [22](../reports/022-guarded.md) | evaluated sibling |\n' +
       '| 23 | 2026-01-08 | Acme | Staff Software Engineer, API | 4.0/5 | Evaluated | ❌ | [23](../reports/023-api.md) | acronym sibling |\n' +
       '| 24 | 2026-01-08 | Acme | Staff Software Engineer, SDK | 4.2/5 | Evaluated | ❌ | [24](../reports/024-sdk.md) | acronym sibling |\n' +
       '| 25 | 2026-01-08 | Acme | Product Engineer, Growth | 3.8/5 | Evaluated | ❌ | [25](../reports/025-growth-old.md) | duplicate old |\n' +
       '| 26 | 2026-01-09 | Acme | Product Engineer, Growth | 4.0/5 | Evaluated | ❌ | [26](../reports/026-growth-new.md) | duplicate new |\n' +
-      '| 27 | 2026-01-08 | Acme | Solutions Engineer, Revenue | 3.0/5 | Applied | ❌ | [27](../reports/027-revenue-applied.md) | applied exact-title row |\n' +
+      '| 27 | 2026-01-08 | Acme | Solutions Engineer, Revenue | 3.0/5 | Approached | ❌ | [27](../reports/027-revenue-applied.md) | approached exact-title row |\n' +
       '| 28 | 2026-01-09 | Acme | Solutions Engineer, Revenue | 4.6/5 | Evaluated | ❌ | [28](../reports/028-revenue-eval.md) | evaluated exact-title row |\n' +
-      '| 29 | 2026-01-08 | Acme | Data Engineer, Search | 3.1/5 | Applied | ❌ | [29](../reports/029-search-old.md) | malformed duplicate-number old row |\n' +
+      '| 29 | 2026-01-08 | Acme | Data Engineer, Search | 3.1/5 | Approached | ❌ | [29](../reports/029-search-old.md) | malformed duplicate-number old row |\n' +
       '| 29 | 2026-01-09 | Acme | Data Engineer, Search | 4.1/5 | Evaluated | ❌ | [30](../reports/030-search-new.md) | malformed duplicate-number new row |\n' +
       // Distinct sibling roles at one company that the old fuzzy matcher
       // false-merged (shared [software, engineer, infrastructure] → Jaccard 0.6).
@@ -4254,14 +4254,14 @@ try {
       }
 
       const revenueRows = deduped.split('\n').filter(l => l.includes('Solutions Engineer, Revenue'));
-      if (revenueRows.length === 2 && revenueRows.some(l => l.includes('Applied'))) {
-        pass('dedup-tracker never removes Applied+ rows by fuzzy title match');
+      if (revenueRows.length === 2 && revenueRows.some(l => l.includes('Approached'))) {
+        pass('dedup-tracker never removes Approached+ rows by fuzzy title match');
       } else {
         fail('dedup-tracker removed an Applied+ row by fuzzy title match');
       }
 
       const searchRows = deduped.split('\n').filter(l => l.includes('Data Engineer, Search'));
-      if (searchRows.length === 1 && searchRows[0].includes('4.1/5') && searchRows[0].includes('Applied')) {
+      if (searchRows.length === 1 && searchRows[0].includes('4.1/5') && searchRows[0].includes('Approached')) {
         pass('dedup-tracker handles duplicate tracker numbers using row-local line indexes');
       } else {
         fail(`dedup-tracker duplicate-number handling broken: ${searchRows.length} Search rows`);
@@ -5127,7 +5127,7 @@ if (!sqliteAvailable) {
         '# Applications Tracker\n\n' +
         '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
         '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
-        '| 2 | 2026-01-05 | Beta | Designer | 4.0/5 | Applied | ✅ | [2](../reports/002-beta-2026-01-05.md) | second |\n' +
+        '| 2 | 2026-01-05 | Beta | Designer | 4.0/5 | Approached | ✅ | [2](../reports/002-beta-2026-01-05.md) | second |\n' +
         '| 1 | 2026-01-04 | Acme | Engineer | 4.2/5 | Evaluated | ❌ | [1](../reports/001-acme-2026-01-04.md) | first |\n';
       writeFileSync(md, clean);
       if (trackerRun(['sync']) === null) {
@@ -5169,7 +5169,7 @@ if (!sqliteAvailable) {
 
       // 3. Staleness: query after an md edit must auto-resync (no stale reads).
       writeFileSync(md, clean +
-        '| 3 | 2026-01-07 | Delta | Analyst | 4.5/5 | Applied | ✅ | [3](../reports/003-delta-2026-01-07.md) | new |\n');
+        '| 3 | 2026-01-07 | Delta | Analyst | 4.5/5 | Approached | ✅ | [3](../reports/003-delta-2026-01-07.md) | new |\n');
       const fresh = JSON.parse(trackerRun(['query', '--company', 'Delta', '--json']) || '[]');
       if (fresh.length === 1) {
         pass('query auto-resyncs when applications.md changed since last sync');
@@ -5178,10 +5178,10 @@ if (!sqliteAvailable) {
       }
 
       // 4. Status transitions across syncs accumulate in status_events.
-      writeFileSync(md, readFileSync(md, 'utf-8').replace('| 4.0/5 | Applied |', '| 4.0/5 | Interview |'));
+      writeFileSync(md, readFileSync(md, 'utf-8').replace('| 4.0/5 | Approached |', '| 4.0/5 | Interview Ready |'));
       const log = trackerRun(['history', '--id', '2']);
-      if (log && log.includes('Applied') && log.includes('Interview')) {
-        pass('history records the Applied → Interview transition across syncs');
+      if (log && log.includes('Approached') && log.includes('Interview Ready')) {
+        pass('history records the Approached → Interview Ready transition across syncs');
       } else {
         fail(`history missing status transition: ${log}`);
       }
@@ -6862,7 +6862,7 @@ try {
 
   // 55.3 canonical statuses (templates/states.yml → web status pills/actions)
   const statesSrc = readFileSync(join(ROOT, 'templates', 'states.yml'), 'utf-8');
-  const CANONICAL_STATE_IDS = ['evaluated', 'applied', 'interview_ready', 'offer', 'rejected', 'discarded'];
+  const CANONICAL_STATE_IDS = ['evaluated', 'approach_ready', 'approached', 'interview_ready', 'offer', 'rejected', 'discarded'];
   const missingStates = CANONICAL_STATE_IDS.filter((s) => !new RegExp(`^  - id: ${s}$`, 'm').test(statesSrc));
   if (missingStates.length === 0) {
     pass('templates/states.yml keeps every canonical status id (new ids may be appended)');

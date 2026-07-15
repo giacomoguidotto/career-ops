@@ -105,7 +105,7 @@ export function computeAdvance(statusRaw, states = loadStates(), artifact = null
   if (!cur) return { ok: false, reason: 'unknown-status' };
   if (cur.owner !== 'agent') {
     const reason =
-      cur.owner === 'user' || cur.owner === 'company' ? 'already-advanced' : 'terminal';
+      cur.owner === 'user' || cur.owner === 'external' ? 'already-advanced' : 'terminal';
     return { ok: false, reason, fromLabel: cur.label };
   }
   const ready = pairedReadyStage(cur, states, artifact);
@@ -219,7 +219,7 @@ export function advanceApplications(opts) {
     }
     // Read the drafted pack first: its `**Suggests:**` header names the artifact
     // just produced, which routes multi-artifact agent stages (evaluated →
-    // application_ready vs qualifying_ready) to the right `_ready` stage.
+    // the drafted artifact) to the right `_ready` stage.
     const pack = findPack(num, dir);
     let packContent = null;
     let artifact = null;
@@ -292,50 +292,47 @@ function selfTest() {
 
   // Routing derived from states.yml, not hardcoded.
   ok('Evaluated is agent-owned', resolveState('Evaluated', states)?.owner === 'agent');
-  ok('Evaluated → Application Ready', computeAdvance('Evaluated', states).toLabel === 'Application Ready');
+  ok('Evaluated → Approach Ready', computeAdvance('Evaluated', states).toLabel === 'Approach Ready');
   ok('Responded → Interview Ready', computeAdvance('Responded', states).toLabel === 'Interview Ready');
   ok('Offer → Offer Ready', computeAdvance('Offer', states).toLabel === 'Offer Ready');
-  ok('bold/date noise tolerated', computeAdvance('**Evaluated** 2026-01-01', states).toLabel === 'Application Ready');
+  ok('bold/date noise tolerated', computeAdvance('**Evaluated** 2026-01-01', states).toLabel === 'Approach Ready');
 
-  // Multi-artifact evaluated stage disambiguates by the drafted artifact.
-  ok('Evaluated default → Application Ready', computeAdvance('Evaluated', states, null).toLabel === 'Application Ready');
-  ok('Evaluated + app artifact → Application Ready', computeAdvance('Evaluated', states, 'generate_application_pack').toLabel === 'Application Ready');
-  ok('Evaluated + qualifying artifact → Qualifying Ready', computeAdvance('Evaluated', states, 'draft_qualifying_questions').toLabel === 'Qualifying Ready');
-  ok('Evaluated + synced qualifying suggests → Qualifying Ready', computeAdvance('Evaluated', states, 'send_qualifying_questions').toLabel === 'Qualifying Ready');
+  // Every pre-response route converges on one generated Approach Plan.
+  ok('Evaluated default → Approach Ready', computeAdvance('Evaluated', states, null).toLabel === 'Approach Ready');
+  ok('Evaluated + plan artifact → Approach Ready', computeAdvance('Evaluated', states, 'generate_approach_plan').toLabel === 'Approach Ready');
+  ok('legacy qualifying artifact → Approach Ready', computeAdvance('Evaluated', states, 'draft_qualifying_questions').toLabel === 'Approach Ready');
   ok('packArtifact reads Suggests header', packArtifact('**Suggests:** draft_qualifying_questions  \n') === 'draft_qualifying_questions');
   ok('packArtifact null when absent', packArtifact('no header here') === null);
 
   // Non-agent stages never advance.
-  ok('Application Ready is already advanced', computeAdvance('Application Ready', states).reason === 'already-advanced');
-  ok('Qualifying Ready is already advanced', computeAdvance('Qualifying Ready', states).reason === 'already-advanced');
-  ok('Qualifying Sent does not advance', computeAdvance('Qualifying Sent', states).ok === false);
-  ok('Applied does not advance', computeAdvance('Applied', states).ok === false);
+  ok('Approach Ready is already advanced', computeAdvance('Approach Ready', states).reason === 'already-advanced');
+  ok('Approached does not advance', computeAdvance('Approached', states).ok === false);
   ok('Accepted is terminal', computeAdvance('Accepted', states).reason === 'terminal');
   ok('unknown status flagged', computeAdvance('Nonsense', states).reason === 'unknown-status');
 
   // Pack header sync + idempotency.
   const ready = computeAdvance('Evaluated', states).readyRecord;
-  const raw = '**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** generate_application_pack  \n';
+  const raw = '**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** generate_approach_plan  \n';
   const first = syncPackHeader(raw, ready);
-  ok('pack header advances stage', /\*\*Stage:\*\* application_ready/.test(first.content));
+  ok('pack header advances stage', /\*\*Stage:\*\* approach_ready/.test(first.content));
   ok('pack header advances owner', /\*\*Owner:\*\* user/.test(first.content));
-  ok('pack header advances suggests', /\*\*Suggests:\*\* send_application/.test(first.content));
-  ok('pack header hard-break preserved', first.content.includes('send_application  \n'));
+  ok('pack header advances suggests', /\*\*Suggests:\*\* execute_approach/.test(first.content));
+  ok('pack header hard-break preserved', first.content.includes('execute_approach  \n'));
   ok('pack header sync reports change', first.changed === true);
   ok('pack header sync is idempotent', syncPackHeader(first.content, ready).changed === false);
 
-  // Qualifying pack header sync.
+  // A legacy route-specific pack still syncs to the unified plan stage.
   const qReady = computeAdvance('Evaluated', states, 'draft_qualifying_questions').readyRecord;
   const qRaw = '**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** draft_qualifying_questions  \n';
   const qSynced = syncPackHeader(qRaw, qReady);
-  ok('qualifying pack → qualifying_ready', /\*\*Stage:\*\* qualifying_ready/.test(qSynced.content));
-  ok('qualifying pack → send_qualifying_questions', /\*\*Suggests:\*\* send_qualifying_questions/.test(qSynced.content));
+  ok('qualifying pack → approach_ready', /\*\*Stage:\*\* approach_ready/.test(qSynced.content));
+  ok('qualifying pack → execute_approach', /\*\*Suggests:\*\* execute_approach/.test(qSynced.content));
 
   // Header-aware status rewrite.
   const line = '| 93 | 2026-06-24 | Deepgram | Backend Engineer | 3.85/5 | Evaluated | ✅ | [112](../reports/112.md) | note |';
   const colmap = resolveColumns([line]);
-  const rewritten = applyStatusToLine(line, colmap, 'Application Ready');
-  ok('status cell rewritten', / Application Ready /.test(rewritten));
+  const rewritten = applyStatusToLine(line, colmap, 'Approach Ready');
+  ok('status cell rewritten', / Approach Ready /.test(rewritten));
   ok('other cells preserved', rewritten.includes('Deepgram') && rewritten.includes('3.85/5') && rewritten.includes('note'));
 
   if (failures.length) {

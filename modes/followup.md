@@ -2,13 +2,19 @@
 
 > **Read `voice-dna.md` (if present) and apply it to every generated email/LinkedIn draft.** This mode is standalone — it does NOT load `_shared.md`, so read `voice-dna.md` directly. Follow-up drafts are conversational, so apply the full guardrail: banned words/phrases/patterns, no em-dashes, no negative parallelisms (§3-4) AND conversational voice — contractions, varied rhythm, direct "I"/"you" (§1-2). Never drop or soften a real metric from `cv.md` for style.
 
+> Read `modes/communication-planner.md` too. For an Approached Opportunity, use
+> its Wait Review to decide whether to preserve the wait, draft another typed
+> route, or recommend deprioritization/discard. Never record the draft as sent.
+
 ## Purpose
 
-Track follow-up cadence for active applications. Flag overdue follow-ups, extract contacts from notes, and generate tailored follow-up email/LinkedIn drafts using report context.
+Track review cadence for Approached Opportunities. Flag due or cold waits, read
+confirmed Approach Attempts, and generate a tailored next route when useful.
 
 ## Inputs
 
-- `data/applications.md` — Application tracker
+- `data/applications.md` — Opportunity tracker compatibility path
+- `data/approach-attempts.md` — canonical confirmed pre-response attempt history
 - `data/follow-ups.md` — Follow-up history (created on first use)
 - `reports/` — Evaluation reports (for context in drafts)
 - `config/profile.yml` — User profile (name, identity)
@@ -137,29 +143,17 @@ For each draft, show:
 
 ## Step 5 — Record Follow-ups
 
-After the user reviews and says they've sent a follow-up, record it:
+After the user reviews and says they sent a follow-up, record it through the
+canonical writer. Use the confirmed occurrence date or timestamp, channel,
+recipient, result, and the prior Attempt it continues:
 
-1. If `data/follow-ups.md` doesn't exist, create it (this exact header — the
-   same one the web UI writes; `followup-cadence.mjs` parses these columns):
+```bash
+node record-approach.mjs 42 follow_up --channel email --recipient "Founder Name" --occurred-at 2026-07-14T10:30:00+02:00 --result sent --follow-up-to A001 --notes "Shared a useful update"
+```
 
-   ```markdown
-   # Follow-ups
-
-   | num | appNum | date | company | role | channel | contact | notes |
-   |---|---|---|---|---|---|---|---|
-   ```
-
-2. Append a row with:
-   - `num` = next sequential number in the follow-ups table
-   - `appNum` = application number from tracker
-   - `date` = today's date (YYYY-MM-DD)
-   - `company` = company name
-   - `role` = role title
-   - `channel` = Email / LinkedIn / Other
-   - `contact` = who it was sent to
-   - `notes` = brief note (e.g., "First follow-up, referenced Barbeiro.app")
-
-3. Optionally update the Notes column in `data/applications.md` with "Follow-up {N} sent {YYYY-MM-DD}"
+`data/follow-ups.md` remains a compatibility source for old history and pinned
+review dates. New pre-response follow-ups are typed rows in
+`data/approach-attempts.md`.
 
 **IMPORTANT:** Only record follow-ups the user confirms they actually sent. Never record a draft as sent.
 

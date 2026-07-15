@@ -267,6 +267,12 @@ func (m detailsNextPackMeta) summaryLine() string {
 
 func detailsActionLabel(value string) string {
 	switch normalizeDetailsLabel(value) {
+	case "generate_approach_plan":
+		return "Generate the Approach Plan"
+	case "execute_approach":
+		return "Try the selected approach, then report back"
+	case "review_approach":
+		return "Review the next approach"
 	case "generate_application_pack":
 		return "Generate the application"
 	case "send_application":
@@ -321,6 +327,11 @@ func detailsDecisionLabel(value string) string {
 
 func detailsAgentCanPerform(value string) bool {
 	switch normalizeDetailsLabel(value) {
+	case "generate_approach_plan",
+		"generate approach plan",
+		"review_approach",
+		"review approach":
+		return true
 	case "generate_application_pack",
 		"draft application pack",
 		"draft_qualifying_questions",
@@ -394,7 +405,7 @@ func detailsAppActionSentence(app model.DashboardRow) string {
 		if app.WaitingOn != "" {
 			return "Wait for " + strings.TrimSuffix(app.WaitingOn, ".") + "."
 		}
-		return "Wait for the company response."
+		return "Wait for a response."
 	case app.NextAction == "" || app.NextAction == "none":
 		return ""
 	}
@@ -405,6 +416,15 @@ func detailsAppActionSentence(app model.DashboardRow) string {
 	}
 
 	switch app.NextAction {
+	case "generate_approach_plan":
+		return "Generate the Approach Plan" + agentSuffix + "."
+	case "execute_approach":
+		return "Try the selected approach, then report back."
+	case "review_approach":
+		if strings.Contains(strings.ToLower(app.ActionReason), "cold") {
+			return "Review the stale approach and choose another route, deprioritization, or discard."
+		}
+		return "Review the next approach."
 	case "generate_application_pack":
 		return "Generate the application" + agentSuffix + "."
 	case "send_application":

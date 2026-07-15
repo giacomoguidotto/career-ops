@@ -2,22 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X, FileText, Loader2 } from "lucide-react";
+import { ArrowRight, X, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { CompanyLogo } from "@/components/company-logo";
 import { scoreNum, scoreTone } from "@/lib/format";
 import type { Application } from "@/lib/career-ops";
 
-// Awaiting-decision row: a scored role with no terminal status. One-tap Apply /
-// Skip writes back through the EXISTING /api/status (UPDATE-only, canonical states).
+// Evaluated opportunity: open its Approach Plan or discard it. A real-world
+// approach is never represented by a one-tap status mutation because it needs
+// a typed, user-confirmed Attempt.
 export function DecisionCard({ app }: { app: Application }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<"" | "Applied" | "Discarded">("");
+  const [busy, setBusy] = useState<"" | "Discarded">("");
   const [done, setDone] = useState<string | null>(null);
   const score = scoreNum(app.score);
   const tone = scoreTone(app.score);
 
-  const setStatus = async (status: "Applied" | "Discarded") => {
+  const setStatus = async (status: "Discarded") => {
     setBusy(status);
     try {
       await fetch("/api/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ n: app.n, status }) });
@@ -56,14 +57,12 @@ export function DecisionCard({ app }: { app: Application }) {
             affirmative primary — a queue of these reads as gentle brand, not 6
             solid shouts (P5), while staying visibly the positive action next to
             the neutral Skip even on touch (no hover). */}
-        <button
-          type="button"
-          disabled={!!busy}
-          onClick={() => setStatus("Applied")}
+        <a
+          href={`/pipeline/${app.n}`}
           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-brand-soft px-2.5 py-1.5 text-xs font-medium text-brand-text transition hover:bg-brand/15 disabled:opacity-60 max-sm:min-h-[44px]"
         >
-          {busy === "Applied" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />} Mark applied
-        </button>
+          <ArrowRight className="size-3.5" /> Review approach
+        </a>
         <button
           type="button"
           disabled={!!busy}

@@ -11,15 +11,22 @@ const STATUS_ALIAS: Record<string, string> = {
   hold: "EVALUATED",
   evaluar: "EVALUATED",
   verificar: "EVALUATED",
-  aplicada: "APPLIED",
-  aplicado: "APPLIED",
-  enviada: "APPLIED",
-  sent: "APPLIED",
+  aplicado: "APPROACHED",
+  aplicada: "APPROACHED",
+  applied: "APPROACHED",
+  enviada: "APPROACHED",
+  sent: "APPROACHED",
+  "approach ready": "EVALUATED",
+  approach_ready: "EVALUATED",
   respondida: "RESPONDED",
   respondido: "RESPONDED",
   contestada: "RESPONDED",
   entrevista: "INTERVIEW",
+  "interview ready": "INTERVIEW",
+  interview_ready: "INTERVIEW",
   oferta: "OFFER",
+  "offer ready": "OFFER",
+  offer_ready: "OFFER",
   rechazada: "REJECTED",
   rechazado: "REJECTED",
   descartada: "DISCARDED",
@@ -35,10 +42,13 @@ const STATUS_ALIAS: Record<string, string> = {
 
 export const CANONICAL_STATES = [
   "Evaluated",
-  "Applied",
+  "Approach Ready",
+  "Approached",
   "Responded",
-  "Interview",
+  "Interview Ready",
   "Offer",
+  "Offer Ready",
+  "Accepted",
   "Rejected",
   "Discarded",
   "SKIP",
@@ -50,12 +60,12 @@ export function canonStatus(s: string): string {
   return STATUS_ALIAS[k] ?? s.toUpperCase();
 }
 
-/** Status dot colour, mirroring the Go TUI: green interview/offer, sky applied/
+/** Status dot colour, mirroring the Go TUI: green interview/offer, sky approached/
  *  responded, red skip/rejected, gray discarded, neutral evaluated. */
 export function statusDot(status: string): string {
   const c = canonStatus(status);
-  if (c.includes("INTERVIEW") || c.includes("OFFER")) return "bg-emerald-400";
-  if (c.includes("APPLIED") || c.includes("RESPONDED")) return "bg-sky-400";
+  if (c.includes("INTERVIEW") || c.includes("OFFER") || c.includes("ACCEPTED")) return "bg-emerald-400";
+  if (c.includes("APPROACHED") || c.includes("RESPONDED")) return "bg-sky-400";
   if (c.includes("REJECTED") || c.includes("SKIP")) return "bg-red-400";
   if (c.includes("DISCARDED")) return "bg-zinc-600";
   return "bg-zinc-500"; // Evaluated / unknown

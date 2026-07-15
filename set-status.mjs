@@ -31,10 +31,10 @@
  * 2 row not found or unreadable tracker · 3 ambiguous company match ·
  * 4 tracker lock timeout (busy — retry later).
  *
- * When the new status is Applied, the JSON output carries
- * `"followupSeedCandidate": true` — the hook point for seeding
- * data/follow-ups.md with the default cadence (#1430, not implemented here).
- * It also surfaces same-company rows under `candidacyCoordination` so the
+ * Confirmed real-world approaches must be recorded with record-approach.mjs.
+ * This generic status editor remains available for administrative correction,
+ * but it does not create attempts or follow-up facts. It surfaces same-company
+ * rows under `candidacyCoordination` so the
  * calling agent cannot overlook potentially shared recruiter/hiring surfaces.
  * Company-name equality only opens the review: the agent must research the org
  * deeply before deciding whether the rows actually share a candidacy cluster.
@@ -318,11 +318,7 @@ const result = {
   newStatus,
   ...(note != null ? { note } : {}),
   ...(flags.dryRun ? { dryRun: true } : {}),
-  // Fire the #1430 hook only on an actual transition INTO Applied — an
-  // idempotent re-run of an already-Applied row must not invite a consumer
-  // to seed a duplicate follow-up.
-  ...(statusChanged && newStatus === 'Applied' ? { followupSeedCandidate: true } : {}),
-  ...(newStatus === 'Applied' && sameCompanyApplications.length > 0 ? {
+  ...(newStatus === 'Approached' && sameCompanyApplications.length > 0 ? {
     candidacyCoordination: {
       requiresHiringSurfaceResearch: true,
       fallbackScope: 'shared',
@@ -337,10 +333,10 @@ if (flags.json) {
 } else {
   const verb = flags.dryRun ? 'would set' : changed ? 'set' : 'already';
   console.log(`✅ #${target.num} ${target.company} — ${target.role}: ${verb} ${oldStatus} → ${newStatus}${note ? ` (note: ${note})` : ''}`);
-  if (statusChanged && !flags.dryRun && newStatus === 'Applied') {
-    console.error('ℹ️  Status is Applied — consider seeding follow-ups in data/follow-ups.md (#1430: node followup-cadence.mjs)');
+  if (statusChanged && !flags.dryRun && newStatus === 'Approached') {
+    console.error('ℹ️  Administrative status change only. Confirmed actions belong in the attempt ledger: node record-approach.mjs');
   }
-  if (newStatus === 'Applied' && sameCompanyApplications.length > 0) {
+  if (newStatus === 'Approached' && sameCompanyApplications.length > 0) {
     const siblings = sameCompanyApplications.map((row) => `#${row.num} ${row.role} (${row.status})`).join(' · ');
     console.error(`ℹ️  Candidacy coordination review required for ${target.company}: ${siblings}. Research shared vs separate hiring surfaces; if unresolved, treat them as shared.`);
   }

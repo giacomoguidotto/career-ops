@@ -550,7 +550,7 @@ func TestDetailsAppNextStepSummaryCoversKnownActions(t *testing.T) {
 		{
 			name: "waiting without explicit owner",
 			app:  model.DashboardRow{ActionState: "snoozed", NextAction: "follow_up"},
-			want: "Wait for the company response.",
+			want: "Wait for a response.",
 		},
 		{
 			name: "none",

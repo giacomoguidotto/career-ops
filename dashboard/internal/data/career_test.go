@@ -539,7 +539,7 @@ func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 | # | Date | Company | Role | Score | Status | PDF | Report | Notes |
 |---|------|---------|------|-------|--------|-----|--------|-------|
 | 42 | 2026-06-20 | Acme | Applied AI Engineer | 4.2/5 | Evaluated | ✅ | [42](../reports/042-acme.md) | Strong fit |
-| 43 | 2026-06-01 | Beta | Platform Engineer | 4.0/5 | Applied | ✅ | [43](../reports/043-beta.md) | Already applied |
+| 43 | 2026-06-01 | Beta | Platform Engineer | 4.0/5 | Approached | ✅ | [43](../reports/043-beta.md) | Already approached |
 | 44 | 2026-06-22 | Gamma | Data Engineer | 3.2/5 | Evaluated | ❌ | [44](../reports/044-gamma.md) | Weak fit |
 `
 	if err := os.WriteFile(filepath.Join(tempDir, "data", "applications.md"), []byte(applications), 0o644); err != nil {
@@ -550,11 +550,14 @@ func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 			t.Fatalf("failed to write report %s: %v", name, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n\n**Suggests:** generate_application_pack\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "042-acme.md"), []byte("# Next Pack\n\n**Suggests:** generate_approach_plan\n"), 0o644); err != nil {
 		t.Fatalf("failed to write next pack: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tempDir, "output", "next-packs", "043-beta.md"), []byte("# Old Next Pack\n\n**Suggests:** generate_application_pack\n"), 0o644); err != nil {
 		t.Fatalf("failed to write stale next pack: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "data", "approach-attempts.md"), []byte("# Approach Attempts\n\n| id | opportunity | date | type | channel | recipient | result | followUpTo | notes |\n|---|---|---|---|---|---|---|---|---|\n| A001 | 43 | 2026-06-01 | formal_application | ats | Beta hiring team | submitted |  |  |\n"), 0o644); err != nil {
+		t.Fatalf("failed to write attempts: %v", err)
 	}
 
 	apps := ParseDashboardRows(tempDir)
@@ -562,9 +565,8 @@ func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 		t.Fatalf("expected 3 parsed apps, got %d", len(apps))
 	}
 
-	// Row 42: Evaluated is agent-owned, so the automation drafts an application
-	// pack; the matching generated pack is surfaced for the row.
-	if apps[0].ActionState != "needs_action" || apps[0].NextAction != "generate_application_pack" {
+	// Row 42: Evaluated is agent-owned, so the automation drafts an Approach Plan.
+	if apps[0].ActionState != "needs_action" || apps[0].NextAction != "generate_approach_plan" {
 		t.Fatalf("evaluated row next action = %q/%q", apps[0].ActionState, apps[0].NextAction)
 	}
 	if apps[0].ActionOwner != "agent" {
@@ -577,11 +579,11 @@ func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 		t.Fatalf("next command = %q", apps[0].NextCommand)
 	}
 
-	// Row 43: Applied is company-owned and its application date is past the default
-	// follow-up cadence, so the dashboard surfaces a follow-up reminder. The stale
+	// Row 43: Approached is externally owned and its latest attempt is past the default
+	// review cadence, so the dashboard surfaces a plan review. The stale
 	// pack (a mismatched action) must not be surfaced.
-	if apps[1].ActionState != "needs_action" || apps[1].NextAction != "follow_up" {
-		t.Fatalf("applied row next action = %q/%q", apps[1].ActionState, apps[1].NextAction)
+	if apps[1].ActionState != "needs_action" || apps[1].NextAction != "review_approach" {
+		t.Fatalf("approached row next action = %q/%q", apps[1].ActionState, apps[1].NextAction)
 	}
 	if apps[1].NextPackPath != "" {
 		t.Fatalf("stale next pack with mismatched action should not be surfaced, got %q", apps[1].NextPackPath)
@@ -589,7 +591,7 @@ func TestParseDashboardRowsEnrichesNextActionsAndPacks(t *testing.T) {
 
 	// Row 44: Evaluated regardless of score -- the apply/discard gate is automation
 	// policy, not a dashboard decision, so the dashboard still routes to drafting.
-	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "generate_application_pack" {
+	if apps[2].ActionState != "needs_action" || apps[2].NextAction != "generate_approach_plan" {
 		t.Fatalf("low-score evaluated row next action = %q/%q", apps[2].ActionState, apps[2].NextAction)
 	}
 }
@@ -658,9 +660,10 @@ func TestNormalizeStatusMapsStagesToDashboardGroups(t *testing.T) {
 		"Evaluated":         "evaluated",
 		"Application Ready": "evaluated",
 		"Qualifying Ready":  "evaluated",
-		"Qualifying Sent":   "evaluated",
-		"Applied":           "applied",
-		"Outreach Ready":    "applied",
+		"Qualifying Sent":   "approached",
+		"Applied":           "approached",
+		"Outreach Ready":    "evaluated",
+		"Approached":        "approached",
 		"Responded":         "responded",
 		"Interview Ready":   "interview",
 		"Interview":         "interview", // legacy alias
@@ -670,7 +673,7 @@ func TestNormalizeStatusMapsStagesToDashboardGroups(t *testing.T) {
 		"Rejected":          "rejected",
 		"Discarded":         "discarded",
 		"SKIP":              "skip",
-		"aplicado":          "applied", // legacy Spanish alias
+		"aplicado":          "approached", // legacy Spanish alias
 		"processing":        "processing",
 		"pending":           "pending",
 		"failed":            "failed",
@@ -693,9 +696,9 @@ func TestDeriveNextActionByOwner(t *testing.T) {
 		wantAction string
 		wantOwner  string
 	}{
-		{"Evaluated", "needs_action", "generate_application_pack", "agent"},
-		{"Application Ready", "needs_action", "send_application", "user"},
-		{"Qualifying Ready", "needs_action", "send_qualifying_questions", "user"},
+		{"Evaluated", "needs_action", "generate_approach_plan", "agent"},
+		{"Approach Ready", "needs_action", "execute_approach", "user"},
+		{"Application Ready", "needs_action", "execute_approach", "user"},
 		{"Responded", "needs_action", "generate_interview_cheatsheet", "agent"},
 		{"Interview Ready", "needs_action", "attend_interview_and_report", "user"},
 		{"Offer", "needs_action", "generate_negotiation_prep", "agent"},
@@ -723,12 +726,9 @@ func TestStatusPriorityRanksAcceptedAsPositiveTerminal(t *testing.T) {
 	}
 }
 
-// TestDeriveNextActionResearchFirstPreview asserts that an evaluated row whose
-// note carries the "Research first" decision previews the qualifying-question
-// draft (mirroring modes/next.md routing), while a normal note or a later
-// APPLY/CONSIDER re-evaluation keeps the application draft and a row that already
-// qualified (loop-guard marker) reverts to the application draft.
-func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
+// TestDeriveNextActionAlwaysPlansRoutes asserts that qualifying and research
+// choices are routes inside one Approach Plan, not alternate lifecycle stages.
+func TestDeriveNextActionAlwaysPlansRoutes(t *testing.T) {
 	sm := states()
 	now := time.Now()
 	cases := []struct {
@@ -736,10 +736,9 @@ func TestDeriveNextActionResearchFirstPreview(t *testing.T) {
 		notes      string
 		wantAction string
 	}{
-		{"research-first previews the gating question", "Research first: strong fit, but visa/relocation needs confirmation.", "draft_qualifying_questions"},
-		{"normal evaluated row drafts the application", "APPLY: strong remote Europe fit.", "generate_application_pack"},
-		{"later re-evaluation supersedes research-first", "Research first: visa path needs confirmation.; [re-evaluated 2026-07-09] CONSIDER: viable stretch; location is not a pre-application gate.", "generate_application_pack"},
-		{"already-qualified row reverts to the application", "Research first: ... [qualifying-sent 2026-07-08]", "generate_application_pack"},
+		{"research-first is planned", "Research first: strong fit, but visa/relocation needs confirmation.", "generate_approach_plan"},
+		{"normal evaluated row is planned", "APPLY: strong remote Europe fit.", "generate_approach_plan"},
+		{"later re-evaluation is planned", "Research first: visa path needs confirmation.; [re-evaluated 2026-07-09] CONSIDER: viable stretch; location is not a pre-application gate.", "generate_approach_plan"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

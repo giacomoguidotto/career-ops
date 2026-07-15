@@ -83,15 +83,15 @@ eq('no override needs no confirmation', validateCoordinationOverrideRequest({
 // ============================================================================
 console.log('\n--- 1. computeAdvance routing ---');
 
-eq('Evaluated → Application Ready', computeAdvance('Evaluated', states).toLabel, 'Application Ready');
+eq('Evaluated → Approach Ready', computeAdvance('Evaluated', states).toLabel, 'Approach Ready');
 eq('Responded → Interview Ready', computeAdvance('Responded', states).toLabel, 'Interview Ready');
 eq('Offer → Offer Ready', computeAdvance('Offer', states).toLabel, 'Offer Ready');
 ok('Evaluated advance ok', computeAdvance('Evaluated', states).ok === true);
-ok('tolerates bold + trailing date', computeAdvance('**Evaluated** (2026-01-01)', states).toLabel === 'Application Ready');
-ok('alias resolves (id form)', computeAdvance('evaluated', states).toLabel === 'Application Ready');
+ok('tolerates bold + trailing date', computeAdvance('**Evaluated** (2026-01-01)', states).toLabel === 'Approach Ready');
+ok('alias resolves (id form)', computeAdvance('evaluated', states).toLabel === 'Approach Ready');
 
-eq('Application Ready is already-advanced', computeAdvance('Application Ready', states).reason, 'already-advanced');
-eq('Applied (company) does not advance', computeAdvance('Applied', states).ok, false);
+eq('Approach Ready is already-advanced', computeAdvance('Approach Ready', states).reason, 'already-advanced');
+eq('Approached (external) does not advance', computeAdvance('Approached', states).ok, false);
 eq('Accepted is terminal', computeAdvance('Accepted', states).reason, 'terminal');
 eq('Rejected is terminal', computeAdvance('Rejected', states).reason, 'terminal');
 eq('unknown status flagged', computeAdvance('Totally Bogus', states).reason, 'unknown-status');
@@ -107,16 +107,16 @@ const rawPack =
   '## Next: Deepgram (#93)\n\n' +
   '**Stage:** evaluated  \n' +
   '**Owner:** agent  \n' +
-  '**Suggests:** generate_application_pack  \n' +
+  '**Suggests:** generate_approach_plan  \n' +
   '**Score:** 3.85/5\n\n' +
   'Body text mentioning evaluated and agent should be untouched.\n';
 
 const s1 = syncPackHeader(rawPack, ready);
-ok('stage advanced', /\*\*Stage:\*\* application_ready/.test(s1.content));
+ok('stage advanced', /\*\*Stage:\*\* approach_ready/.test(s1.content));
 ok('owner advanced', /\*\*Owner:\*\* user/.test(s1.content));
-ok('suggests advanced', /\*\*Suggests:\*\* send_application/.test(s1.content));
+ok('suggests advanced', /\*\*Suggests:\*\* execute_approach/.test(s1.content));
 ok('reports changed', s1.changed === true);
-ok('hard-break spaces preserved', s1.content.includes('send_application  \n'));
+ok('hard-break spaces preserved', s1.content.includes('execute_approach  \n'));
 ok('body text untouched', s1.content.includes('Body text mentioning evaluated and agent should be untouched.'));
 ok('score line untouched', s1.content.includes('**Score:** 3.85/5'));
 ok('idempotent (no change on re-run)', syncPackHeader(s1.content, ready).changed === false);
@@ -133,8 +133,8 @@ console.log('\n--- 3. applyStatusToLine ---');
 
 const legacyLine = '| 93 | 2026-06-24 | Deepgram | Backend Engineer | 3.85/5 | Evaluated | ✅ | [112](../reports/112.md) | keep me |';
 const legacyMap = resolveColumns([legacyLine]);
-const rewritten = applyStatusToLine(legacyLine, legacyMap, 'Application Ready');
-ok('status replaced', / Application Ready /.test(rewritten));
+const rewritten = applyStatusToLine(legacyLine, legacyMap, 'Approach Ready');
+ok('status replaced', / Approach Ready /.test(rewritten));
 ok('no longer Evaluated', !/ Evaluated /.test(rewritten));
 ok('score preserved', rewritten.includes('3.85/5'));
 ok('notes preserved', rewritten.includes('keep me'));
@@ -144,8 +144,8 @@ const locHeader = '| # | Date | Company | Role | Location | Score | Status | PDF
 const locSep = '|---|------|---------|------|----------|-------|--------|-----|--------|-------|';
 const locRow = '| 7 | 2026-01-01 | Foo | Bar | Remote | 4.0/5 | Evaluated | ✅ | [007](../reports/007.md) | n |';
 const locMap = resolveColumns([locHeader, locSep, locRow]);
-const locRewritten = applyStatusToLine(locRow, locMap, 'Application Ready');
-ok('Location-column layout: status replaced', / Application Ready /.test(locRewritten));
+const locRewritten = applyStatusToLine(locRow, locMap, 'Approach Ready');
+ok('Location-column layout: status replaced', / Approach Ready /.test(locRewritten));
 ok('Location-column layout: location preserved', locRewritten.includes('Remote') && locRewritten.includes('4.0/5'));
 
 // ============================================================================
@@ -176,7 +176,7 @@ function scaffold() {
     'utf-8',
   );
   const packHeader = (id) =>
-    `## Next (#${id})\n\n**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** generate_application_pack  \n\nbody\n`;
+    `## Next (#${id})\n\n**Stage:** evaluated  \n**Owner:** agent  \n**Suggests:** generate_approach_plan  \n\nbody\n`;
   writeFileSync(join(packsDir, '084-vercel.md'), packHeader(84), 'utf-8');
   writeFileSync(join(packsDir, '093-deepgram.md'), packHeader(93), 'utf-8');
   // #60 has NO pack on disk; #50 is Applied (company-owned).
@@ -188,15 +188,15 @@ function scaffold() {
   const { dir, appsFile, packsDir } = scaffold();
   const { results, wrote } = advanceApplications({ appsFile, packsDir, nums: [84, 93], states });
   ok('4a: wrote', wrote === true);
-  ok('4a: #84 advanced', results.find((r) => r.num === 84)?.to === 'Application Ready');
-  ok('4a: #93 advanced', results.find((r) => r.num === 93)?.to === 'Application Ready');
+  ok('4a: #84 advanced', results.find((r) => r.num === 84)?.to === 'Approach Ready');
+  ok('4a: #93 advanced', results.find((r) => r.num === 93)?.to === 'Approach Ready');
   const tracker = readFileSync(appsFile, 'utf-8');
-  ok('4a: tracker shows Application Ready for #84', /\| 84 \|.*\| Application Ready \|/.test(tracker));
-  ok('4a: tracker shows Application Ready for #93', /\| 93 \|.*\| Application Ready \|/.test(tracker));
+  ok('4a: tracker shows Approach Ready for #84', /\| 84 \|.*\| Approach Ready \|/.test(tracker));
+  ok('4a: tracker shows Approach Ready for #93', /\| 93 \|.*\| Approach Ready \|/.test(tracker));
   ok('4a: backup written', existsSync(appsFile + '.bak'));
   ok('4a: backup preserves original Evaluated', /\| 84 \|.*\| Evaluated \|/.test(readFileSync(appsFile + '.bak', 'utf-8')));
   const pack84 = readFileSync(join(packsDir, '084-vercel.md'), 'utf-8');
-  ok('4a: pack #84 header synced', /\*\*Suggests:\*\* send_application/.test(pack84) && /\*\*Stage:\*\* application_ready/.test(pack84));
+  ok('4a: pack #84 header synced', /\*\*Suggests:\*\* execute_approach/.test(pack84) && /\*\*Stage:\*\* approach_ready/.test(pack84));
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -207,7 +207,7 @@ function scaffold() {
   ok('4b: #60 skipped (no pack)', res1.results.find((r) => r.num === 60)?.reason === 'no-pack');
   ok('4b: nothing written', res1.wrote === false);
   const res2 = advanceApplications({ appsFile, packsDir, nums: [60], force: true, states });
-  ok('4b: #60 advances with --force', res2.results.find((r) => r.num === 60)?.to === 'Application Ready');
+  ok('4b: #60 advances with --force', res2.results.find((r) => r.num === 60)?.to === 'Approach Ready');
   ok('4b: forced advance wrote', res2.wrote === true);
   rmSync(dir, { recursive: true, force: true });
 }
@@ -229,7 +229,7 @@ function scaffold() {
   ok('4d: dry-run reports not written', wrote === false);
   ok('4d: tracker unchanged', readFileSync(appsFile, 'utf-8') === before);
   ok('4d: no backup created', !existsSync(appsFile + '.bak'));
-  ok('4d: pack unchanged', /\*\*Suggests:\*\* generate_application_pack/.test(readFileSync(join(packsDir, '084-vercel.md'), 'utf-8')));
+  ok('4d: pack unchanged', /\*\*Suggests:\*\* generate_approach_plan/.test(readFileSync(join(packsDir, '084-vercel.md'), 'utf-8')));
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -260,7 +260,7 @@ function scaffold() {
   rmSync(dir, { recursive: true, force: true });
 }
 
-// 4h. a qualifying pack routes evaluated → Qualifying Ready (not Application Ready)
+// 4h. legacy route-specific artifacts still converge on one Approach Ready stage
 {
   const { dir, appsFile, packsDir } = scaffold();
   // #84's pack is a qualifying question, not an application pack.
@@ -270,12 +270,12 @@ function scaffold() {
     'utf-8',
   );
   const { results } = advanceApplications({ appsFile, packsDir, nums: [84, 93], states });
-  eq('4h: #84 (qualifying pack) → Qualifying Ready', results.find((r) => r.num === 84)?.to, 'Qualifying Ready');
-  eq('4h: #93 (app pack) → Application Ready', results.find((r) => r.num === 93)?.to, 'Application Ready');
+  eq('4h: #84 (legacy qualifying pack) → Approach Ready', results.find((r) => r.num === 84)?.to, 'Approach Ready');
+  eq('4h: #93 (approach plan) → Approach Ready', results.find((r) => r.num === 93)?.to, 'Approach Ready');
   const tracker = readFileSync(appsFile, 'utf-8');
-  ok('4h: tracker shows Qualifying Ready for #84', /\| 84 \|.*\| Qualifying Ready \|/.test(tracker));
+  ok('4h: tracker shows Approach Ready for #84', /\| 84 \|.*\| Approach Ready \|/.test(tracker));
   const pack84 = readFileSync(join(packsDir, '084-vercel.md'), 'utf-8');
-  ok('4h: pack #84 synced to send_qualifying_questions', /\*\*Suggests:\*\* send_qualifying_questions/.test(pack84) && /\*\*Stage:\*\* qualifying_ready/.test(pack84));
+  ok('4h: pack #84 synced to execute_approach', /\*\*Suggests:\*\* execute_approach/.test(pack84) && /\*\*Stage:\*\* approach_ready/.test(pack84));
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -294,7 +294,7 @@ function scaffold() {
     states,
     coordination,
   });
-  eq('4i: eligible Primary advances', results.find((r) => r.num === 84)?.to, 'Application Ready');
+  eq('4i: eligible Primary advances', results.find((r) => r.num === 84)?.to, 'Approach Ready');
   eq('4i: suppressed sibling is refused', results.find((r) => r.num === 93)?.reason, 'candidacy-reserved-primary');
   eq('4i: refusal carries Primary', results.find((r) => r.num === 93)?.primary, 84);
   rmSync(dir, { recursive: true, force: true });
@@ -316,7 +316,7 @@ function scaffold() {
     coordination,
     coordinationOverride: true,
   });
-  eq('4j: explicit coordination override advances sibling', results.find((r) => r.num === 93)?.to, 'Application Ready');
+  eq('4j: explicit coordination override advances sibling', results.find((r) => r.num === 93)?.to, 'Approach Ready');
   rmSync(dir, { recursive: true, force: true });
 }
 

@@ -28,6 +28,9 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 | `npm run invite-match` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `data/applications.md` |
 | `npm run integration:preflight` | `integration-preflight.mjs` | Verify an upstream-bound worktree before implementation |
+| `npm run approach:record` | `record-approach.mjs` | Append one confirmed Approach Attempt |
+| `npm run approach:migrate` | `migrate-approaches.mjs` | Preview/apply legacy state and attempt migration |
+| `npm run approach:evidence` | `approach-evidence.mjs` | Audit whether channel outcomes support a conclusion |
 
 ---
 
@@ -75,7 +78,7 @@ npm run verify
 
 ## normalize
 
-Maps non-canonical statuses to their canonical equivalents and strips markdown bold and dates from the status column. Legacy aliases like `Enviada` become `Applied`, `CERRADA` becomes `Discarded`, etc. Duplicate markers are moved to the notes column.
+Maps non-canonical statuses to their canonical equivalents and strips markdown bold and dates from the status column. Legacy aliases like `Enviada` and `Applied` become `Approached`, `CERRADA` becomes `Discarded`, etc. Duplicate markers are moved to the notes column.
 
 ```bash
 npm run normalize             # apply changes
@@ -100,6 +103,43 @@ npm run dedup -- --dry-run  # preview without writing
 Creates a `.bak` backup before writing.
 
 **Exit codes:** `0` always.
+
+---
+
+## approach:record
+
+Records one user-confirmed real-world action in the append-only Approach Attempt
+ledger. The first Attempt moves the Opportunity to `Approached`; later Attempts
+leave it there. Repeating an identical report is idempotent.
+
+```bash
+npm run approach:record -- 247 founder_outreach --channel email --recipient "Founder Name" --occurred-at 2026-07-14T10:30:00+02:00 --result sent
+```
+
+Drafts and recommendations never belong in this ledger.
+
+## approach:migrate
+
+Previews the legacy `Application Ready` / `Applied` model migration by default.
+Pass `--apply` to create a tracker backup, update canonical Stages, and append
+only Attempts supported by explicit historical evidence. Ambiguities are
+reported instead of guessed.
+
+```bash
+npm run approach:migrate
+npm run approach:migrate -- --apply
+```
+
+## approach:evidence
+
+Checks whether observed channel outcomes are sufficient to support a comparative
+conclusion. The default gate requires at least eight comparable resolved
+outcomes and two meaningful progressions for every compared channel, across at
+least two channels, without same-Opportunity multi-channel confounding.
+
+```bash
+npm run approach:evidence
+```
 
 ---
 
