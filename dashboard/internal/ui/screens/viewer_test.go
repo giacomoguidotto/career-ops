@@ -60,18 +60,6 @@ func TestViewerDoesNotOfferTrackerStatusMutationForQueueRows(t *testing.T) {
 }
 
 func TestViewerCopiesReachOutMessageAnswerOnly(t *testing.T) {
-	root := t.TempDir()
-	reportPath := filepath.Join(root, "reports", "042-acme.md")
-	nextPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
-	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
-		t.Fatalf("mkdir report: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(nextPath), 0o755); err != nil {
-		t.Fatalf("mkdir next pack: %v", err)
-	}
-	if err := os.WriteFile(reportPath, []byte("# Evaluation: Acme -- Backend Engineer\n"), 0o644); err != nil {
-		t.Fatalf("write report: %v", err)
-	}
 	const message = "Hello Ada, I would enjoy bringing reliable product engineering to Acme."
 	nextPack := strings.Join([]string{
 		"## Next: Acme -- Backend Engineer (#42)",
@@ -81,29 +69,12 @@ func TestViewerCopiesReachOutMessageAnswerOnly(t *testing.T) {
 		"| Question | Answer | Notes |",
 		"|---|---|---|",
 		"| Reach-out message | " + message + " | Keep this warm and specific. |",
-		"| Availability | Next month. | Select only if asked. |",
 	}, "\n")
-	if err := os.WriteFile(nextPath, []byte(nextPack), 0o644); err != nil {
-		t.Fatalf("write next pack: %v", err)
-	}
-
-	m := NewViewerModel(
-		theme.NewTheme("catppuccin-mocha"),
-		root,
-		reportPath,
-		"DETAILS: Acme / Backend Engineer",
-		100,
-		30,
-		model.DashboardRow{
-			Company:      "Acme",
-			Role:         "Backend Engineer",
-			NextPackPath: "output/next-packs/042-acme.md",
-		},
-	)
+	m := newDetailsViewerForCopyTest(t, "# Evaluation: Acme -- Backend Engineer\n", nextPack)
 
 	footer := ansi.Strip(m.renderFooter())
-	if !strings.Contains(footer, "y copy message") {
-		t.Fatalf("details footer did not advertise message copying: %q", footer)
+	if !strings.Contains(footer, "y copy answer") {
+		t.Fatalf("details footer did not advertise answer copying: %q", footer)
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -125,7 +96,114 @@ func TestViewerCopiesReachOutMessageAnswerOnly(t *testing.T) {
 	}
 }
 
-func TestViewerDoesNotOfferSentinelCoverLetterAsMessage(t *testing.T) {
+func TestDetailsViewerCopiesOnlyCurrentNextStepAnswer(t *testing.T) {
+	report := strings.Join([]string{
+		"# Evaluation: Acme -- Backend Engineer",
+		"",
+		"## Application Answers",
+		"",
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Reach-out message | An older report draft. | Superseded. |",
+	}, "\n")
+	const currentMessage = "The current approved message."
+	nextPack := strings.Join([]string{
+		"## Next: Acme -- Backend Engineer (#42)",
+		"",
+		"### Fill the Application Form",
+		"",
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Reach-out message | " + currentMessage + " | Ready to paste. |",
+	}, "\n")
+	m := newDetailsViewerForCopyTest(t, report, nextPack)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if updated.copyPicker {
+		t.Fatal("an older report answer created a duplicate copy choice")
+	}
+	if cmd == nil {
+		t.Fatal("one current next-step answer did not copy directly")
+	}
+	copyMsg, ok := cmd().(ViewerCopyTextMsg)
+	if !ok {
+		t.Fatalf("pressing y emitted %T, want ViewerCopyTextMsg", cmd())
+	}
+	if copyMsg.Text != currentMessage {
+		t.Fatalf("copied text = %q, want current next-step answer %q", copyMsg.Text, currentMessage)
+	}
+}
+
+func TestDetailsViewerOffersOrdinaryFormAnswers(t *testing.T) {
+	nextPack := strings.Join([]string{
+		"## Next: Acme -- Backend Engineer (#42)",
+		"",
+		"### Fill the Application Form",
+		"",
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Full Name | Ada Example | From profile. |",
+		"| Email | ada@example.com | Verify before submission. |",
+		"| Resume/CV | [ATS CV](../ada-example.pdf) | Upload this file. |",
+		"| Cover letter | Leave blank | Optional. |",
+	}, "\n")
+	m := newDetailsViewerForCopyTest(t, "# Evaluation: Acme -- Backend Engineer\n", nextPack)
+
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "y copy answer") {
+		t.Fatalf("details footer did not advertise answer copying: %q", footer)
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd != nil {
+		t.Fatal("multiple form answers copied without opening the picker")
+	}
+	if !updated.copyPicker {
+		t.Fatal("multiple form answers did not open the copy picker")
+	}
+	plain := ansi.Strip(updated.View())
+	for _, want := range []string{"Copy answer:", "Full Name", "Email"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("copy picker did not render %q:\n%s", want, plain)
+		}
+	}
+	if got := len(updated.copyCandidates); got != 2 {
+		t.Fatalf("copy candidates = %#v, want only Full Name and Email", updated.copyCandidates)
+	}
+}
+
+func newDetailsViewerForCopyTest(t *testing.T, report, nextPack string) ViewerModel {
+	t.Helper()
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "reports", "042-acme.md")
+	nextPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir report: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(nextPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	if err := os.WriteFile(reportPath, []byte(report), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := os.WriteFile(nextPath, []byte(nextPack), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+	return NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		reportPath,
+		"DETAILS: Acme / Backend Engineer",
+		100,
+		30,
+		model.DashboardRow{
+			Company:      "Acme",
+			Role:         "Backend Engineer",
+			NextPackPath: "output/next-packs/042-acme.md",
+		},
+	)
+}
+
+func TestViewerDoesNotOfferSentinelCoverLetterAsAnswer(t *testing.T) {
 	lines := []string{
 		"| Question | Answer | Notes |",
 		"|---|---|---|",
@@ -141,8 +219,8 @@ func TestViewerDoesNotOfferSentinelCoverLetterAsMessage(t *testing.T) {
 	m.rebuildRender()
 
 	footer := ansi.Strip(m.renderFooter())
-	if strings.Contains(footer, "copy message") {
-		t.Fatalf("sentinel cover-letter answer advertised message copying: %q", footer)
+	if strings.Contains(footer, "copy answer") {
+		t.Fatalf("sentinel cover-letter answer advertised answer copying: %q", footer)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	if cmd != nil {
@@ -200,7 +278,7 @@ func TestViewerLetsUserChooseWhenDetailsContainMultipleMessages(t *testing.T) {
 		t.Fatal("multiple messages did not open the copy picker")
 	}
 	plain := ansi.Strip(updated.View())
-	for _, want := range []string{"Copy message:", "Founder message", "Recruiter message"} {
+	for _, want := range []string{"Copy answer:", "Founder message", "Recruiter message"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("copy picker did not render %q:\n%s", want, plain)
 		}

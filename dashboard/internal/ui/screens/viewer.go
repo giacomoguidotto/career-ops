@@ -82,8 +82,10 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 	if len(content) > 0 {
 		lines = strings.Split(string(content), "\n")
 	}
+	copySourceLines := lines
 	if isDetailsTitle(title) {
 		lines = buildDetailsLines(careerOpsPath, lines, app)
+		copySourceLines = extractDetailsNextStepLines(lines)
 	}
 
 	m := ViewerModel{
@@ -97,10 +99,30 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 		careerOpsPath:   careerOpsPath,
 		coverLetterPath: parseCoverLetterPath(lines, careerOpsPath),
 		cvPDFPath:       resolveViewerPDFPath(careerOpsPath, app),
-		copyCandidates:  extractViewerCopyCandidates(lines),
+		copyCandidates:  extractViewerCopyCandidates(copySourceLines),
 	}
 	m.rebuildRender()
 	return m
+}
+
+func extractDetailsNextStepLines(lines []string) []string {
+	start := -1
+	for i, line := range lines {
+		text, ok := markdownHeadingText(strings.TrimSpace(line))
+		if !ok {
+			continue
+		}
+		switch {
+		case strings.EqualFold(strings.TrimSpace(text), "Next Step"):
+			start = i + 1
+		case start >= 0 && strings.EqualFold(strings.TrimSpace(text), "Deep Dive"):
+			return lines[start:i]
+		}
+	}
+	if start >= 0 {
+		return lines[start:]
+	}
+	return nil
 }
 
 func isDetailsTitle(title string) bool {
@@ -1257,8 +1279,9 @@ func extractViewerCopyCandidates(lines []string) []viewerCopyCandidate {
 				continue
 			}
 			label := strings.TrimSpace(cells[labelColumn])
-			text := plainViewerCopyText(cells[answerColumn])
-			if !isCopyableMessageLabel(label) || text == "" {
+			rawAnswer := cells[answerColumn]
+			text := plainViewerCopyText(rawAnswer)
+			if !isCopyableViewerAnswer(label, rawAnswer, text) {
 				continue
 			}
 			candidates = append(candidates, viewerCopyCandidate{label: label, text: text})
@@ -1285,11 +1308,16 @@ func tableColumnIndex(headers []string, want string) int {
 	return -1
 }
 
-func isCopyableMessageLabel(label string) bool {
+func isCopyableViewerAnswer(label, rawAnswer, text string) bool {
+	if text == "" || normalizeDetailsLabel(text) == "leave blank" {
+		return false
+	}
 	label = normalizeDetailsLabel(label)
-	return strings.Contains(label, "message") ||
-		strings.Contains(label, "email body") ||
-		strings.Contains(label, "cover paragraph")
+	isUploadField := label == "resume" ||
+		label == "resume/cv" ||
+		label == "cv" ||
+		strings.Contains(label, "attachment")
+	return !isUploadField || !reLink.MatchString(rawAnswer)
 }
 
 func detectAlignment(sep string) lipgloss.Position {
@@ -1926,7 +1954,7 @@ func (m ViewerModel) footerSegments(keyStyle, descStyle lipgloss.Style, compact 
 		segments = append(segments, keyStyle.Render("c")+descStyle.Render(" status"))
 	}
 	if len(m.copyCandidates) > 0 {
-		segments = append(segments, keyStyle.Render("y")+descStyle.Render(" copy message"))
+		segments = append(segments, keyStyle.Render("y")+descStyle.Render(" copy answer"))
 	}
 	if m.coverLetterPath != "" {
 		segments = append(segments, keyStyle.Render("L")+descStyle.Render(" cover letter"))
@@ -2010,7 +2038,7 @@ func (m ViewerModel) overlayCopyPicker(body string) string {
 	for i, candidate := range m.copyCandidates {
 		labels[i] = candidate.label
 	}
-	return m.overlayPicker(body, "Copy message:", labels, m.copyCursor, pickerWidth, m.copyPickerVisibleCount())
+	return m.overlayPicker(body, "Copy answer:", labels, m.copyCursor, pickerWidth, m.copyPickerVisibleCount())
 }
 
 func (m ViewerModel) overlayPicker(body, title string, options []string, cursor, pickerWidth, visibleCount int) string {
