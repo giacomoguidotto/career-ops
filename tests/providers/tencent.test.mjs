@@ -242,4 +242,3 @@ try {
 } catch (e) {
   fail(`tencent provider tests crashed: ${e.message}`);
 }
-

@@ -514,7 +514,7 @@ function analyze() {
     if (reportMatch) {
       const fromTracker = join(dirname(APPS_FILE), reportMatch[1]);
       const candidate = existsSync(fromTracker) ? fromTracker : join(CAREER_OPS, reportMatch[1]);
-      
+
       const repoRelative = relative(CAREER_OPS, candidate).split(sep).join('/');
       if (repoRelative.startsWith('reports/') && !repoRelative.includes('..')) {
         reportPath = existsSync(candidate) ? candidate : null;

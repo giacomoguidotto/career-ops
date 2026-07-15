@@ -5,7 +5,7 @@
  * Three payloads, decreasing availability:
  *   1. calibration — own funnel rates (canonical ever* definition imported from
  *      stats.mjs) vs candidate-side market benchmark ranges. Works day one.
- *   2. waiting — in-flight Applied rows and elapsed days vs the typical
+ *   2. waiting — in-flight Approached rows and elapsed days vs the typical
  *      first-response window. Per-row factual reporting, not an aggregate claim.
  *   3. velocity — median/p75 days per stage hop, folded from the append-only
  *      transition ledger data/status-log.tsv. Accrues value as the log grows.
@@ -56,14 +56,14 @@ const VALID_SOURCES = new Set(['set-status', 'correction', 'backfill', 'manual']
 // counted but excluded: they are reconstructed after the fact, not observed.
 const DAY_MATH_SOURCES = new Set(['set-status', 'correction']);
 
-// The hops a candidate can measure from their own tracker. Applied→Rejected is
-// tracked separately from the forward hops — a "days to terminal" number that
+// The hops a candidate can measure from their own tracker. Approached→Rejected
+// is tracked separately from the forward hops — a "days to terminal" number that
 // mixes offers and rejections reads grim and means nothing.
 const HOPS = [
-  { key: 'appliedToResponded', from: 'Applied', to: 'Responded' },
-  { key: 'respondedToInterview', from: 'Responded', to: 'Interview' },
-  { key: 'interviewToOffer', from: 'Interview', to: 'Offer' },
-  { key: 'appliedToRejected', from: 'Applied', to: 'Rejected' },
+  { key: 'approachedToResponded', from: 'Approached', to: 'Responded' },
+  { key: 'respondedToInterview', from: 'Responded', to: 'Interview Ready' },
+  { key: 'interviewToOffer', from: 'Interview Ready', to: 'Offer' },
+  { key: 'approachedToRejected', from: 'Approached', to: 'Rejected' },
 ];
 
 // Verbatim strings the tone contract pins (also asserted by mode-doc checks).
@@ -253,34 +253,34 @@ export function classify(ownPct, metric) {
 
 // --- Calibration (flagship: works day one, no ledger needed) ---
 export function computeCalibration(funnel, benchmarks) {
-  const smallSample = funnel.everApplied < CLAIM_MIN_N;
+  const smallSample = funnel.everApproached < CLAIM_MIN_N;
   return {
-    everApplied: funnel.everApplied,
+    everApproached: funnel.everApproached,
     smallSample,
     claimMinN: CLAIM_MIN_N,
-    responseRate: classify(funnel.everApplied > 0 ? funnel.responseRate : null, benchmarks.response_rate),
-    interviewRate: classify(funnel.everApplied > 0 ? funnel.interviewRate : null, benchmarks.application_to_interview),
+    responseRate: classify(funnel.everApproached > 0 ? funnel.responseRate : null, benchmarks.response_rate),
+    interviewRate: classify(funnel.everApproached > 0 ? funnel.interviewRate : null, benchmarks.application_to_interview),
   };
 }
 
-// --- Waiting (flagship #2: in-flight Applied rows vs first-response window) ---
+// --- Waiting (flagship #2: in-flight Approached rows vs first-response window) ---
 /**
- * Applied-date priority per row:
- *   1. ledger Applied observation (event-dated via --on, or logged same day)
+ * Approach-date priority per row:
+ *   1. ledger Approached observation (event-dated via --on, or logged same day)
  *   2. "Applied YYYY-MM-DD" in the tracker notes (followup-cadence convention;
  *      followup-seed/apply modes write it — same helper, same regex)
  *   3. unknown (listed, never guessed — the tracker date column is the
  *      EVALUATION date and must not stand in for the submission date)
  */
-export function computeWaiting(rows, timelines, benchmarks, todayStr) {
+export function computeWaiting(rows, timelines, benchmarks, todayStr, states) {
   const windowDays = benchmarks.days_first_response?.range_days ?? [5, 14];
   const items = [];
   let unknownDates = 0;
   for (const row of rows) {
-    if (row.status !== 'Applied') continue;
+    if (resolveCanonicalState(row.status, states) !== 'Approached') continue;
     const timeline = timelines.get(row.num) || [];
-    const ledgerApplied = timeline.filter(o => o.to === 'Applied' && o.dayMath).pop();
-    const appliedDate = ledgerApplied?.date ?? parseAppliedDate(row.notes) ?? null;
+    const ledgerApproached = timeline.filter(o => o.to === 'Approached' && o.dayMath).pop();
+    const appliedDate = ledgerApproached?.date ?? parseAppliedDate(row.notes) ?? null;
     if (!appliedDate) { unknownDates++; items.push({ num: row.num, company: row.company, appliedDate: null, elapsedDays: null, beyondTypicalWindow: false, dateSource: 'unknown' }); continue; }
     const elapsed = daysBetween(appliedDate, todayStr);
     items.push({
@@ -289,7 +289,7 @@ export function computeWaiting(rows, timelines, benchmarks, todayStr) {
       appliedDate,
       elapsedDays: elapsed,
       beyondTypicalWindow: elapsed !== null && elapsed > windowDays[1],
-      dateSource: ledgerApplied ? 'status-log' : 'tracker-notes',
+      dateSource: ledgerApproached ? 'status-log' : 'tracker-notes',
     });
   }
   return {
@@ -343,7 +343,7 @@ export function analyze({ trackerContent, logContent, benchmarks, states, todayS
 
   return {
     calibration: computeCalibration(funnel, benchmarks),
-    waiting: computeWaiting(rows, timelines, benchmarks, todayStr),
+    waiting: computeWaiting(rows, timelines, benchmarks, todayStr, states),
     velocity,
     dataQuality: {
       trackerRows: rows.length,
@@ -384,21 +384,21 @@ export function renderSummary(result, todayStr) {
   out.push('━'.repeat(46));
 
   out.push('\nCalibration (your funnel vs market):');
-  if (cal.everApplied === 0) {
-    out.push('  no applications sent yet — calibration starts at your first Applied row');
+  if (cal.everApproached === 0) {
+    out.push('  no approaches recorded yet — calibration starts at your first Approached row');
   } else {
-    out.push(fmtCalibrationLine('Response rate', cal.responseRate, cal.smallSample, cal.everApplied));
-    out.push(fmtCalibrationLine('Interview rate', cal.interviewRate, cal.smallSample, cal.everApplied));
-    if (cal.smallSample) out.push(`  (comparative claims need n≥${cal.claimMinN} applied; you have ${cal.everApplied})`);
+    out.push(fmtCalibrationLine('Response rate', cal.responseRate, cal.smallSample, cal.everApproached));
+    out.push(fmtCalibrationLine('Interview rate', cal.interviewRate, cal.smallSample, cal.everApproached));
+    if (cal.smallSample) out.push(`  (comparative claims need n≥${cal.claimMinN} approached; you have ${cal.everApproached})`);
   }
 
   out.push('\nWaiting (in-flight applications):');
   if (!waiting.inFlight) {
-    out.push('  none in Applied right now');
+    out.push('  none in Approached right now');
   } else {
     out.push(`  ${waiting.inFlight} in flight. Typical first-response window: ${waiting.windowDays[0]}–${waiting.windowDays[1]} days (${waiting.windowSource?.year ?? 'n/a'}, directional; many applications never get a response — silence is common, not a verdict).`);
     for (const item of waiting.items) {
-      if (item.appliedDate === null) { out.push(`  #${item.num} ${item.company} — applied date unknown (no dated Applied observation; add "Applied YYYY-MM-DD" to its notes or use set-status)`); continue; }
+      if (item.appliedDate === null) { out.push(`  #${item.num} ${item.company} — approach date unknown (no dated Approached observation; record the attempt or use set-status)`); continue; }
       const flag = item.beyondTypicalWindow ? `, beyond typical ${waiting.windowDays[0]}–${waiting.windowDays[1]}d window → consider followup mode` : '';
       out.push(`  #${item.num} ${item.company} — applied ${item.appliedDate} (${item.elapsedDays}d${flag})`);
     }
@@ -488,7 +488,7 @@ function selfTest() {
   check(t2.length === 2, `fold: row 2 expected 2 observations, got ${t2.length}`);
   check(t2[1].date === '2026-06-09' && t2[1].source === 'correction', 'fold: correction replaces same-(num,to) date');
   const t5 = timelines.get(5);
-  check(t5.length === 1 && t5[0].to === 'Applied', `fold: retraction removes latest observation (got ${t5.map(o => o.to).join(',')})`);
+  check(t5.length === 1 && t5[0].to === 'Approached', `fold: retraction removes latest observation (got ${t5.map(o => o.to).join(',')})`);
 
   // -- percentiles --
   check(median([3, 6, 20]) === 6, 'median odd');
@@ -498,20 +498,20 @@ function selfTest() {
 
   // -- velocity --
   const velocity = computeVelocity(timelines, TODAY);
-  check(velocity.appliedToResponded.n === 2, `velocity: A→R expected n=2 (rows 1,2), got ${velocity.appliedToResponded.n}`);
-  check(velocity.appliedToResponded.insufficientData === true, 'velocity: n=2 < 3 → insufficient');
-  check(velocity.appliedToResponded.median === null, 'velocity: insufficient → no median');
-  check(velocity.appliedToResponded.sameDayExcluded === 1, `velocity: row 3 same-day hop excluded+counted, got ${velocity.appliedToResponded.sameDayExcluded}`);
-  // rows 4, 5, 99 sit in Applied with no later observation → censored (still waiting)
-  check(velocity.appliedToResponded.censored === 3, `velocity: expected 3 censored, got ${velocity.appliedToResponded.censored}`);
-  check(velocity.appliedToRejected.censored === 0, 'velocity: rejection hop does not double-count censoring');
+  check(velocity.approachedToResponded.n === 2, `velocity: A→R expected n=2 (rows 1,2), got ${velocity.approachedToResponded.n}`);
+  check(velocity.approachedToResponded.insufficientData === true, 'velocity: n=2 < 3 → insufficient');
+  check(velocity.approachedToResponded.median === null, 'velocity: insufficient → no median');
+  check(velocity.approachedToResponded.sameDayExcluded === 1, `velocity: row 3 same-day hop excluded+counted, got ${velocity.approachedToResponded.sameDayExcluded}`);
+  // rows 4, 5, 99 sit in Approached with no later observation → censored (still waiting)
+  check(velocity.approachedToResponded.censored === 3, `velocity: expected 3 censored, got ${velocity.approachedToResponded.censored}`);
+  check(velocity.approachedToRejected.censored === 0, 'velocity: rejection hop does not double-count censoring');
   check(velocity.interviewToOffer.n === 1 && velocity.interviewToOffer.insufficientData, 'velocity: I→O n=1 insufficient');
 
   // three completed A→R measurements → median renders
   const logWithThird = LOG_FIXTURE + '\n4\t2026-06-27\tApplied\tResponded\tset-status\t';
   const v3 = computeVelocity(foldObservations(parseStatusLog(logWithThird, states).observations), TODAY);
-  check(v3.appliedToResponded.n === 3 && v3.appliedToResponded.median === 7, `velocity: [7,8,7] → median 7, got n=${v3.appliedToResponded.n} median=${v3.appliedToResponded.median}`);
-  check(v3.appliedToResponded.censored === 2, 'velocity: censored drops to 2 after row 4 completes');
+  check(v3.approachedToResponded.n === 3 && v3.approachedToResponded.median === 7, `velocity: [7,8,7] → median 7, got n=${v3.approachedToResponded.n} median=${v3.approachedToResponded.median}`);
+  check(v3.approachedToResponded.censored === 2, 'velocity: censored drops to 2 after row 4 completes');
 
   // -- benchmarks + classification --
   const bm = loadBenchmarks(join(CAREER_OPS, 'templates/benchmarks.yml')).benchmarks;
@@ -613,9 +613,9 @@ function selfTest() {
 
   // -- empty state --
   const empty = analyze({ trackerContent: '', logContent: '', benchmarks: bm, states, todayStr: TODAY });
-  check(empty.calibration.everApplied === 0, 'empty: zero applied');
+  check(empty.calibration.everApproached === 0, 'empty: zero approached');
   const emptySummary = renderSummary(empty, TODAY);
-  check(emptySummary.includes('calibration starts at your first Applied row'), 'empty: friendly zero state');
+  check(emptySummary.includes('calibration starts at your first Approached row'), 'empty: friendly zero state');
   check(emptySummary.includes('ledger is empty'), 'empty: ledger explainer');
 
   if (failures) { console.error(`\n${failures} self-test failure(s)`); process.exit(1); }
