@@ -14,5 +14,6 @@ ok('#247 fixture uses a warm informal founder register', /informal, smart, and l
 ok('#247 fixture lets specific proof imply capability', /graph service from messy requirements through the data model and APIs/i.test(fixture));
 ok('#247 fixture avoids a cold keyword inventory', !/skills?:|competencies:|technology stack:/i.test(fixture));
 ok('#247 fixture ranks a parallel route while preserving the formal route', /## Ranked Approach Plan/.test(fixture) && /## Formal Route/.test(fixture));
+ok('#247 fixture leaves the company and role title to the details page', !/^#{1,2}\s+(?:Next|Approach):/i.test(fixture));
 ok('#247 fixture contains no em dash', !fixture.includes('—'));
 ok('standalone planner requires generic defaults when personal strategy is absent', /generic defaults/i.test(planner) && /absence into a blocker/i.test(planner));

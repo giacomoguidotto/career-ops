@@ -157,24 +157,31 @@ func TestViewerHeaderBackgroundCoversStyledTitleAndScrollText(t *testing.T) {
 }
 
 func TestViewerSkipsDuplicateNextPackHeading(t *testing.T) {
-	m := ViewerModel{
-		lines: []string{
-			"## Next: Acme -- Backend Engineer (#42)",
-			"",
-			"**Decision:** apply",
-		},
-		title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
-		width:  80,
-		height: 20,
-		theme:  theme.NewTheme("catppuccin-mocha"),
-	}
+	for _, heading := range []string{
+		"## Next: Acme -- Backend Engineer (#42)",
+		"## Approach: Acme -- Backend Engineer (#42)",
+	} {
+		t.Run(heading, func(t *testing.T) {
+			m := ViewerModel{
+				lines: []string{
+					heading,
+					"",
+					"**Decision:** apply",
+				},
+				title:  "NEXT STEP: Send Application / Acme / Backend Engineer / Remote",
+				width:  80,
+				height: 20,
+				theme:  theme.NewTheme("catppuccin-mocha"),
+			}
 
-	rendered := ansi.Strip(strings.Join(m.renderAll(), "\n"))
-	if strings.Contains(rendered, "Next: Acme") {
-		t.Fatalf("expected duplicate next-pack heading to be hidden, got %q", rendered)
-	}
-	if !strings.HasPrefix(strings.TrimLeft(rendered, " "), "Decision: apply") {
-		t.Fatalf("expected body to start with the first useful line, got %q", rendered)
+			rendered := ansi.Strip(strings.Join(m.renderAll(), "\n"))
+			if strings.Contains(rendered, "Next: Acme") || strings.Contains(rendered, "Approach: Acme") {
+				t.Fatalf("expected duplicate next-pack heading to be hidden, got %q", rendered)
+			}
+			if !strings.HasPrefix(strings.TrimLeft(rendered, " "), "Decision: apply") {
+				t.Fatalf("expected body to start with the first useful line, got %q", rendered)
+			}
+		})
 	}
 }
 
@@ -305,7 +312,7 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 		t.Fatalf("write report: %v", err)
 	}
 	next := strings.Join([]string{
-		"## Next: Acme -- Backend Engineer (#42)",
+		"## Approach: Acme -- Backend Engineer (#42)",
 		"",
 		"**Next step:** Review the salary field, then submit.",
 		"**Stage:** application_ready",
@@ -365,6 +372,7 @@ func TestDetailsViewerSkipsTopTlDrThenNextStep(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"Next: Acme",
+		"Approach: Acme",
 		"Machine Summary",
 		"machine_only",
 		"Decision:",

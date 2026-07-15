@@ -20,6 +20,10 @@ follow-up work. Every output must be usable without scavenger-hunting through re
 without a second research step before the user can act.
 
 - Put the decision and next human action at the top.
+- **No generated pack title:** the details page owns the company and role title.
+  Never start a pack with a title such as `## Next: ...` or `## Approach: ...`.
+  Start directly with the pack metadata, then use headings only for body
+  sections such as `## Communication Plan` and `## Ranked Approaches`.
 - Include a quick-reference block with the role, score, report, blocker, and the
   exact next step.
 - **Linear action order:** order the pack by the ranked Approach Plan and the
@@ -581,13 +585,12 @@ unattended automations that delegate to this mode) re-drafts the same pack forev
 
 Pack format:
 
-In the Approach Plan template below, omit `### Before You Apply` and its body
-entirely when no unresolved preflight remains. The placeholder demonstrates the
-shape only; it does not make the section mandatory.
+The details page supplies the pack title. Do not add a generated company/role
+title before the metadata. In the Approach Plan template below, omit `### Before
+You Apply` and its body entirely when no unresolved preflight remains. The
+placeholder demonstrates the shape only; it does not make the section mandatory.
 
 ````markdown
-## Next: {Company} -- {Role} (#{tracker_num})
-
 **Strategy:** {register}; signal: {one or two proof anchors}; first route: {route}
 
 ## Communication Plan

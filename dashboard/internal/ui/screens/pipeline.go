@@ -2047,9 +2047,9 @@ func nextActionLabel(app model.DashboardRow) string {
 
 	switch app.NextAction {
 	case "generate_approach_plan":
-		return "Generate approach plan"
+		return "Generate approaches"
 	case "execute_approach":
-		return "Your turn"
+		return "Approach it"
 	case "review_approach":
 		if strings.Contains(strings.ToLower(app.ActionReason), "cold") {
 			return "Stale review"

@@ -820,6 +820,16 @@ func TestNextStepLabelsSeparateAgentActionsFromHumanSteps(t *testing.T) {
 		want string
 	}{
 		{
+			name: "approach generation",
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_approach_plan"},
+			want: "Generate approaches",
+		},
+		{
+			name: "approach execution",
+			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "execute_approach"},
+			want: "Approach it",
+		},
+		{
 			name: "application generation",
 			app:  model.DashboardRow{ActionState: "needs_action", NextAction: "generate_application_pack"},
 			want: "Generate application",
