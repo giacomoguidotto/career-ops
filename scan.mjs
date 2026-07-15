@@ -62,9 +62,6 @@ const PIPELINE_PATH = 'data/pipeline.md';
 const APPLICATIONS_PATH = 'data/applications.md';
 const PROVIDERS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'providers');
 
-// Ensure required directories exist (fresh setup)
-mkdirSync('data', { recursive: true });
-
 const CONCURRENCY = 10;
 
 // Provider loading + routing live in providers/_registry.mjs so the portal
@@ -1071,6 +1068,37 @@ function guardStatusFor(code) {
 
 async function main() {
   const args = process.argv.slice(2);
+  const knownOptions = new Set([
+    '--help', '--dry-run', '--company', '--verify', '--headed-fallback',
+    '--throttle', '--rediscover-404', '--max-new', '--max-per-company',
+  ]);
+  const unknownOption = args.find((arg) => arg.startsWith('-')
+    && !knownOptions.has(arg)
+    && !arg.startsWith('--throttle=')
+    && !arg.startsWith('--max-new=')
+    && !arg.startsWith('--max-per-company='));
+  if (unknownOption) {
+    console.error(`Unknown option: ${unknownOption}`);
+    process.exit(1);
+  }
+  if (args.includes('--help')) {
+    console.log(`Usage: node scan.mjs [options]
+
+Options:
+  --dry-run                 Preview without writing files
+  --company <name>          Scan one configured company
+  --verify                  Verify new URLs before adding them
+  --headed-fallback         Retry anti-bot challenges in a headed browser
+  --throttle[=<ms>]         Delay between browser verification checks
+  --rediscover-404          Search for moved postings during verification
+  --max-new=<count>         Limit new offers added in this run
+  --max-per-company=<count> Limit new offers added per company
+  --help                    Show this help`);
+    return;
+  }
+  // Normal scans bootstrap the user-layer directory. Informational and invalid
+  // invocations return above without touching the working tree.
+  mkdirSync('data', { recursive: true });
   const dryRun = args.includes('--dry-run');
   const verify = args.includes('--verify');
   const maxNew = parsePositiveIntFlag(args, 'max-new');
