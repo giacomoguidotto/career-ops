@@ -11,7 +11,9 @@ BATCH_DIR="$SCRIPT_DIR"
 INPUT_FILE="$BATCH_DIR/batch-input.tsv"
 STATE_FILE="$BATCH_DIR/batch-state.tsv"
 PROMPT_FILE="$BATCH_DIR/batch-prompt.md"
+PROFILE_FILE="$PROJECT_DIR/config/profile.yml"
 LOGS_DIR="$BATCH_DIR/logs"
+DISCARD_LOG="$LOGS_DIR/discard.log"
 TRACKER_DIR="$BATCH_DIR/tracker-additions"
 REPORTS_DIR="$PROJECT_DIR/reports"
 APPLICATIONS_FILE="$PROJECT_DIR/data/applications.md"
@@ -34,6 +36,8 @@ SKIP_PDF=false
 WORKER_CLI="${CAREER_OPS_BATCH_CLI:-codex}"
 MODEL=""  # empty = worker CLI default; Codex falls back to gpt-5.5 below
 REASONING_EFFORT="${CAREER_OPS_BATCH_REASONING_EFFORT:-high}"
+RESOLVED_MODEL=""
+RESOLVED_SPEND_TIER=""
 RATE_LIMIT_SLEEP=300
 WORKER_IDLE_TIMEOUT="${CAREER_OPS_WORKER_IDLE_TIMEOUT:-900}"
 WORKER_MAX_SECONDS="${CAREER_OPS_WORKER_MAX_SECONDS:-0}"
@@ -51,6 +55,7 @@ is_decimal_number() {
 usage() {
   cat <<'USAGE'
 career-ops batch runner — process job offers in batch via headless workers
+Claude workers use spend_tier from config/profile.yml unless --model overrides it.
 
 Usage: batch-runner.sh [OPTIONS]
 
@@ -75,7 +80,7 @@ Options:
                        Kill and recover a worker after N total runtime seconds
                        (default: 0 = disabled)
   --model NAME         Model passed to the worker CLI. Codex defaults to
-                       gpt-5.5 when unset; Claude uses its CLI default.
+                       gpt-5.5; Claude resolves config/profile.yml spend_tier.
   --reasoning-effort N Codex reasoning effort (default: high; can also set
                        CAREER_OPS_BATCH_REASONING_EFFORT)
   --status             Show batch progress and a per-job table, then exit
@@ -336,6 +341,85 @@ get_retries() {
   local retries
   retries=$(awk -F'\t' -v id="$id" '$1 == id { print $9 }' "$STATE_FILE")
   echo "${retries:-0}"
+}
+
+# Read spend_tier from config/profile.yml. Defaults to "standard" if the key
+# is absent or invalid.
+read_spend_tier() {
+  local raw=""
+
+  if [[ -f "$PROFILE_FILE" ]]; then
+    raw=$(
+      awk -F: '
+        /^[[:space:]]*spend_tier[[:space:]]*:/ {
+          value = substr($0, index($0, ":") + 1)
+          print value
+          exit
+        }
+      ' "$PROFILE_FILE"
+    )
+    raw="${raw%%#*}"
+    raw="${raw//$'\r'/}"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    case "$raw" in
+      \"*\") raw="${raw#\"}"; raw="${raw%\"}" ;;
+      \'*\') raw="${raw#\'}"; raw="${raw%\'}" ;;
+    esac
+    raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  fi
+
+  case "$raw" in
+    economy|standard|premium)
+      printf '%s\n' "$raw"
+      ;;
+    "")
+      printf '%s\n' "standard"
+      ;;
+    *)
+      echo "WARN: Invalid spend_tier \"$raw\" in ${PROFILE_FILE#"$PROJECT_DIR/"}; falling back to standard." >&2
+      printf '%s\n' "standard"
+      ;;
+  esac
+}
+
+# Tier -> model mapping. Keep in sync with the table in modes/_shared.md.
+spend_tier_to_model() {
+  case "$1" in
+    economy) echo "claude-haiku-4-5" ;;
+    premium) echo "claude-opus-4-8" ;;
+    standard|*) echo "claude-sonnet-4-6" ;;
+  esac
+}
+
+# Resolve the worker model once per run. --model always wins. The release's
+# concrete spend-tier mapping applies to Claude; Codex retains the fork's
+# verified default because the shared table intentionally leaves other CLI
+# model names unspecified.
+resolve_worker_model() {
+  if [[ -n "$MODEL" ]]; then
+    RESOLVED_MODEL="$MODEL"
+    RESOLVED_SPEND_TIER="override"
+    return 0
+  fi
+
+  RESOLVED_SPEND_TIER="$(read_spend_tier)"
+  if [[ "$WORKER_CLI" == "claude" ]]; then
+    RESOLVED_MODEL="$(spend_tier_to_model "$RESOLVED_SPEND_TIER")"
+  else
+    RESOLVED_MODEL="gpt-5.5"
+  fi
+}
+
+# Append a one-line, auditable record of a pre-screen-gate discard to
+# batch/logs/discard.log (see modes/batch.md — Pre-screen gate). Format:
+# {ISO8601 timestamp}\t{job id}\t{url}\t{reason}
+log_discard() {
+  local id="$1" url="$2" reason="$3"
+  mkdir -p "$LOGS_DIR"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '%s\t%s\t%s\t%s\n' "$ts" "$id" "$url" "$reason" >> "$DISCARD_LOG"
 }
 
 # Calculate next report number.
@@ -615,8 +699,8 @@ run_worker() {
       # they deadlock fighting over the single shared browser when --parallel > 1
       # (issue #506).
       local -a claude_args=(-p --dangerously-skip-permissions --strict-mcp-config)
-      if [[ -n "$MODEL" ]]; then
-        claude_args+=(--model "$MODEL")
+      if [[ -n "$RESOLVED_MODEL" ]]; then
+        claude_args+=(--model "$RESOLVED_MODEL")
       fi
       claude_args+=(--append-system-prompt-file "$resolved_prompt" "$prompt")
       local status=0
@@ -632,7 +716,7 @@ run_worker() {
         printf '%s\n' "$prompt"
       } > "$combined_prompt"
 
-      local codex_model="${MODEL:-gpt-5.5}"
+      local codex_model="$RESOLVED_MODEL"
       local -a codex_args=(
         exec
         --ignore-user-config
@@ -681,10 +765,10 @@ process_offer() {
   # Build the prompt with placeholders replaced
   local prompt
   if [[ "$SKIP_PDF" == "true" ]]; then
-    prompt="Process this job offer. Run the pipeline: A-G evaluation + report .md + tracker line. Do NOT generate a PDF; write ❌ in the tracker PDF column and set \"pdf\": null in the final JSON."
+    prompt="Process this job offer. Run the pipeline: A-G evaluation + report .md + tracker line. Do not generate PDF; write ❌ in the tracker PDF column and set \"pdf\": null in the final JSON."
     echo "    ⏭️  --skip-pdf set — skipping PDF generation for #$id ($url)"
   else
-    prompt="Process this job offer. Run the full pipeline: A-G evaluation + report .md + PDF + tracker line."
+    prompt="Process this job offer. Run the full pipeline: A-G evaluation + report .md + optional PDF + tracker line."
   fi
   prompt="$prompt URL: $url"
   prompt="$prompt JD file: $jd_file"
@@ -720,7 +804,7 @@ process_offer() {
     if [[ -f "$context_file" ]]; then
       {
         printf '\n\n---\n\n'
-        printf '## Runtime personalization: %s\n\n' "${context_file#$PROJECT_DIR/}"
+        printf '## Runtime personalization: %s\n\n' "${context_file#"$PROJECT_DIR/"}"
         sed 's/^/    /' "$context_file"
         printf '\n'
       } >> "$resolved_prompt"
@@ -998,6 +1082,8 @@ main() {
 
   check_prerequisites
 
+  resolve_worker_model
+
   if [[ "$DRY_RUN" == "false" ]]; then
     acquire_lock
     rm -f "$PAUSE_FILE"
@@ -1016,12 +1102,19 @@ main() {
   fi
 
   echo "=== career-ops batch runner ==="
-  echo "Worker CLI: $WORKER_CLI | Model: ${MODEL:-default} | Reasoning: $REASONING_EFFORT"
+  echo "Worker CLI: $WORKER_CLI | Model: $RESOLVED_MODEL | Reasoning: $REASONING_EFFORT"
   echo "Worker watchdog: idle ${WORKER_IDLE_TIMEOUT}s | max ${WORKER_MAX_SECONDS}s | poll ${WORKER_POLL_INTERVAL}s"
   if (( LIMIT > 0 )); then
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Limit: $LIMIT"
   else
     echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+  fi
+  if [[ "$RESOLVED_SPEND_TIER" == "override" ]]; then
+    echo "Model: $RESOLVED_MODEL (explicit --model override)"
+  elif [[ "$WORKER_CLI" == "claude" ]]; then
+    echo "Model: $RESOLVED_MODEL (spend_tier=${RESOLVED_SPEND_TIER})"
+  else
+    echo "Model: $RESOLVED_MODEL (Codex default; spend_tier=${RESOLVED_SPEND_TIER} still controls pipeline gating)"
   fi
   echo "Input: $total_input offers"
   echo ""

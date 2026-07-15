@@ -17,7 +17,7 @@ import (
 func tabIndexForFilter(t *testing.T, filter string) int {
 	t.Helper()
 
-	for i, tab := range pipelineTabs {
+	for i, tab := range getPipelineTabs() {
 		if tab.filter == filter {
 			return i
 		}

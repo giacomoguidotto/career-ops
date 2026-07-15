@@ -9,6 +9,7 @@ If the input is a **URL** (not pasted JD text), follow this strategy to extract 
 **Priority order:**
 
 1. **Playwright (preferred):** Most job portals (Lever, Ashby, Greenhouse, Workday) are SPAs. Use `browser_navigate` + `browser_snapshot` to render and read the JD.
+   - **Opt-in — CLI extractor (`scan.extractor: cli` in `config/profile.yml`):** run `node browser-extract.mjs <url>` (default `--mode jd`) instead; it returns compact `{ "url", "title", "text" }` — just the distilled JD main text rather than the full page a11y tree, so the model processes fewer tokens (board-dependent — modest on clean boards, larger on chrome-heavy SPAs). Use its `text` as the JD. **Fall back silently** to `browser_navigate` + `browser_snapshot` if it errors or is missing. Read-only (navigate + read, no clicks/fills), so it never applies to the apply-form step below.
 2. **WebFetch (fallback):** For static pages (ZipRecruiter, WeLoveProduct, company career pages).
 3. **WebSearch (last resort):** Search for the role title + company in secondary portals that index the JD in static HTML.
 
@@ -27,6 +28,12 @@ Before running any evaluation, confirm the posting is still live. The Step 0 Pla
 3. If only JD text was pasted (no URL), there is no link to verify — skip the gate and proceed.
 
 Do not continue to Step 1 until this gate is resolved.
+
+## Step 0.6 — Blacklist gate (#1742)
+
+If `data/blacklist.md` exists, check the posting's company against it before running any evaluation — the file is the candidate's own do-not-apply list (user layer, opt-in; absent file = skip this gate). Match case- and punctuation-insensitively.
+
+On a hit, **stop before Step 1** and surface the candidate's own recorded decision: tell them which entry matched and quote their recorded reason ("{Company} is on your blacklist (since {Since}): *{Reason}*. Do you still want me to evaluate it?"). Wait for an explicit answer — never silently refuse, never silently proceed. The candidate's call always wins (same HITL spirit as the score < 4.0 rule): an explicit yes continues to Step 1 as normal; anything else stops the pipeline here, and if the entry came from `data/pipeline.md`, mark it `- [x] ~~Company | Role~~ — blacklisted`. A blacklist entry never changes any score.
 
 ## Step 1 — A-G Evaluation
 

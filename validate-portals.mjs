@@ -14,7 +14,6 @@ import { join, dirname, resolve } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 import yaml from 'js-yaml';
-import { discoverPlugins, pluginRoots } from './plugins/_engine.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PROVIDERS_DIR = join(ROOT, 'providers');
@@ -99,13 +98,19 @@ async function loadProviderIds() {
     }
   }
 
+  // scan.mjs accepts explicit provider-plugin ids even when a plugin is
+  // disabled or missing credentials (the runtime installs an actionable
+  // inactive-provider stub). Keep validation aligned with that contract.
   try {
-    for (const manifest of discoverPlugins(pluginRoots(ROOT))) {
+    const { discoverPlugins, pluginRoots, resolveSuccessorIds } = await import('./plugins/_engine.mjs');
+    const manifests = discoverPlugins(pluginRoots(ROOT), resolveSuccessorIds(ROOT));
+    for (const manifest of manifests) {
       if (manifest.hooks.includes('provider')) ids.add(manifest.id);
     }
-  } catch {
-    // Validation should still work for core providers if plugin discovery is
-    // unavailable in a stripped-down checkout.
+  } catch (err) {
+    // A stripped-down checkout may not include plugin infrastructure. Core
+    // provider validation should continue to work in that environment.
+    if (err?.code !== 'ERR_MODULE_NOT_FOUND') throw err;
   }
   return ids;
 }
