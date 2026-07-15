@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +22,19 @@ type ViewerClosedMsg struct{}
 
 // ViewerOpenCoverLetterMsg is emitted when the user requests to open the cover letter PDF.
 type ViewerOpenCoverLetterMsg struct{ Path string }
+
+// ViewerCopyTextMsg requests that plain text be written to the system clipboard.
+type ViewerCopyTextMsg struct {
+	Label string
+	Text  string
+}
+
+// ViewerCopyResultMsg reports whether a clipboard write succeeded.
+type ViewerCopyResultMsg struct {
+	Label      string
+	Characters int
+	Err        error
+}
 
 // ViewerUpdateStatusMsg is emitted when a status update is requested from the viewer.
 type ViewerUpdateStatusMsg struct {
@@ -44,7 +58,18 @@ type ViewerModel struct {
 	cvPDFPath       string
 	statusPicker    bool
 	statusCursor    int
+	copyCandidates  []viewerCopyCandidate
+	copyPicker      bool
+	copyCursor      int
+	flash           string
 }
+
+type viewerCopyCandidate struct {
+	label string
+	text  string
+}
+
+const copyPickerMaxVisible = 5
 
 // NewViewerModel creates a new file viewer for the given path.
 func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, height int, app model.DashboardRow) ViewerModel {
@@ -72,6 +97,7 @@ func NewViewerModel(t theme.Theme, careerOpsPath, path, title string, width, hei
 		careerOpsPath:   careerOpsPath,
 		coverLetterPath: parseCoverLetterPath(lines, careerOpsPath),
 		cvPDFPath:       resolveViewerPDFPath(careerOpsPath, app),
+		copyCandidates:  extractViewerCopyCandidates(lines),
 	}
 	m.rebuildRender()
 	return m
@@ -673,6 +699,10 @@ func (m *ViewerModel) Resize(width, height int) {
 func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		m.flash = ""
+		if m.copyPicker {
+			return m.handleCopyPicker(msg)
+		}
 		if m.statusPicker {
 			return m.handleStatusPicker(msg)
 		}
@@ -722,6 +752,22 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 			}
 			m.clampScrollOffset()
 			return m, nil
+
+		case "y":
+			switch len(m.copyCandidates) {
+			case 0:
+				return m, nil
+			case 1:
+				candidate := m.copyCandidates[0]
+				return m, func() tea.Msg {
+					return ViewerCopyTextMsg{Label: candidate.label, Text: candidate.text}
+				}
+			default:
+				m.copyPicker = true
+				m.copyCursor = 0
+				m.clampScrollOffset()
+				return m, nil
+			}
 
 		case "down", "j":
 			maxScroll := len(m.renderedLines) - m.bodyHeight()
@@ -786,6 +832,13 @@ func (m ViewerModel) Update(msg tea.Msg) (ViewerModel, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.rebuildRender()
+
+	case ViewerCopyResultMsg:
+		if msg.Err != nil {
+			m.flash = "Could not copy " + msg.Label + ": " + msg.Err.Error()
+		} else {
+			m.flash = "Copied " + msg.Label + " (" + strconv.Itoa(msg.Characters) + " chars)"
+		}
 	}
 
 	return m, nil
@@ -796,8 +849,15 @@ func (m ViewerModel) bodyHeight() int {
 	if m.statusPicker {
 		h -= (len(statusOptions) + 1)
 	}
-	if h < 3 {
-		h = 3
+	if m.copyPicker {
+		h -= (m.copyPickerVisibleCount() + 1)
+	}
+	minBodyHeight := 3
+	if m.copyPicker {
+		minBodyHeight = 1
+	}
+	if h < minBodyHeight {
+		h = minBodyHeight
 	}
 	return h
 }
@@ -811,6 +871,9 @@ func (m ViewerModel) View() string {
 	body := m.renderBody()
 	if m.statusPicker {
 		body = m.overlayStatusPicker(body)
+	}
+	if m.copyPicker {
+		body = m.overlayCopyPicker(body)
 	}
 	footer := m.renderFooter()
 
@@ -1123,7 +1186,8 @@ func isTableSeparator(line string) bool {
 	return cleaned == ""
 }
 
-// parseTableCells splits a table line into trimmed cells.
+// parseTableCells splits a table line into trimmed cells and preserves escaped
+// pipes as literal content.
 func parseTableCells(line string) []string {
 	trimmed := strings.TrimSpace(line)
 	// Remove leading and trailing pipes
@@ -1133,12 +1197,99 @@ func parseTableCells(line string) []string {
 	if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '|' {
 		trimmed = trimmed[:len(trimmed)-1]
 	}
-	parts := strings.Split(trimmed, "|")
-	cells := make([]string, len(parts))
-	for i, p := range parts {
-		cells[i] = strings.TrimSpace(p)
+	var cells []string
+	var cell strings.Builder
+	escaped := false
+	for _, r := range trimmed {
+		if escaped {
+			if r != '|' {
+				cell.WriteRune('\\')
+			}
+			cell.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if r == '|' {
+			cells = append(cells, strings.TrimSpace(cell.String()))
+			cell.Reset()
+			continue
+		}
+		cell.WriteRune(r)
 	}
+	if escaped {
+		cell.WriteRune('\\')
+	}
+	cells = append(cells, strings.TrimSpace(cell.String()))
 	return cells
+}
+
+func extractViewerCopyCandidates(lines []string) []viewerCopyCandidate {
+	var candidates []viewerCopyCandidate
+	for i := 0; i < len(lines); i++ {
+		if !isTableLine(lines[i]) || isTableSeparator(lines[i]) {
+			continue
+		}
+
+		headers := parseTableCells(lines[i])
+		answerColumn := tableColumnIndex(headers, "answer")
+		if answerColumn < 0 || i+1 >= len(lines) || !isTableSeparator(lines[i+1]) {
+			continue
+		}
+
+		labelColumn := tableColumnIndex(headers, "question")
+		if labelColumn < 0 {
+			labelColumn = tableColumnIndex(headers, "field")
+		}
+		if labelColumn < 0 {
+			continue
+		}
+
+		for i += 2; i < len(lines) && isTableLine(lines[i]); i++ {
+			if isTableSeparator(lines[i]) {
+				continue
+			}
+			cells := parseTableCells(lines[i])
+			if labelColumn >= len(cells) || answerColumn >= len(cells) {
+				continue
+			}
+			label := strings.TrimSpace(cells[labelColumn])
+			text := plainViewerCopyText(cells[answerColumn])
+			if !isCopyableMessageLabel(label) || text == "" {
+				continue
+			}
+			candidates = append(candidates, viewerCopyCandidate{label: label, text: text})
+		}
+		i--
+	}
+	return candidates
+}
+
+func plainViewerCopyText(text string) string {
+	text = reLink.ReplaceAllString(text, "$1")
+	text = reBold.ReplaceAllString(text, "$1")
+	text = reInlineCode.ReplaceAllString(text, "$1")
+	text = reHTMLBreak.ReplaceAllString(text, "\n")
+	return strings.TrimSpace(text)
+}
+
+func tableColumnIndex(headers []string, want string) int {
+	for i, header := range headers {
+		if normalizeDetailsLabel(header) == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func isCopyableMessageLabel(label string) bool {
+	label = normalizeDetailsLabel(label)
+	return strings.Contains(label, "message") ||
+		strings.Contains(label, "email body") ||
+		strings.Contains(label, "cover paragraph")
 }
 
 func detectAlignment(sep string) lipgloss.Position {
@@ -1257,6 +1408,7 @@ var (
 	reLink           = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	reBareURL        = regexp.MustCompile(`https?://\S*[^\s\)\]\.,;:!?]`)
 	reInlineCode     = regexp.MustCompile("`([^`]+)`")
+	reHTMLBreak      = regexp.MustCompile(`(?i)<br\s*/?>`)
 	reListNumber     = regexp.MustCompile(`^(\s*\d+\.\s+)(.*)$`)
 	reCoverLetterPDF = regexp.MustCompile(`PDF generated:\s*(output/[^\s]+\.pdf)`)
 	reRelPDFPath     = regexp.MustCompile(`output/cv-[^\s\)\]\.,;:!?"']+\.pdf`)
@@ -1726,6 +1878,15 @@ func (m ViewerModel) renderFooter() string {
 				keyStyle.Render("Enter") + descStyle.Render(" confirm  ") +
 				keyStyle.Render("Esc/q") + descStyle.Render(" cancel"))
 	}
+	if m.copyPicker {
+		return style.Render(
+			keyStyle.Render("↑/↓/j/k") + descStyle.Render(" select  ") +
+				keyStyle.Render("Enter") + descStyle.Render(" copy  ") +
+				keyStyle.Render("Esc/q") + descStyle.Render(" cancel"))
+	}
+	if m.flash != "" {
+		return style.Render(descStyle.Render(m.flash))
+	}
 
 	segments := m.footerSegments(keyStyle, descStyle, false)
 	separator := descStyle.Render("  ")
@@ -1764,6 +1925,9 @@ func (m ViewerModel) footerSegments(keyStyle, descStyle lipgloss.Style, compact 
 	if m.app.IsTrackedApplication() {
 		segments = append(segments, keyStyle.Render("c")+descStyle.Render(" status"))
 	}
+	if len(m.copyCandidates) > 0 {
+		segments = append(segments, keyStyle.Render("y")+descStyle.Render(" copy message"))
+	}
 	if m.coverLetterPath != "" {
 		segments = append(segments, keyStyle.Render("L")+descStyle.Render(" cover letter"))
 	}
@@ -1779,16 +1943,10 @@ func (m ViewerModel) handleStatusPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
 		return m, nil
 
 	case "down", "j":
-		m.statusCursor++
-		if m.statusCursor >= len(statusOptions) {
-			m.statusCursor = len(statusOptions) - 1
-		}
+		m.statusCursor = movePickerCursor(m.statusCursor, len(statusOptions), 1)
 
 	case "up", "k":
-		m.statusCursor--
-		if m.statusCursor < 0 {
-			m.statusCursor = 0
-		}
+		m.statusCursor = movePickerCursor(m.statusCursor, len(statusOptions), -1)
 
 	case "enter":
 		m.statusPicker = false
@@ -1804,32 +1962,94 @@ func (m ViewerModel) handleStatusPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m ViewerModel) overlayStatusPicker(body string) string {
-	bodyLines := strings.Split(body, "\n")
+func (m ViewerModel) handleCopyPicker(msg tea.KeyMsg) (ViewerModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.copyPicker = false
+		m.clampScrollOffset()
+		return m, nil
 
-	pickerWidth := 30
+	case "down", "j":
+		m.copyCursor = movePickerCursor(m.copyCursor, len(m.copyCandidates), 1)
+
+	case "up", "k":
+		m.copyCursor = movePickerCursor(m.copyCursor, len(m.copyCandidates), -1)
+
+	case "enter":
+		if len(m.copyCandidates) == 0 {
+			m.copyPicker = false
+			return m, nil
+		}
+		candidate := m.copyCandidates[m.copyCursor]
+		m.copyPicker = false
+		m.clampScrollOffset()
+		return m, func() tea.Msg {
+			return ViewerCopyTextMsg{Label: candidate.label, Text: candidate.text}
+		}
+	}
+	return m, nil
+}
+
+func movePickerCursor(cursor, optionCount, delta int) int {
+	if optionCount == 0 {
+		return 0
+	}
+	return max(0, min(cursor+delta, optionCount-1))
+}
+
+func (m ViewerModel) overlayStatusPicker(body string) string {
+	return m.overlayPicker(body, "Change status:", statusOptions, m.statusCursor, 30, len(statusOptions))
+}
+
+func (m ViewerModel) overlayCopyPicker(body string) string {
+	pickerWidth := min(40, m.textWidth()-4)
+	if pickerWidth < 10 {
+		pickerWidth = 10
+	}
+	labels := make([]string, len(m.copyCandidates))
+	for i, candidate := range m.copyCandidates {
+		labels[i] = candidate.label
+	}
+	return m.overlayPicker(body, "Copy message:", labels, m.copyCursor, pickerWidth, m.copyPickerVisibleCount())
+}
+
+func (m ViewerModel) overlayPicker(body, title string, options []string, cursor, pickerWidth, visibleCount int) string {
+	bodyLines := strings.Split(body, "\n")
 	padStyle := lipgloss.NewStyle().Padding(0, 2)
 	borderStyle := lipgloss.NewStyle().
 		Foreground(m.theme.Blue).
 		Bold(true)
 
 	var picker []string
-	picker = append(picker, padStyle.Render(borderStyle.Render("Change status:")))
+	picker = append(picker, padStyle.Render(borderStyle.Render(title)))
 
-	for i, opt := range statusOptions {
+	start := cursor - visibleCount + 1
+	if start < 0 {
+		start = 0
+	}
+	end := min(start+visibleCount, len(options))
+	for i := start; i < end; i++ {
 		style := lipgloss.NewStyle().Foreground(m.theme.Text).Width(pickerWidth)
-		if i == m.statusCursor {
+		if i == cursor {
 			style = style.Background(m.theme.Selection).Bold(true)
 		}
 		prefix := "  "
-		if i == m.statusCursor {
+		if i == cursor {
 			prefix = "> "
 		}
-		picker = append(picker, padStyle.Render(style.Render(prefix+opt)))
+		picker = append(picker, padStyle.Render(style.Render(prefix+options[i])))
 	}
 
 	bodyLines = append(bodyLines, picker...)
 	return strings.Join(bodyLines, "\n")
+}
+
+func (m ViewerModel) copyPickerVisibleCount() int {
+	maxByHeight := m.height - m.headerHeight() - m.footerHeight() - 2
+	if maxByHeight < 1 {
+		maxByHeight = 1
+	}
+	return min(len(m.copyCandidates), copyPickerMaxVisible, maxByHeight)
 }
 
 // UpdateAppStatus updates the status of the current application inside the viewer model.

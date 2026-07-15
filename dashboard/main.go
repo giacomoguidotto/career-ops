@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -33,6 +34,8 @@ type appModel struct {
 	theme           theme.Theme
 	progressMetrics model.ProgressMetrics
 }
+
+var writeSystemClipboard = copyToSystemClipboard
 
 func (m *appModel) reloadPipelineData() {
 	apps := data.ParseDashboardRows(m.careerOpsPath)
@@ -98,6 +101,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		m.state = viewReport
 		return m, nil
+
+	case screens.ViewerCopyTextMsg:
+		return m, copyTextCmd(msg)
 
 	case screens.ViewerClosedMsg:
 		m.state = viewPipeline
@@ -188,6 +194,16 @@ func openCmd(target string) tea.Cmd {
 			fmt.Fprintf(os.Stderr, "WARN: failed to open %q: %v\n", target, err)
 		}
 		return nil
+	}
+}
+
+func copyTextCmd(msg screens.ViewerCopyTextMsg) tea.Cmd {
+	return func() tea.Msg {
+		return screens.ViewerCopyResultMsg{
+			Label:      msg.Label,
+			Characters: utf8.RuneCountInString(msg.Text),
+			Err:        writeSystemClipboard(msg.Text),
+		}
 	}
 }
 

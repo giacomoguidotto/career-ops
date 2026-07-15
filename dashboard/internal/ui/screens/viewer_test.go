@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -55,6 +56,220 @@ func TestViewerDoesNotOfferTrackerStatusMutationForQueueRows(t *testing.T) {
 	footer := ansi.Strip(updated.renderFooter())
 	if strings.Contains(footer, "status") {
 		t.Fatalf("queue-backed details footer advertised tracker status mutation: %q", footer)
+	}
+}
+
+func TestViewerCopiesReachOutMessageAnswerOnly(t *testing.T) {
+	root := t.TempDir()
+	reportPath := filepath.Join(root, "reports", "042-acme.md")
+	nextPath := filepath.Join(root, "output", "next-packs", "042-acme.md")
+	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
+		t.Fatalf("mkdir report: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(nextPath), 0o755); err != nil {
+		t.Fatalf("mkdir next pack: %v", err)
+	}
+	if err := os.WriteFile(reportPath, []byte("# Evaluation: Acme -- Backend Engineer\n"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	const message = "Hello Ada, I would enjoy bringing reliable product engineering to Acme."
+	nextPack := strings.Join([]string{
+		"## Next: Acme -- Backend Engineer (#42)",
+		"",
+		"### Fill the Application Form",
+		"",
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Reach-out message | " + message + " | Keep this warm and specific. |",
+		"| Availability | Next month. | Select only if asked. |",
+	}, "\n")
+	if err := os.WriteFile(nextPath, []byte(nextPack), 0o644); err != nil {
+		t.Fatalf("write next pack: %v", err)
+	}
+
+	m := NewViewerModel(
+		theme.NewTheme("catppuccin-mocha"),
+		root,
+		reportPath,
+		"DETAILS: Acme / Backend Engineer",
+		100,
+		30,
+		model.DashboardRow{
+			Company:      "Acme",
+			Role:         "Backend Engineer",
+			NextPackPath: "output/next-packs/042-acme.md",
+		},
+	)
+
+	footer := ansi.Strip(m.renderFooter())
+	if !strings.Contains(footer, "y copy message") {
+		t.Fatalf("details footer did not advertise message copying: %q", footer)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("pressing y did not emit a copy command")
+	}
+	copyMsg, ok := cmd().(ViewerCopyTextMsg)
+	if !ok {
+		t.Fatalf("pressing y emitted %T, want ViewerCopyTextMsg", cmd())
+	}
+	if copyMsg.Label != "Reach-out message" {
+		t.Fatalf("copied label = %q, want %q", copyMsg.Label, "Reach-out message")
+	}
+	if copyMsg.Text != message {
+		t.Fatalf("copied text = %q, want answer only %q", copyMsg.Text, message)
+	}
+	if updated.copyPicker {
+		t.Fatal("one message should copy directly without opening a picker")
+	}
+}
+
+func TestViewerDoesNotOfferSentinelCoverLetterAsMessage(t *testing.T) {
+	lines := []string{
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Cover letter | Leave blank | Optional unless required. |",
+	}
+	m := ViewerModel{
+		lines:          lines,
+		width:          80,
+		height:         20,
+		theme:          theme.NewTheme("catppuccin-mocha"),
+		copyCandidates: extractViewerCopyCandidates(lines),
+	}
+	m.rebuildRender()
+
+	footer := ansi.Strip(m.renderFooter())
+	if strings.Contains(footer, "copy message") {
+		t.Fatalf("sentinel cover-letter answer advertised message copying: %q", footer)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd != nil {
+		t.Fatal("sentinel cover-letter answer emitted a copy command")
+	}
+}
+
+func TestViewerCopiesPlainMessageWithEscapedTablePipe(t *testing.T) {
+	lines := []string{
+		"| Question | Answer | Notes |",
+		"|---|---|---|",
+		"| Reach-out message | **Hello** [Leo](https://example.com) use `Go` and A\\|B.<br>Thanks. | Keep concise. |",
+	}
+	m := ViewerModel{
+		lines:          lines,
+		width:          80,
+		height:         20,
+		theme:          theme.NewTheme("catppuccin-mocha"),
+		copyCandidates: extractViewerCopyCandidates(lines),
+	}
+	m.rebuildRender()
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd == nil {
+		t.Fatal("formatted reach-out message did not emit a copy command")
+	}
+	copyMsg, ok := cmd().(ViewerCopyTextMsg)
+	if !ok {
+		t.Fatalf("pressing y emitted %T, want ViewerCopyTextMsg", cmd())
+	}
+	const want = "Hello Leo use Go and A|B.\nThanks."
+	if copyMsg.Text != want {
+		t.Fatalf("copied text = %q, want plain message %q", copyMsg.Text, want)
+	}
+}
+
+func TestViewerLetsUserChooseWhenDetailsContainMultipleMessages(t *testing.T) {
+	m := ViewerModel{
+		lines:  []string{"Choose a message."},
+		width:  80,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+		copyCandidates: []viewerCopyCandidate{
+			{label: "Founder message", text: "Hello founder."},
+			{label: "Recruiter message", text: "Hello recruiter."},
+		},
+	}
+	m.rebuildRender()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd != nil {
+		t.Fatal("multiple messages should open the picker before copying")
+	}
+	if !updated.copyPicker {
+		t.Fatal("multiple messages did not open the copy picker")
+	}
+	plain := ansi.Strip(updated.View())
+	for _, want := range []string{"Copy message:", "Founder message", "Recruiter message"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("copy picker did not render %q:\n%s", want, plain)
+		}
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("confirming a copy choice did not emit a command")
+	}
+	copyMsg, ok := cmd().(ViewerCopyTextMsg)
+	if !ok {
+		t.Fatalf("confirming a copy choice emitted %T, want ViewerCopyTextMsg", cmd())
+	}
+	if copyMsg.Label != "Recruiter message" || copyMsg.Text != "Hello recruiter." {
+		t.Fatalf("copied choice = %#v, want recruiter message", copyMsg)
+	}
+	if updated.copyPicker {
+		t.Fatal("copy picker remained open after confirmation")
+	}
+}
+
+func TestViewerCopyPickerStaysWithinTerminalHeightAndScrolls(t *testing.T) {
+	candidates := make([]viewerCopyCandidate, 12)
+	for i := range candidates {
+		candidates[i] = viewerCopyCandidate{
+			label: "Message " + strconv.Itoa(i+1),
+			text:  "Text " + strconv.Itoa(i+1),
+		}
+	}
+	m := ViewerModel{
+		lines:          []string{"Choose a message."},
+		width:          60,
+		height:         12,
+		theme:          theme.NewTheme("catppuccin-mocha"),
+		copyCandidates: candidates,
+	}
+	m.rebuildRender()
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	if got := len(strings.Split(m.View(), "\n")); got > m.height {
+		t.Fatalf("copy picker rendered %d lines in a %d-line terminal", got, m.height)
+	}
+	for range 6 {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	plain := ansi.Strip(m.View())
+	if !strings.Contains(plain, "Message 7") {
+		t.Fatalf("copy picker did not scroll to the selected message:\n%s", plain)
+	}
+	if strings.Contains(plain, "Message 1") {
+		t.Fatalf("copy picker kept off-screen entries visible instead of scrolling:\n%s", plain)
+	}
+}
+
+func TestViewerShowsClipboardSuccessInFooter(t *testing.T) {
+	m := ViewerModel{
+		width:  80,
+		height: 20,
+		theme:  theme.NewTheme("catppuccin-mocha"),
+	}
+
+	updated, cmd := m.Update(ViewerCopyResultMsg{Label: "Reach-out message", Characters: 528})
+	if cmd != nil {
+		t.Fatal("clipboard result should not emit another command")
+	}
+	footer := ansi.Strip(updated.renderFooter())
+	if !strings.Contains(footer, "Copied Reach-out message (528 chars)") {
+		t.Fatalf("copy success was not shown in the footer: %q", footer)
 	}
 }
 
