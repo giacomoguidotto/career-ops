@@ -186,6 +186,7 @@ func trimBlankMarkdownLines(lines []string) []string {
 }
 
 func cleanDetailsNextPackLines(lines []string) []string {
+	lines = stripLeadingNextPackTitle(lines)
 	out := make([]string, 0, len(lines))
 	meta := detailsNextPackMeta{}
 	for _, line := range lines {
@@ -201,6 +202,26 @@ func cleanDetailsNextPackLines(lines []string) []string {
 		out = append([]string{summary, ""}, trimBlankMarkdownLines(out)...)
 	}
 	return trimBlankMarkdownLines(out)
+}
+
+func stripLeadingNextPackTitle(lines []string) []string {
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	if i >= len(lines) || !isNextPackTitleHeading(strings.TrimSpace(lines[i])) {
+		return lines
+	}
+	i++
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	return lines[i:]
+}
+
+func isNextPackTitleHeading(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "## Next:") ||
+		strings.HasPrefix(trimmed, "## Approach:")
 }
 
 type detailsNextPackMeta struct {
@@ -978,7 +999,7 @@ func (m ViewerModel) shouldHideLeadingTitleLine(index int, trimmed string) bool 
 	if index != 0 {
 		return false
 	}
-	if m.isNextStepViewer() && strings.HasPrefix(trimmed, "## Next:") {
+	if m.isNextStepViewer() && isNextPackTitleHeading(trimmed) {
 		return true
 	}
 	return m.isEvaluationViewer() && isEvaluationHeading(trimmed)

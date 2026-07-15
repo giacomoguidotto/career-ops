@@ -1233,6 +1233,9 @@ if (
   nextMode.includes('**Linear action order:**') &&
   nextMode.includes('**Preflight sections:**') &&
   nextMode.includes('**Send actions:**') &&
+  nextMode.includes('**No generated pack title:**') &&
+  nextMode.includes('the details page owns the company and role title') &&
+  !nextMode.includes('## Next: {Company} -- {Role} (#{tracker_num})') &&
   nextMode.includes('### Before You Apply') &&
   nextMode.includes('omit the heading entirely when there is nothing') &&
   nextMode.includes('list the tailored CV/PDF') &&

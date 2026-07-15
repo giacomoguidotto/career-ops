@@ -1,5 +1,3 @@
-## Approach: Jiga -- Full Stack Product Engineer - Remote/Europe (#247)
-
 **Communication strategy:** Informal, smart, and lightly playful; create recognition around software for physical-product teams, let the graph-service story imply capability, and leave room for a conversation.
 
 ## Ranked Approach Plan
