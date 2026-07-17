@@ -97,12 +97,46 @@ export function resolveScoreStatus(a, b) {
 export function detectColumns(lines, aliases = HEADER_ALIASES) {
   for (const line of lines) {
     if (!line.startsWith('|')) continue;
-    const cells = line.split('|').map(s => s.trim().toLowerCase());
+    const cells = line.split('|').map((cell) => cell.trim().toLowerCase());
     const map = {};
-    cells.forEach((c, i) => { if (aliases[c] != null) map[aliases[c]] = i; });
-    if (['num', 'company', 'role', 'score', 'status'].every(k => map[k] != null)) return map;
+    cells.forEach((cell, index) => { if (aliases[cell] != null) map[aliases[cell]] = index; });
+    if (['num', 'company', 'role', 'score', 'status'].every((key) => map[key] != null)) return map;
   }
   return null;
+}
+
+/**
+ * Inspect the declared table layout without turning an unfamiliar header into
+ * the legacy fixed layout. A real header is paired with the following markdown
+ * separator row. This lets passive readers keep partial fields viewable while
+ * warning that lifecycle actions are unsafe for an unknown layout.
+ *
+ * @returns {{format:'declared'|'unknown'|'legacy',columns:Object<string,number>,headers:string[],headerIndex:number|null}}
+ */
+export function inspectColumns(lines, aliases = HEADER_ALIASES) {
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index];
+    const separator = lines[index + 1];
+    if (!line.startsWith('|') || !separator?.startsWith('|')) continue;
+    const separatorCells = separator.split('|').slice(1, -1).map((cell) => cell.trim());
+    if (!separatorCells.length || !separatorCells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+
+    const cells = line.split('|').map((cell) => cell.trim());
+    const headers = cells.slice(1, line.trimEnd().endsWith('|') ? -1 : undefined);
+    const map = {};
+    cells.forEach((cell, cellIndex) => {
+      const canonical = aliases[String(cell).trim().toLowerCase()];
+      if (canonical != null) map[canonical] = cellIndex;
+    });
+    const essential = ['num', 'company', 'role', 'score', 'status'];
+    return {
+      format: essential.every((key) => map[key] != null) ? 'declared' : 'unknown',
+      columns: map,
+      headers,
+      headerIndex: index,
+    };
+  }
+  return { format: 'legacy', columns: LEGACY_COLMAP, headers: [], headerIndex: null };
 }
 
 /**

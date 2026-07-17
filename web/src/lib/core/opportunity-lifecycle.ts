@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -8,7 +8,6 @@ const LIFECYCLE_OWNERS = ["agent", "user", "external", "none"] as const;
 const PRIMARY_ACTION_KINDS = ["generate", "act-outside", "wait", "terminal", "unavailable"] as const;
 const ATTEMPT_ATTENTION_STATES = ["none", "unknown", "urgent", "review_due", "waiting", "cold"] as const;
 const CANDIDACY_STATES = ["research-required", "suppressed", "primary", "eligible", "member", "not-coordinated"] as const;
-const ARTIFACT_KINDS = ["approach-plan", "pdf", "report"] as const;
 const ARTIFACT_STATES = ["available", "missing", "unavailable"] as const;
 const ARTIFACT_FORMATS = ["canonical", "legacy", "unknown", "declared"] as const;
 
@@ -45,6 +44,8 @@ type ApproachAttempt = {
   channel: string;
   recipient: string;
   result: string;
+  followUpTo: string | null;
+  notes: string;
 };
 
 export type LifecycleContract = {
@@ -75,6 +76,7 @@ export type OpportunitySummary = {
   pdf: string;
   report: string;
   notes: string;
+  rawFields?: Record<string, string>;
   rawStage: string;
   stage: OpportunityStage;
   primaryAction: { kind: PrimaryActionKind; id: string | null; enabled: boolean; reason: string | null };
@@ -91,10 +93,13 @@ export type OpportunitySummary = {
     formalSubmitted: boolean;
   };
   artifacts: Array<{
-    kind: (typeof ARTIFACT_KINDS)[number];
+    kind: string;
+    action: string | null;
+    expectedAction: string | null;
     state: ArtifactState;
     format: ArtifactFormat;
     path: string | null;
+    revision: string | null;
   }>;
   candidacy: {
     state: CandidacyState;
@@ -150,8 +155,8 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-function isNullableInteger(value: unknown): value is number | null {
-  return value === null || Number.isInteger(value);
+function isNullablePositiveInteger(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -199,12 +204,16 @@ function isOpportunityStage(value: unknown): value is OpportunityStage {
 function isApproachAttempt(value: unknown): value is ApproachAttempt {
   return isRecord(value)
     && typeof value.id === "string"
-    && Number.isInteger(value.opportunity)
+    && typeof value.opportunity === "number"
+    && Number.isSafeInteger(value.opportunity)
+    && value.opportunity > 0
     && typeof value.date === "string"
     && typeof value.type === "string"
     && typeof value.channel === "string"
     && typeof value.recipient === "string"
-    && typeof value.result === "string";
+    && typeof value.result === "string"
+    && isNullableString(value.followUpTo)
+    && typeof value.notes === "string";
 }
 
 function isPrimaryAction(value: unknown): value is OpportunitySummary["primaryAction"] {
@@ -233,10 +242,18 @@ function isAttemptAggregate(value: unknown): value is OpportunitySummary["attemp
 
 function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][number] {
   return isRecord(value)
-    && isOneOf(value.kind, ARTIFACT_KINDS)
+    && typeof value.kind === "string"
+    && /^[a-z][a-z0-9-]*$/.test(value.kind)
+    && isNullableString(value.action)
+    && isNullableString(value.expectedAction)
     && isOneOf(value.state, ARTIFACT_STATES)
     && isOneOf(value.format, ARTIFACT_FORMATS)
-    && isNullableString(value.path);
+    && isNullableString(value.path)
+    && isNullableString(value.revision);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
 }
 
 function isCandidacy(value: unknown): value is OpportunitySummary["candidacy"] {
@@ -244,8 +261,8 @@ function isCandidacy(value: unknown): value is OpportunitySummary["candidacy"] {
     && isOneOf(value.state, CANDIDACY_STATES)
     && isNullableString(value.reason)
     && isNullableString(value.clusterId)
-    && isNullableInteger(value.primary)
-    && isNullableInteger(value.outreachAnchor);
+    && isNullablePositiveInteger(value.primary)
+    && isNullablePositiveInteger(value.outreachAnchor);
 }
 
 function validateContract(value: unknown): asserts value is LifecycleContract {
@@ -253,7 +270,7 @@ function validateContract(value: unknown): asserts value is LifecycleContract {
     !isRecord(value)
     || value.id !== CONTRACT_ID
     || value.version !== SUPPORTED_CONTRACT_VERSION
-    || !isNullableInteger(value.stageSchemaVersion)
+    || !isNullablePositiveInteger(value.stageSchemaVersion)
     || !hasBooleanKeys(value.capabilities, [
       "passiveRead",
       "focusedRead",
@@ -275,8 +292,11 @@ function validateOpportunity(value: unknown): asserts value is OpportunitySummar
   const stringFields = ["date", "company", "via", "role", "location", "score", "pdf", "report", "notes", "rawStage"];
   if (
     !isRecord(value)
-    || !Number.isInteger(value.opportunity)
+    || typeof value.opportunity !== "number"
+    || !Number.isSafeInteger(value.opportunity)
+    || value.opportunity <= 0
     || !stringFields.every((field) => typeof value[field] === "string")
+    || (value.rawFields !== undefined && !isStringRecord(value.rawFields))
     || !isOpportunityStage(value.stage)
     || !isPrimaryAction(value.primaryAction)
     || !isAttemptAttention(value.attemptAttention)
@@ -302,24 +322,31 @@ function lifecycleScript(root: string): string {
   return script;
 }
 
-function run(root: string, action: "contract" | "list" | "read", extra: string[] = []): unknown {
+async function run(root: string, action: "contract" | "list" | "read", extra: string[] = []): Promise<unknown> {
   const resolvedRoot = path.resolve(root);
   if (!fs.existsSync(resolvedRoot)) {
     throw new LifecycleAdapterError("checkout-unavailable", "The career-ops checkout is unavailable.", 503);
   }
   try {
-    const stdout = execFileSync(
-      process.execPath,
-      [lifecycleScript(resolvedRoot), action, "--root", resolvedRoot, ...extra],
-      {
-        cwd: resolvedRoot,
-        encoding: "utf8",
-        timeout: 15_000,
-        maxBuffer: 10 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    const parsed: unknown = JSON.parse(stdout);
+    const stdout = await new Promise<string>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [lifecycleScript(resolvedRoot), action, "--root", resolvedRoot, ...extra],
+        {
+          cwd: resolvedRoot,
+          encoding: "utf8",
+          timeout: 15_000,
+          maxBuffer: 10 * 1024 * 1024,
+        },
+        (error, output) => error ? reject(error) : resolve(output),
+      );
+    });
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stdout);
+    } catch {
+      throw new LifecycleAdapterError("invalid-lifecycle-output", "The lifecycle reader returned invalid output.", 503);
+    }
     if (isRecord(parsed) && isRecord(parsed.error)) {
       const code = typeof parsed.error.code === "string" ? parsed.error.code : "lifecycle-read-failed";
       const status = code === "opportunity-not-found" ? 404 : 503;
@@ -332,14 +359,14 @@ function run(root: string, action: "contract" | "list" | "read", extra: string[]
   }
 }
 
-export function readLifecycleContract(root: string): LifecycleContract {
-  const result = run(root, "contract");
+export async function readLifecycleContract(root: string): Promise<LifecycleContract> {
+  const result = await run(root, "contract");
   validateContract(result);
   return result;
 }
 
-export function listOpportunityLifecycle(root: string): OpportunityListResult {
-  const result = run(root, "list");
+export async function listOpportunityLifecycle(root: string): Promise<OpportunityListResult> {
+  const result = await run(root, "list");
   if (!isRecord(result) || !Array.isArray(result.opportunities) || !isRecordArray(result.warnings)) {
     throw new LifecycleAdapterError("invalid-lifecycle-list", "The lifecycle list is incompatible.", 503);
   }
@@ -351,11 +378,23 @@ export function listOpportunityLifecycle(root: string): OpportunityListResult {
   return result as OpportunityListResult;
 }
 
-export function readOpportunityLifecycle(root: string, opportunity: number): OpportunityDetailResult {
-  if (!Number.isInteger(opportunity) || opportunity <= 0) {
+export async function tryListOpportunityLifecycle(root: string): Promise<OpportunityListResult | null> {
+  try {
+    return await listOpportunityLifecycle(root);
+  } catch (error) {
+    if (
+      error instanceof LifecycleAdapterError
+      && ["checkout-unavailable", "lifecycle-contract-unavailable", "lifecycle-read-failed"].includes(error.code)
+    ) return null;
+    throw error;
+  }
+}
+
+export async function readOpportunityLifecycle(root: string, opportunity: number): Promise<OpportunityDetailResult> {
+  if (!Number.isSafeInteger(opportunity) || opportunity <= 0) {
     throw new LifecycleAdapterError("invalid-opportunity", "Opportunity must be a positive tracker number.", 400);
   }
-  const result = run(root, "read", ["--opportunity", String(opportunity)]);
+  const result = await run(root, "read", ["--opportunity", String(opportunity)]);
   if (!isRecord(result) || !Array.isArray(result.attempts) || !result.attempts.every(isApproachAttempt) || !isRecordArray(result.warnings)) {
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
   }

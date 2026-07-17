@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicWrite } from "@/lib/core/safe-write";
-import { listOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
+import { tryListOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
 
 /**
  * Resolve the career-ops "home" — the directory holding the user's sibling
@@ -125,8 +125,10 @@ export type Application = {
  * exported by tracker-parse.mjs as HEADER_ALIASES) — one shared source, no
  * web-side mirror to drift (#954, PR #1598 review).
  */
-export function readApplications(): Application[] {
-  return listOpportunityLifecycle(careerOpsRoot()).opportunities.map((opportunity) => ({
+export async function readApplications(): Promise<Application[]> {
+  const lifecycle = await tryListOpportunityLifecycle(careerOpsRoot());
+  if (!lifecycle) return [];
+  return lifecycle.opportunities.map((opportunity) => ({
     n: String(opportunity.opportunity),
     date: opportunity.date,
     company: opportunity.company,
@@ -142,9 +144,9 @@ export function readApplications(): Application[] {
     attemptChannels: opportunity.attempts.channels,
     formalSubmitted: opportunity.attempts.formalSubmitted,
     nextReview: opportunity.attemptAttention.nextReview,
-    approachAttention: ["review_due", "cold"].includes(opportunity.attemptAttention.state)
-      ? opportunity.attemptAttention.state as "review_due" | "cold"
-      : "waiting",
+    approachAttention: ["waiting", "review_due", "cold"].includes(opportunity.attemptAttention.state)
+      ? opportunity.attemptAttention.state as "waiting" | "review_due" | "cold"
+      : undefined,
   }));
 }
 
@@ -167,13 +169,13 @@ export type LifecyclePhase = "first-run" | "in-between" | "established";
  *   - established → all 4 prereqs present.
  * onboardingNeeded mirrors doctor.mjs: true if ANY prereq is missing → show banner.
  */
-export function doctorState(): {
+export async function doctorState(): Promise<{
   phase: LifecyclePhase;
   onboardingNeeded: boolean;
   missing: string[];
   hasCv: boolean;
   hasData: boolean;
-} {
+}> {
   const has = (rel: string) => {
     try {
       return fs.existsSync(path.join(careerOpsRoot(), rel));
@@ -189,7 +191,7 @@ export function doctorState(): {
   ];
   const missing = prereqs.filter(([rel]) => !has(rel)).map(([, label]) => label);
   const hasCv = has("cv.md");
-  const hasData = readApplications().length > 0 || readInbox().some((j) => !j.done);
+  const hasData = (await readApplications()).length > 0 || readInbox().some((j) => !j.done);
   const onboardingNeeded = missing.length > 0;
   const phase: LifecyclePhase = !hasCv && !hasData ? "first-run" : onboardingNeeded ? "in-between" : "established";
   return { phase, onboardingNeeded, missing, hasCv, hasData };
@@ -202,7 +204,7 @@ export type PipelineSummary = {
   applications: Application[];
 };
 
-export function pipelineSummary(): PipelineSummary {
+export async function pipelineSummary(): Promise<PipelineSummary> {
   const root = careerOpsRoot();
   const scanDates = readScanDates();
   return {
@@ -211,7 +213,7 @@ export function pipelineSummary(): PipelineSummary {
     // join the freshness date (first_seen) onto each raw posting — the inbox's
     // triage view orders/faceted-filters on it entirely client-side.
     inbox: readInbox().map((j) => ({ ...j, postedAt: scanDates.get(j.url) })),
-    applications: readApplications(),
+    applications: await readApplications(),
   };
 }
 
@@ -242,8 +244,8 @@ export function readReport(n: string): ReportData | null {
   }
 }
 
-export function findApplication(n: string): Application | null {
-  return readApplications().find((a) => a.n === n) ?? null;
+export async function findApplication(n: string): Promise<Application | null> {
+  return (await readApplications()).find((a) => a.n === n) ?? null;
 }
 
 /** The CANONICAL user-customization file the CLI/TUI reads. Durable facts the

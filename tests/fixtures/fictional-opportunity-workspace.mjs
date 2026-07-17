@@ -1,9 +1,11 @@
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   readdirSync,
   rmSync,
   lstatSync,
@@ -12,7 +14,7 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
@@ -35,6 +37,31 @@ function ensureDirectory(path) {
 function write(path, content) {
   ensureDirectory(dirname(path));
   writeFileSync(path, content);
+}
+
+function confinedTarget(base, candidate) {
+  if (typeof candidate !== 'string' || candidate.trim() === '') {
+    throw new Error('fictional fixture path must be a non-empty relative path');
+  }
+  const target = resolve(base, candidate);
+  const lexical = relative(resolve(base), target);
+  if (isAbsolute(candidate) || lexical === '..' || lexical.startsWith(`..${sep}`)) {
+    throw new Error(`fictional fixture path escapes its root: ${candidate}`);
+  }
+
+  let existing = target;
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
+  }
+  const canonicalBase = realpathSync(base);
+  const canonicalExisting = realpathSync(existing);
+  const physical = relative(canonicalBase, canonicalExisting);
+  if (physical === '..' || physical.startsWith(`..${sep}`)) {
+    throw new Error(`fictional fixture path crosses a symlink outside its root: ${candidate}`);
+  }
+  return target;
 }
 
 function loadStageDocument(sourceRoot) {
@@ -185,13 +212,13 @@ export function createFictionalOpportunityWorkspace(options = {}) {
   }
 
   for (const [name, content] of Object.entries(options.approachPlans ?? {})) {
-    write(join(root, 'output', 'next-packs', name), content);
+    write(confinedTarget(join(root, 'output', 'next-packs'), name), content);
   }
   for (const [name, content] of Object.entries(options.reports ?? {})) {
-    write(join(root, 'reports', name), content);
+    write(confinedTarget(join(root, 'reports'), name), content);
   }
   for (const [path, content] of Object.entries(options.files ?? {})) {
-    write(join(root, path), content);
+    write(confinedTarget(root, path), content);
   }
 
   return { root, sourceRoot, stages, opportunities };

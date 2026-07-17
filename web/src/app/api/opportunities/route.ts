@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return Response.json(listOpportunityLifecycle(careerOpsRoot()));
+    return Response.json(await listOpportunityLifecycle(careerOpsRoot()));
   } catch (error) {
     return lifecycleErrorResponse(error);
   }

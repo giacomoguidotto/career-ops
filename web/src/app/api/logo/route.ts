@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic";
 // (a hit, or an empty sentinel for a known miss). On any miss → 404 so the
 // client's <img onError> falls back to the offline monogram. Because the cache is
 // keyed by company, once a company's logo resolves it's instant for that card AND
-// every other card. Passive Opportunity views send persist=0: they may read an
-// existing hit but never create cache files merely because the view opened.
+// every other card. Requests are cache-read-only unless an explicit interaction
+// sends persist=1, so opening a passive surface never creates cache files.
 
 const DOMAIN_RE = /^[a-z0-9.-]{1,253}\.[a-z]{2,}$/i;
 
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const domain = (sp.get("domain") ?? "").trim().toLowerCase();
   const company = (sp.get("company") ?? "").trim();
-  const persist = sp.get("persist") !== "0";
+  const persist = sp.get("persist") === "1";
 
   let key: string;
   let candidates: string[];
@@ -90,6 +90,10 @@ export async function GET(req: NextRequest) {
   } catch {
     /* not cached yet → resolve below */
   }
+
+  // Passive Opportunity views are cache-read-only. A miss stays a miss: do not
+  // turn opening a list or focused view into external network work.
+  if (!persist) return new Response("no logo", { status: 404 });
 
   // 2) resolve once: first candidate domain that yields a real favicon wins
   let bytes: ArrayBuffer | null = null;

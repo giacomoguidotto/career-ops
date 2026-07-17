@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
@@ -58,6 +59,30 @@ test('passive reads leave the repository User Layer byte-identical', () => {
     listOpportunities({ root: fixture.root, now: '2026-01-20' });
     readOpportunity({ root: fixture.root, opportunity: 1, now: '2026-01-20' });
     assert.equal(fingerprintUserLayer(REPO_ROOT), before);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('doctor read-only mode reports onboarding without auto-copying user files', () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    files: {
+      'modes/_profile.template.md': '# Fictional profile template\n',
+      'modes/_custom.template.md': '# Fictional custom template\n',
+    },
+  });
+  try {
+    const before = fingerprintFictionalWorkspace(fixture.root);
+    const result = JSON.parse(execFileSync(
+      process.execPath,
+      [join(REPO_ROOT, 'doctor.mjs'), '--json', '--read-only', '--target', fixture.root],
+      { encoding: 'utf8' },
+    ));
+    assert.deepEqual(result.autoCopied, []);
+    assert.equal(result.missing.includes('modes/_profile.md'), true);
+    assert.equal(existsSync(join(fixture.root, 'modes', '_profile.md')), false);
+    assert.equal(existsSync(join(fixture.root, 'modes', '_custom.md')), false);
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
@@ -147,7 +172,7 @@ test('passive summaries compose Attempt, cadence, artifact, and candidacy author
       [
         ['approach-plan', 'available', 'legacy'],
         ['pdf', 'available', 'declared'],
-        ['report', 'available', 'declared'],
+        ['report', 'available', 'legacy'],
       ],
     );
     assert.equal(applied.candidacy.state, 'primary');
@@ -315,5 +340,190 @@ test('passive core and web adapter contain no filesystem mutation or copied doma
   assert.deepEqual(mutationApis.filter((name) => core.includes(name)), []);
   assert.deepEqual(mutationApis.filter((name) => adapter.includes(name)), []);
   assert.deepEqual(copiedAuthorities.filter((name) => adapter.includes(name)), []);
-  assert.equal(adapter.includes('execFileSync'), true);
+  assert.equal(adapter.includes('execFileSync'), false);
+});
+
+test('focused reads use one coherent Attempt snapshot', () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [{ num: 1, company: 'Fictional Co', role: 'Researcher', stage: 'Approached' }],
+  });
+  let reads = 0;
+  const attempt = {
+    id: 'A001', opportunity: 1, date: '2026-01-15', type: 'formal_application',
+    channel: 'fictional_portal', recipient: 'Fictional Team', result: 'sent', followUpTo: null, notes: '',
+  };
+  try {
+    const focused = readOpportunity({
+      root: fixture.root,
+      opportunity: 1,
+      now: '2026-01-20',
+      readAttempts: () => {
+        reads += 1;
+        return reads === 1 ? [attempt] : [];
+      },
+    });
+    assert.equal(reads, 1);
+    assert.equal(focused.opportunity.attempts.count, 1);
+    assert.equal(focused.opportunity.attempts.latest.id, 'A001');
+    assert.deepEqual(focused.attempts.map((item) => item.id), ['A001']);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('artifact reads confine symlinks, tolerate directories, and revise when bytes change', () => {
+  const outside = mkdtempSync(join(tmpdir(), 'career-ops-artifact-outside-'));
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      {
+        num: 1,
+        company: 'Fictional Co',
+        role: 'Researcher',
+        stage: 'Evaluated',
+        report: '[report](../reports/escape.md)',
+      },
+      {
+        num: 2,
+        company: 'Directory Co',
+        role: 'Researcher',
+        stage: 'Evaluated',
+        report: '[report](../reports)',
+      },
+      {
+        num: 3,
+        company: 'Revision Co',
+        role: 'Researcher',
+        stage: 'Evaluated',
+        report: '[report](../reports/revision.md)',
+      },
+    ],
+    reports: {
+      'revision.md': '# Evaluation\n\n## Decision Snapshot\n\n**Decision:** Apply\n',
+    },
+  });
+  try {
+    writeFileSync(join(outside, 'secret.md'), 'outside bytes');
+    symlinkSync(join(outside, 'secret.md'), join(fixture.root, 'reports', 'escape.md'));
+    const first = listOpportunities({ root: fixture.root, now: '2026-01-20' });
+    const escaped = first.opportunities.find((item) => item.opportunity === 1);
+    const directory = first.opportunities.find((item) => item.opportunity === 2);
+    const revision = first.opportunities.find((item) => item.opportunity === 3);
+    assert.equal(escaped.artifacts.find((item) => item.kind === 'report').state, 'unavailable');
+    assert.equal(escaped.warnings.some((warning) => warning.code === 'artifact-path-outside-root'), true);
+    assert.equal(directory.artifacts.find((item) => item.kind === 'report').state, 'unavailable');
+    assert.equal(directory.warnings.some((warning) => warning.code === 'artifact-not-file'), true);
+    const artifactRevision = revision.artifacts.find((item) => item.kind === 'report').revision;
+
+    writeFileSync(join(fixture.root, 'reports', 'revision.md'), '# Evaluation\n\n## Decision Snapshot\n\n**Decision:** Skip\n');
+    const second = listOpportunities({ root: fixture.root, now: '2026-01-20' });
+    const changed = second.opportunities.find((item) => item.opportunity === 3);
+    assert.notEqual(changed.artifacts.find((item) => item.kind === 'report').revision, artifactRevision);
+    assert.notEqual(second.revision, first.revision);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('unknown report and tracker formats stay visible while only unsafe actions are disabled', () => {
+  const reportFixture = createFictionalOpportunityWorkspace({
+    opportunities: [{
+      num: 1,
+      company: 'Fictional Co',
+      role: 'Researcher',
+      stage: 'Evaluated',
+      report: '[report](../reports/future.md)',
+    }],
+    reports: { 'future.md': '# Future report format\n\nDecision lives elsewhere.\n' },
+  });
+  const trackerFixture = createFictionalOpportunityWorkspace({
+    opportunities: [{ num: 7, company: 'Raw Fields Co', role: 'Researcher', stage: 'Evaluated' }],
+    trackerHeaders: ['Record', 'When', 'Employer', 'Position', 'Fit', 'Phase', 'Document', 'Evidence', 'Context'],
+    trackerFields: ['num', 'date', 'company', 'role', 'score', 'status', 'pdf', 'report', 'notes'],
+  });
+  try {
+    const report = listOpportunities({ root: reportFixture.root }).opportunities[0];
+    assert.equal(report.artifacts.find((item) => item.kind === 'report').format, 'unknown');
+    assert.equal(report.warnings.some((warning) => warning.code === 'unknown-report-format'), true);
+    assert.equal(report.capabilities.generate, false);
+
+    const tracker = listOpportunities({ root: trackerFixture.root });
+    assert.equal(tracker.warnings.some((warning) => warning.code === 'unknown-tracker-format'), true);
+    assert.equal(tracker.opportunities[0].company, '');
+    assert.equal(tracker.opportunities[0].rawFields.Employer, 'Raw Fields Co');
+    assert.equal(tracker.opportunities[0].capabilities.generate, false);
+    assert.equal(tracker.opportunities[0].capabilities.recordAttempt, false);
+    assert.equal(tracker.opportunities[0].capabilities.reportSuccessor, false);
+  } finally {
+    removeFictionalOpportunityWorkspace(reportFixture.root);
+    removeFictionalOpportunityWorkspace(trackerFixture.root);
+  }
+});
+
+test('expected generated artifact kinds derive from every agent-owned Stage', () => {
+  const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
+  try {
+    const result = listOpportunities({ root: fixture.root });
+    for (const opportunity of result.opportunities.filter((item) => item.stage.owner === 'agent')) {
+      assert.deepEqual(opportunity.artifacts[0], {
+        kind: opportunity.stage.suggests.replace(/^generate_/, '').replace(/_/g, '-'),
+        action: opportunity.stage.suggests,
+        expectedAction: opportunity.stage.suggests,
+        state: 'missing',
+        format: 'unknown',
+        path: null,
+        revision: null,
+      });
+    }
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('state schema version rejects non-positive and coercible invalid values', () => {
+  const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
+  try {
+    const statesPath = join(fixture.root, 'templates', 'states.yml');
+    const original = readFileSync(statesPath, 'utf8');
+    for (const invalid of ['null', 'false', "''", '0', '-1']) {
+      writeFileSync(statesPath, original.replace(/^version: 3$/m, `version: ${invalid}`));
+      assert.equal(readOpportunityContract({ root: fixture.root }).stageSchemaVersion, null);
+    }
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('focused reads reject non-decimal and unsafe Opportunity identifiers', () => {
+  const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
+  try {
+    for (const invalid of ['1e0', '1.0', String(Number.MAX_SAFE_INTEGER + 1)]) {
+      assert.throws(
+        () => readOpportunity({ root: fixture.root, opportunity: invalid }),
+        /positive tracker number/,
+      );
+    }
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('fictional workspace configurable paths cannot escape or cross symlink roots', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'career-ops-fixture-confinement-'));
+  const root = join(parent, 'fixture');
+  try {
+    assert.throws(
+      () => createFictionalOpportunityWorkspace({ root, files: { '../escaped.md': 'no' } }),
+      /escapes its root/,
+    );
+    assert.equal(existsSync(join(parent, 'escaped.md')), false);
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(root, { recursive: true });
+    assert.throws(
+      () => createFictionalOpportunityWorkspace({ root, materializeCore: true, files: { 'node_modules/escaped.md': 'no' } }),
+      /crosses a symlink/,
+    );
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
 });

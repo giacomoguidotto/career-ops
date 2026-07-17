@@ -15,8 +15,8 @@ const STAGES: { key: string; label: string }[] = [
   { key: "DISCARDED", label: "Discarded" },
 ];
 
-export default function Analytics() {
-  const { applications } = pipelineSummary();
+export default async function Analytics() {
+  const { applications } = await pipelineSummary();
   const total = applications.length;
 
   const stageCounts = STAGES.map((s) => ({

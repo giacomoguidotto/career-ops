@@ -15,7 +15,7 @@ export function CompanyLogo({
   name,
   size = 20,
   className,
-  persistCache = true,
+  persistCache = false,
 }: {
   name: string;
   size?: number;
@@ -60,7 +60,7 @@ export function CompanyLogo({
       {showImg && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/logo?domain=${encodeURIComponent(domain!)}${persistCache ? "" : "&persist=0"}`}
+          src={`/api/logo?domain=${encodeURIComponent(domain!)}${persistCache ? "&persist=1" : ""}`}
           alt=""
           width={size}
           height={size}

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"; // always read fresh local files
 // can resolve "all the Anthropic ones" to concrete postings CLIENT-SIDE — the
 // model only ever emits a company name, never URLs (no hallucination, no tokens).
 export async function GET() {
-  const s = pipelineSummary();
+  const s = await pipelineSummary();
   return Response.json({
     inbox: s.inbox,
     applications: s.applications,

@@ -31,7 +31,7 @@ import {
   selectCandidacyCandidates,
 } from './candidacy-select.mjs';
 import { findPack, packArtifact } from './advance-stage.mjs';
-import { loadTrackerHeaderAliases, resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { inspectColumns, loadTrackerHeaderAliases, parseTrackerRow } from './tracker-parse.mjs';
 import { loadStates, resolveState } from './tracker-utils.mjs';
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,10 @@ export const OPPORTUNITY_LIFECYCLE_CONTRACT_ID = 'career-ops.opportunity-lifecyc
 export const OPPORTUNITY_LIFECYCLE_CONTRACT_VERSION = 1;
 
 function digest(value) {
-  return createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+  const input = typeof value === 'string' || value instanceof Uint8Array
+    ? value
+    : JSON.stringify(value);
+  return createHash('sha256').update(input).digest('hex');
 }
 
 function checkoutRoot(root) {
@@ -54,6 +57,11 @@ function relativePath(root, path) {
   return relative(root, path).split(sep).join('/');
 }
 
+function isContained(root, candidate) {
+  const rel = relative(root, candidate);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`));
+}
+
 function trackerPath(root) {
   const nested = join(root, 'data', 'applications.md');
   if (existsSync(nested)) return nested;
@@ -63,13 +71,52 @@ function trackerPath(root) {
 
 function readTracker(root) {
   const path = trackerPath(root);
-  if (!path) return { path: null, rows: [] };
+  if (!path) return { path: null, rows: [], warnings: [] };
   const lines = readFileSync(path, 'utf8').split('\n');
   const aliases = loadTrackerHeaderAliases(join(root, 'tracker-aliases.json'));
-  const columns = resolveColumns(lines, aliases);
+  const inspection = inspectColumns(lines, aliases);
+  if (inspection.format === 'unknown') {
+    const rows = lines.slice((inspection.headerIndex ?? 0) + 2).map((line) => {
+      if (!line.startsWith('|')) return null;
+      const cells = line.split('|').map((cell) => cell.trim());
+      const at = (key) => inspection.columns[key] == null ? '' : (cells[inspection.columns[key]] ?? '');
+      const rawNum = at('num') || cells[1] || '';
+      if (!/^\d+$/.test(rawNum)) return null;
+      const num = Number(rawNum);
+      if (!Number.isSafeInteger(num) || num <= 0) return null;
+      const rawFields = Object.fromEntries(inspection.headers.map((header, index) => [header, cells[index + 1] ?? '']));
+      return {
+        num,
+        date: at('date'),
+        company: at('company'),
+        role: at('role'),
+        score: at('score'),
+        status: at('status'),
+        pdf: at('pdf'),
+        report: at('report'),
+        notes: at('notes'),
+        location: at('location'),
+        via: at('via'),
+        rawFields,
+        unknownTrackerFormat: true,
+        raw: line,
+      };
+    }).filter(Boolean);
+    return {
+      path,
+      rows,
+      warnings: [{
+        code: 'unknown-tracker-format',
+        source: relativePath(root, path),
+        headers: inspection.headers,
+        disables: ['generate', 'recordAttempt', 'reportSuccessor'],
+      }],
+    };
+  }
   return {
     path,
-    rows: lines.map((line) => parseTrackerRow(line, columns)).filter(Boolean),
+    rows: lines.map((line) => parseTrackerRow(line, inspection.columns)).filter(Boolean),
+    warnings: [],
   };
 }
 
@@ -122,9 +169,10 @@ function primaryAction(stage, enabled = true, disabledReason = null) {
 }
 
 function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifactWarnings }) {
+  const blockedActions = new Set(artifactWarnings.flatMap((warning) => warning.blocksActions ?? []));
   const generationBlocked = candidacy.state === 'suppressed'
     || candidacy.state === 'research-required'
-    || artifactWarnings.some((warning) => warning.code === 'unknown-artifact-format');
+    || (stage?.suggests && blockedActions.has(stage.suggests));
   return {
     passiveRead: true,
     generate: Boolean(
@@ -140,81 +188,177 @@ function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifa
   };
 }
 
+function actionArtifactKind(action) {
+  const normalized = String(action ?? '').replace(/^generate_/, '').replace(/_/g, '-');
+  return normalized || 'next-pack';
+}
+
+function predecessorAction(stage, states) {
+  if (!stage) return null;
+  if (stage.owner === 'agent') return stage.suggests;
+  if (stage.owner !== 'user') return null;
+  if (stage.producedBy) return stage.producedBy;
+  const predecessors = states.records.filter(
+    (candidate) => candidate.owner === 'agent' && candidate.nextStates.includes(stage.id),
+  );
+  return predecessors.length === 1 ? predecessors[0].suggests : null;
+}
+
+function generatedActionForPack(parsedAction, stage, states) {
+  if (String(parsedAction ?? '').startsWith('generate_')) return parsedAction;
+  const ready = states.records.find(
+    (candidate) => candidate.owner === 'user' && candidate.suggests === parsedAction,
+  );
+  return predecessorAction(ready, states) || predecessorAction(stage, states) || parsedAction;
+}
+
+function inspectArtifactFile({ root, absolute, kind, format = 'declared', action = null, expectedAction = null }) {
+  const canonicalRoot = realpathSync(root);
+  const lexical = resolve(absolute);
+  const publicBase = { kind, action, expectedAction, format, path: null, revision: null };
+  if (!isContained(resolve(root), lexical)) {
+    return {
+      artifact: { ...publicBase, state: 'unavailable' },
+      content: null,
+      warning: { code: 'artifact-path-outside-root', source: relativePath(root, lexical), disables: [], blocksActions: [] },
+    };
+  }
+  const path = relativePath(root, lexical);
+  if (!existsSync(lexical)) {
+    return {
+      artifact: { ...publicBase, state: 'missing', path },
+      content: null,
+      warning: { code: 'artifact-missing', source: path, disables: [], blocksActions: [] },
+    };
+  }
+  try {
+    const canonical = realpathSync(lexical);
+    if (!isContained(canonicalRoot, canonical)) {
+      return {
+        artifact: { ...publicBase, state: 'unavailable' },
+        content: null,
+        warning: { code: 'artifact-path-outside-root', source: path, disables: [], blocksActions: [] },
+      };
+    }
+    if (!statSync(canonical).isFile()) {
+      return {
+        artifact: { ...publicBase, state: 'unavailable', path },
+        content: null,
+        warning: { code: 'artifact-not-file', source: path, disables: [], blocksActions: [] },
+      };
+    }
+    const content = readFileSync(canonical);
+    return {
+      artifact: { ...publicBase, state: 'available', path, revision: digest(content) },
+      content,
+      warning: null,
+    };
+  } catch {
+    return {
+      artifact: { ...publicBase, state: 'unavailable', path },
+      content: null,
+      warning: { code: 'artifact-unreadable', source: path, disables: [], blocksActions: [] },
+    };
+  }
+}
+
 function resolveDeclaredArtifact({ root, tracker, kind, cell }) {
   const match = String(cell ?? '').match(/\]\(([^)]+)\)/);
   if (!match || /^https?:/i.test(match[1])) return null;
-  const absolute = resolve(dirname(tracker), match[1]);
-  const path = relativePath(root, absolute);
-  if (path === '..' || path.startsWith('../')) {
-    return {
-      kind,
-      state: 'unavailable',
-      format: 'unknown',
-      path: null,
-      warning: { code: 'artifact-path-outside-root', source: relativePath(root, tracker), disables: [] },
-    };
-  }
-  return {
+  return inspectArtifactFile({
+    root,
+    absolute: resolve(dirname(tracker), match[1]),
     kind,
-    state: existsSync(absolute) ? 'available' : 'missing',
-    format: 'declared',
-    path,
-    warning: existsSync(absolute)
-      ? null
-      : { code: 'artifact-missing', source: path, disables: [] },
-  };
+  });
 }
 
-function readArtifacts({ root, tracker, row }) {
+function readArtifacts({ root, tracker, row, stage, states }) {
   const artifacts = [];
   const warnings = [];
   const provenance = [];
-  const pack = findPack(row.num, join(root, 'output', 'next-packs'));
+  let reportContent = null;
+  const expectedAction = predecessorAction(stage, states);
+  let pack = null;
+  try {
+    pack = findPack(row.num, join(root, 'output', 'next-packs'));
+  } catch {
+    warnings.push({ code: 'artifact-directory-unreadable', source: 'output/next-packs', disables: [], blocksActions: [] });
+  }
   if (pack) {
-    const content = readFileSync(pack.abs, 'utf8');
-    const artifact = packArtifact(content);
-    const canonical = /^\*\*Suggests:\*\*/m.test(content);
-    const legacy = /^\*\*Action:\*\*/m.test(content);
-    const format = artifact ? (canonical ? 'canonical' : legacy ? 'legacy' : 'unknown') : 'unknown';
-    artifacts.push({
-      kind: 'approach-plan',
-      state: 'available',
-      format,
-      path: relativePath(root, pack.abs),
-      suggests: artifact,
+    const inspected = inspectArtifactFile({
+      root,
+      absolute: pack.abs,
+      kind: actionArtifactKind(expectedAction),
+      format: 'unknown',
+      expectedAction,
     });
-    provenance.push({
-      kind: 'artifact',
-      path: relativePath(root, pack.abs),
-      fields: ['artifacts'],
-    });
-    if (format === 'unknown') {
+    let parsedAction = null;
+    let generatedAction = expectedAction;
+    if (inspected.content) {
+      const content = inspected.content.toString('utf8');
+      parsedAction = packArtifact(content);
+      generatedAction = generatedActionForPack(parsedAction, stage, states);
+      inspected.artifact.kind = actionArtifactKind(generatedAction);
+      inspected.artifact.action = generatedAction;
+      inspected.artifact.format = parsedAction
+        ? /^\*\*Suggests:\*\*/m.test(content) ? 'canonical' : /^\*\*Action:\*\*/m.test(content) ? 'legacy' : 'unknown'
+        : 'unknown';
+      if (inspected.artifact.format === 'unknown') {
+        warnings.push({
+          code: 'unknown-artifact-format',
+          source: inspected.artifact.path,
+          disables: [],
+          blocksActions: expectedAction ? [expectedAction] : [],
+        });
+      }
+    }
+    artifacts.push(inspected.artifact);
+    if (inspected.warning) {
       warnings.push({
-        code: 'unknown-artifact-format',
-        source: relativePath(root, pack.abs),
-        disables: ['generate'],
+        ...inspected.warning,
+        blocksActions: expectedAction ? [expectedAction] : [],
       });
     }
+    if (inspected.artifact.path && inspected.artifact.state === 'available') {
+      provenance.push({ kind: 'artifact', path: inspected.artifact.path, fields: ['artifacts'] });
+    }
+  } else if (expectedAction) {
+    artifacts.push({
+      kind: actionArtifactKind(expectedAction),
+      action: expectedAction,
+      expectedAction,
+      state: 'missing',
+      format: 'unknown',
+      path: null,
+      revision: null,
+    });
   }
   for (const [kind, cell] of [['pdf', row.pdf], ['report', row.report]]) {
-    const artifact = resolveDeclaredArtifact({ root, tracker, kind, cell });
-    if (!artifact) continue;
-    artifacts.push({
-      kind: artifact.kind,
-      state: artifact.state,
-      format: artifact.format,
-      path: artifact.path,
-    });
-    if (artifact.path && artifact.state === 'available') {
-      provenance.push({
-        kind: 'artifact',
-        path: artifact.path,
-        fields: ['artifacts'],
-      });
+    const inspected = resolveDeclaredArtifact({ root, tracker, kind, cell });
+    if (!inspected) continue;
+    if (kind === 'report' && inspected.content) {
+      reportContent = inspected.content.toString('utf8');
+      inspected.artifact.format = /^## Machine Summary\b/m.test(reportContent) && /^\s*final_decision:/im.test(reportContent)
+        ? 'canonical'
+        : /^## Decision Snapshot\b/m.test(reportContent) && /^\*\*Decision:\*\*/m.test(reportContent)
+          ? 'legacy'
+          : 'unknown';
+      if (inspected.artifact.format === 'unknown') {
+        warnings.push({
+          code: 'unknown-report-format',
+          source: inspected.artifact.path,
+          disables: [],
+          blocksActions: stage?.owner === 'agent' && stage.suggests ? [stage.suggests] : [],
+        });
+      }
     }
-    if (artifact.warning) warnings.push(artifact.warning);
+    artifacts.push(inspected.artifact);
+    if (inspected.artifact.path && inspected.artifact.state === 'available') {
+      provenance.push({ kind: 'artifact', path: inspected.artifact.path, fields: ['artifacts'] });
+    }
+    if (inspected.warning) warnings.push(inspected.warning);
   }
-  return { artifacts, warnings, provenance };
+  return { artifacts, warnings, provenance, reportContent };
 }
 
 function attemptsForRow(attempts, num) {
@@ -263,19 +407,17 @@ function deriveAttemptAttention({ row, stage, attempts, cadence, overrides, now 
   };
 }
 
-function reportDecision(row, tracker, root) {
+function reportDecision(row, artifactState) {
   const noteDecision = decisionFromTrackerNotes(row.notes);
   if (noteDecision !== 'unknown') return noteDecision;
-  const artifact = resolveDeclaredArtifact({ root, tracker, kind: 'report', cell: row.report });
-  if (!artifact?.path || artifact.state !== 'available') return 'unknown';
-  return decisionFromReport(readFileSync(join(root, artifact.path), 'utf8'));
+  return artifactState?.reportContent ? decisionFromReport(artifactState.reportContent) : 'unknown';
 }
 
-function readCandidacy({ root, tracker, rows, states }) {
+function readCandidacy({ root, rows, states, artifactByNum }) {
   const registryPath = join(root, 'data', 'candidacy-clusters.md');
   const registry = readOptional(registryPath);
   const clusters = registry == null ? [] : parseClusterRegistry(registry);
-  const decisions = new Map(rows.map((row) => [row.num, reportDecision(row, tracker, root)]));
+  const decisions = new Map(rows.map((row) => [row.num, reportDecision(row, artifactByNum.get(row.num))]));
   const selection = selectCandidacyCandidates({ rows, clusters, states, decisionByNum: decisions });
   return { registryPath: registry == null ? null : registryPath, selection };
 }
@@ -323,7 +465,7 @@ function candidacyForRow(row, candidacy) {
   return { state: 'not-coordinated', reason: null, clusterId: null, primary: null, outreachAnchor: null };
 }
 
-function opportunitySummary({ root, tracker, row, states, contract, attempts, cadence, overrides, candidacy, now }) {
+function opportunitySummary({ root, tracker, row, states, contract, attempts, cadence, overrides, candidacy, now, artifactState }) {
   const stageRecord = resolveState(row.status, states);
   const stage = stageRecord ? publicStage(stageRecord) : {
     id: null,
@@ -342,6 +484,13 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
     value: row.status,
     disables: ['generate', 'recordAttempt', 'reportSuccessor'],
   }];
+  if (row.unknownTrackerFormat) {
+    warnings.push({
+      code: 'unknown-tracker-format',
+      source: relativePath(root, tracker),
+      disables: ['generate', 'recordAttempt', 'reportSuccessor'],
+    });
+  }
   const provenance = [
     {
       kind: 'tracker',
@@ -355,7 +504,6 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
     },
   ];
   const rowAttempts = attemptsForRow(attempts, row.num);
-  const artifactState = readArtifacts({ root, tracker, row });
   warnings.push(...artifactState.warnings);
   provenance.push(...artifactState.provenance);
   const candidacyState = candidacyForRow(row, candidacy);
@@ -409,16 +557,26 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
     stage: stageRecord,
     contract,
     candidacy: candidacyState,
-    mayRecordAttempt,
+    mayRecordAttempt: mayRecordAttempt && !row.unknownTrackerFormat,
     artifactWarnings: artifactState.warnings,
   });
+  if (row.unknownTrackerFormat) {
+    capabilities.generate = false;
+    capabilities.recordAttempt = false;
+    capabilities.reportSuccessor = false;
+  }
+  const artifactActionBlocked = artifactState.warnings.some(
+    (warning) => (warning.blocksActions ?? []).includes(stageRecord?.suggests),
+  );
   const actionDisabledReason = candidacyState.state === 'suppressed'
     ? 'candidacy-suppressed'
     : candidacyState.state === 'research-required'
       ? 'candidacy-research-required'
-      : artifactState.warnings.some((warning) => warning.code === 'unknown-artifact-format')
-        ? 'unknown-artifact-format'
-        : 'capability-unavailable';
+      : row.unknownTrackerFormat
+        ? 'unknown-tracker-format'
+        : artifactActionBlocked
+          ? 'incompatible-artifact'
+          : 'capability-unavailable';
   const summary = {
     opportunity: row.num,
     date: row.date,
@@ -430,6 +588,7 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
     pdf: row.pdf,
     report: row.report,
     notes: row.notes,
+    ...(row.rawFields ? { rawFields: row.rawFields } : {}),
     rawStage: row.status,
     stage,
     primaryAction: primaryAction(stageRecord, capabilities.generate, actionDisabledReason),
@@ -480,18 +639,37 @@ export function readOpportunityContract(options = {}) {
 }
 
 export function listOpportunities(options = {}) {
+  return buildOpportunitySnapshot(options).result;
+}
+
+function buildOpportunitySnapshot(options = {}) {
   const root = checkoutRoot(options.root);
   const now = nowDate(options.now);
   const states = loadStates({ rootDir: root, force: true });
   const contract = readOpportunityContract({ root });
   const tracker = readTracker(root);
-  const warnings = tracker.path ? [] : [{ code: 'tracker-missing', source: 'data/applications.md' }];
-  const attempts = readApproachAttempts(join(root, 'data', 'approach-attempts.md'));
+  const warnings = tracker.path
+    ? [...tracker.warnings]
+    : [{ code: 'tracker-missing', source: 'data/applications.md' }];
+  const readAttempts = options.readAttempts ?? readApproachAttempts;
+  const attempts = readAttempts(join(root, 'data', 'approach-attempts.md'));
   const cadence = resolveCadenceConfig({ profilePath: join(root, 'config', 'profile.yml') });
   const followups = readOptional(join(root, 'data', 'follow-ups.md')) ?? '';
   const overrides = parseNextOverrides(followups);
+  const artifactByNum = new Map(tracker.path
+    ? tracker.rows.map((row) => [
+        row.num,
+        readArtifacts({
+          root,
+          tracker: tracker.path,
+          row,
+          stage: resolveState(row.status, states),
+          states,
+        }),
+      ])
+    : []);
   const candidacy = tracker.path
-    ? readCandidacy({ root, tracker: tracker.path, rows: tracker.rows, states })
+    ? readCandidacy({ root, rows: tracker.rows, states, artifactByNum })
     : { registryPath: null, selection: { eligible: [], suppressed: [], researchRequired: [], clusters: [], warnings: [] } };
   const opportunities = tracker.path
     ? tracker.rows.map((row) => opportunitySummary({
@@ -505,22 +683,27 @@ export function listOpportunities(options = {}) {
         overrides,
         candidacy,
         now,
+        artifactState: artifactByNum.get(row.num),
       }))
     : [];
   const result = { contract, opportunities, warnings: [...warnings, ...(candidacy.selection.warnings ?? [])] };
-  return { ...result, revision: digest(result) };
+  return { result: { ...result, revision: digest(result) }, attempts };
 }
 
 export function readOpportunity(options = {}) {
-  const opportunity = Number(options.opportunity);
-  if (!Number.isInteger(opportunity) || opportunity <= 0) {
+  const rawOpportunity = options.opportunity;
+  const opportunity = typeof rawOpportunity === 'string' && !/^\d+$/.test(rawOpportunity)
+    ? Number.NaN
+    : Number(rawOpportunity);
+  if (!Number.isSafeInteger(opportunity) || opportunity <= 0) {
     throw new Error('opportunity must be a positive tracker number');
   }
   const root = checkoutRoot(options.root);
-  const result = listOpportunities({ root, now: options.now });
+  const snapshot = buildOpportunitySnapshot({ root, now: options.now, readAttempts: options.readAttempts });
+  const result = snapshot.result;
   const summary = result.opportunities.find((item) => item.opportunity === opportunity) ?? null;
   if (!summary) return null;
-  const attempts = readApproachAttempts(join(root, 'data', 'approach-attempts.md'))
+  const attempts = snapshot.attempts
     .filter((attempt) => attempt.opportunity === opportunity)
     .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));
   const focused = {

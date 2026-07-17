@@ -48,7 +48,18 @@ const fixture = createFictionalOpportunityWorkspace({
   materializeCore: true,
   includeAliases: true,
   includeUnknownStage: true,
-  missingOptionalFiles: true,
+  files: {
+    'cv.md': '# Fictional CV\n',
+    'modes/_profile.md': '# Fictional profile\n',
+    'portals.yml': 'title_filter:\n  positive:\n    - researcher\n',
+    'doctor.mjs': [
+      "import { writeFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "if (!process.argv.includes('--read-only')) writeFileSync(join(process.cwd(), 'doctor-mutated-user-layer'), 'unsafe');",
+      "process.stdout.write(JSON.stringify({ onboardingNeeded: false, missing: [], warnings: [], autoCopied: [] }) + '\\n');",
+      '',
+    ].join('\n'),
+  },
 });
 const port = await availablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -85,6 +96,17 @@ try {
   const before = fingerprintFictionalWorkspace(fixture.root);
   beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
 
+  await page.goto(`${baseUrl}/api/doctor`);
+  const doctor = JSON.parse(await page.locator('body').innerText());
+  assert.equal(doctor.available, true);
+  assert.equal(doctor.onboardingNeeded, false);
+
+  const today = await page.goto(baseUrl);
+  assert.equal(today?.ok(), true);
+  await page.waitForLoadState('networkidle');
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
   await page.goto(`${baseUrl}/api/opportunities`);
   const list = JSON.parse(await page.locator('body').innerText());
   assert.equal(list.contract.id, 'career-ops.opportunity-lifecycle');
@@ -98,6 +120,8 @@ try {
   const focused = JSON.parse(await page.locator('body').innerText());
   assert.equal(focused.opportunity.opportunity, 1);
   assert.equal(focused.contract.version, list.contract.version);
+  const unsafeId = await page.goto(`${baseUrl}/api/opportunities/9007199254740993`);
+  assert.equal(unsafeId?.status(), 400);
 
   await page.goto(`${baseUrl}/pipeline?tab=ALL`);
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
@@ -105,6 +129,11 @@ try {
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
   await page.goto(`${baseUrl}/pipeline/1`);
   await page.reload();
+
+  await page.goto(`${baseUrl}/explore`);
+  await page.getByRole('heading', { name: 'Explore' }).waitFor();
+  await page.goto(`${baseUrl}/portals`);
+  await page.getByRole('heading', { name: 'Portals' }).waitFor();
 
   assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), false);

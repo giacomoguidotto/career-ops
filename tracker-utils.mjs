@@ -117,8 +117,14 @@ export function loadStates(options = {}) {
     if (s.id) register(s.id);
     for (const alias of s.aliases || []) register(alias);
   }
+  const rawVersion = doc?.version;
+  const versionCandidate = typeof rawVersion === 'number'
+    ? rawVersion
+    : typeof rawVersion === 'string' && rawVersion.trim() !== ''
+      ? Number(rawVersion)
+      : Number.NaN;
   const parsed = {
-    version: Number.isInteger(Number(doc?.version)) ? Number(doc.version) : null,
+    version: Number.isSafeInteger(versionCandidate) && versionCandidate > 0 ? versionCandidate : null,
     path,
     byKey,
     labels,

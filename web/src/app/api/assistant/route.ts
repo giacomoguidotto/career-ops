@@ -78,7 +78,7 @@ export async function POST(req: Request) {
   // (doctorState), so it never re-asks for a file that already exists (disc#7) —
   // the home was correctly nudging for the missing PROFILE while the assistant,
   // given no state, restarted its onboarding script and asked for the CV again.
-  const { hasCv, onboardingNeeded, missing } = doctorState();
+  const { hasCv, onboardingNeeded, missing } = await doctorState();
   const setupLine = onboardingNeeded
     ? `\n\nSETUP STATE (authoritative — the SAME signal the home screen uses; trust it over guessing, and do NOT re-ask for anything already on file):\n- CV on file (cv.md): ${hasCv ? "YES — do NOT ask for it again; read it to be concrete" : "NO — this is the first thing to collect"}\n- Still missing: ${missing.length ? missing.join(", ") : "nothing"}\nWhen onboarding, START at the first item actually missing. If the CV is already on file, SKIP step 1 entirely and go straight to the next missing prerequisite (usually the profile — target roles, comp, location).`
     : `\n\nSETUP STATE: this user is fully set up (CV + profile + scanner all on file). Do NOT run onboarding or ask for a CV — just help them with what they actually asked.`;
