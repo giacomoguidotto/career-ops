@@ -1,9 +1,9 @@
 name: Web CI
 
-# CI for the experimental web UI (web/). Informative by design: it is NOT a
-# required check for the core — a red here never blocks a core merge, and core
-# changes never trigger it. The web/ tree versions and releases as its own
-# release-please component.
+# CI for the experimental web UI (web/). The general web job remains
+# informative. Passive lifecycle changes also trigger the browser contract job
+# because that core seam is consumed directly by the web adapter. The web/ tree
+# versions and releases as its own release-please component.
 on:
   pull_request:
     paths:

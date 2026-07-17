@@ -3,9 +3,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
-  statSync,
+  lstatSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -43,7 +44,7 @@ function loadStageDocument(sourceRoot) {
 function trackerHeader(legacyTracker, headers = null) {
   if (headers) {
     return [
-      '# Applications Tracker',
+      '# Opportunities Tracker',
       '',
       `| ${headers.join(' | ')} |`,
       `| ${headers.map(() => '---').join(' | ')} |`,
@@ -58,7 +59,7 @@ function trackerHeader(legacyTracker, headers = null) {
     ];
   }
   return [
-    '# Applications Tracker',
+    '# Opportunities Tracker',
     '',
     '| Opportunity | Date | Company | Role | Score | Stage | PDF | Report | Notes |',
     '|---|---|---|---|---|---|---|---|---|',
@@ -204,7 +205,8 @@ function walkFiles(root, current = root) {
   const files = [];
   for (const name of readdirSync(current)) {
     const path = join(current, name);
-    const stats = statSync(path);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) continue;
     if (stats.isDirectory()) files.push(...walkFiles(root, path));
     else files.push(path);
   }
@@ -212,9 +214,48 @@ function walkFiles(root, current = root) {
 }
 
 /** Return a content fingerprint without exposing fixture contents in output. */
-export function fingerprintFictionalWorkspace(root) {
-  const entries = walkFiles(root)
+export function snapshotFictionalWorkspace(root) {
+  return Object.fromEntries(walkFiles(root)
     .map((path) => [relative(root, path), createHash('sha256').update(readFileSync(path)).digest('hex')])
-    .sort(([left], [right]) => left.localeCompare(right));
-  return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
+    .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+export function fingerprintFictionalWorkspace(root) {
+  return createHash('sha256').update(JSON.stringify(snapshotFictionalWorkspace(root))).digest('hex');
+}
+
+function fingerprintPath(root, path, entries) {
+  let stats;
+  try { stats = lstatSync(path); } catch { return; }
+  const key = relative(root, path);
+  if (stats.isSymbolicLink()) {
+    entries.set(`link:${key}`, readlinkSync(path));
+    return;
+  }
+  if (stats.isDirectory()) {
+    entries.set(`directory:${key}`, '');
+    for (const name of readdirSync(path)) fingerprintPath(root, join(path, name), entries);
+    return;
+  }
+  entries.set(`file:${key}`, createHash('sha256').update(readFileSync(path)).digest('hex'));
+}
+
+function userLayerDeclarations(root) {
+  const contract = readFileSync(join(root, 'DATA_CONTRACT.md'), 'utf8');
+  const section = contract.match(/## User Layer[^\n]*\n([\s\S]*?)(?=\n## System Layer)/)?.[1];
+  if (!section) throw new Error('DATA_CONTRACT.md does not declare a User Layer');
+  return [...section.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)].map((match) => match[1]);
+}
+
+/** Hash existing repository User Layer bytes without returning their contents. */
+export function fingerprintUserLayer(root) {
+  const entries = new Map();
+  for (const declaration of userLayerDeclarations(root)) {
+    const wildcard = declaration.search(/[\{*]/);
+    const prefix = wildcard === -1 ? declaration : declaration.slice(0, wildcard).replace(/\/$/, '');
+    fingerprintPath(root, join(root, prefix), entries);
+  }
+  return createHash('sha256')
+    .update(JSON.stringify([...entries].sort(([left], [right]) => left.localeCompare(right))))
+    .digest('hex');
 }

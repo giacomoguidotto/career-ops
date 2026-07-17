@@ -9,11 +9,12 @@ export const dynamic = "force-dynamic";
 // Localhost logo proxy + on-disk cache, FOREVER per key. Honors local-first: the
 // browser never talks to Google directly. Accepts `?domain=` (exact) OR
 // `?company=` (a name → we guess a handful of likely domains and resolve once).
-// Each key is fetched at most once ever, then served from .career-ops-web/logo-cache
+// Persisted keys are fetched at most once, then served from .career-ops-web/logo-cache
 // (a hit, or an empty sentinel for a known miss). On any miss → 404 so the
 // client's <img onError> falls back to the offline monogram. Because the cache is
 // keyed by company, once a company's logo resolves it's instant for that card AND
-// every other card (this search or any future one), forever.
+// every other card. Passive Opportunity views send persist=0: they may read an
+// existing hit but never create cache files merely because the view opened.
 
 const DOMAIN_RE = /^[a-z0-9.-]{1,253}\.[a-z]{2,}$/i;
 
@@ -56,6 +57,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const domain = (sp.get("domain") ?? "").trim().toLowerCase();
   const company = (sp.get("company") ?? "").trim();
+  const persist = sp.get("persist") !== "0";
 
   let key: string;
   let candidates: string[];
@@ -96,11 +98,13 @@ export async function GET(req: NextRequest) {
     if (bytes) break;
   }
 
-  try {
-    await fs.mkdir(cacheDir(), { recursive: true });
-    await fs.writeFile(file, bytes ? Buffer.from(bytes) : new Uint8Array(0)); // sentinel on miss → never refetch
-  } catch {
-    /* best-effort */
+  if (persist) {
+    try {
+      await fs.mkdir(cacheDir(), { recursive: true });
+      await fs.writeFile(file, bytes ? Buffer.from(bytes) : new Uint8Array(0)); // sentinel on miss → never refetch
+    } catch {
+      /* best-effort */
+    }
   }
 
   if (!bytes) return new Response("no logo", { status: 404 });

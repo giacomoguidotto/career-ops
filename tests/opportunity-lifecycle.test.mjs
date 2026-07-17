@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   createFictionalOpportunityWorkspace,
   fingerprintFictionalWorkspace,
+  fingerprintUserLayer,
   removeFictionalOpportunityWorkspace,
 } from './fixtures/fictional-opportunity-workspace.mjs';
 import {
@@ -12,6 +15,8 @@ import {
   readOpportunityContract,
   readOpportunity,
 } from '../opportunity-lifecycle.mjs';
+
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 test('contract and list expose every canonical Stage and Owner without writes', () => {
   const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
@@ -40,6 +45,19 @@ test('contract and list expose every canonical Stage and Owner without writes', 
     );
     assert.equal(result.opportunities.every((opportunity) => opportunity.capabilities.passiveRead), true);
     assert.equal(before, after);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('passive reads leave the repository User Layer byte-identical', () => {
+  const fixture = createFictionalOpportunityWorkspace({ materializeCore: true });
+  try {
+    const before = fingerprintUserLayer(REPO_ROOT);
+    readOpportunityContract({ root: fixture.root });
+    listOpportunities({ root: fixture.root, now: '2026-01-20' });
+    readOpportunity({ root: fixture.root, opportunity: 1, now: '2026-01-20' });
+    assert.equal(fingerprintUserLayer(REPO_ROOT), before);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
@@ -101,7 +119,7 @@ test('passive summaries compose Attempt, cadence, artifact, and candidacy author
       ].join('\n'),
     },
     reports: {
-      '001-fictional.md': '# Evaluation\n\n## Summary\nFictional evidence.\n',
+      '001-fictional.md': '# Evaluation\n\n## Decision Snapshot\n\n**Decision:** Apply\n',
     },
     files: {
       'output/001-fictional.pdf': 'fictional pdf bytes',
@@ -143,6 +161,22 @@ test('passive summaries compose Attempt, cadence, artifact, and candidacy author
     assert.equal(focused.attempts.length, 1);
     assert.equal(focused.attempts[0].id, 'A001');
     assert.equal(focused.contract.version, 1);
+    assert.deepEqual(
+      new Set(applied.provenance.map((source) => source.path)),
+      new Set([
+        'data/applications.md',
+        'templates/states.yml',
+        'output/next-packs/001-fictional.md',
+        'output/001-fictional.pdf',
+        'reports/001-fictional.md',
+        'candidacy-select.mjs',
+        'data/candidacy-clusters.md',
+        'data/approach-attempts.md',
+        'followup-cadence.mjs',
+        'config/profile.yml',
+        'data/follow-ups.md',
+      ]),
+    );
     assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
@@ -170,6 +204,22 @@ test('aliases normalize quietly while unknown values remain readable and narrowl
     assert.equal(unknown.capabilities.recordAttempt, false);
     assert.equal(unknown.capabilities.reportSuccessor, false);
     assert.deepEqual(unknown.warnings.map((warning) => warning.code), ['unknown-stage']);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('legacy tracker headers and column order normalize without warnings', () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    legacyTracker: true,
+    includeAliases: true,
+    missingOptionalFiles: true,
+  });
+  try {
+    const result = listOpportunities({ root: fixture.root, now: '2026-01-20' });
+    assert.equal(result.opportunities.length, fixture.opportunities.length);
+    assert.equal(result.opportunities.every((item) => item.stage.id !== null), true);
+    assert.equal(result.opportunities.every((item) => item.warnings.length === 0), true);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

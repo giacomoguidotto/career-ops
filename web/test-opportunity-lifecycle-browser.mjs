@@ -8,6 +8,7 @@ import {
   createFictionalOpportunityWorkspace,
   fingerprintFictionalWorkspace,
   removeFictionalOpportunityWorkspace,
+  snapshotFictionalWorkspace,
 } from '../tests/fixtures/fictional-opportunity-workspace.mjs';
 
 const WEB_ROOT = import.meta.dirname;
@@ -72,6 +73,7 @@ let browser;
 let context;
 let page;
 let traceStopped = false;
+let beforeSnapshot = null;
 try {
   await waitUntilReady(`${baseUrl}/api/opportunities`, child, output);
   browser = await chromium.launch({ headless: true });
@@ -81,6 +83,7 @@ try {
   const requests = [];
   page.on('request', (request) => requests.push({ method: request.method(), url: request.url() }));
   const before = fingerprintFictionalWorkspace(fixture.root);
+  beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
 
   await page.goto(`${baseUrl}/api/opportunities`);
   const list = JSON.parse(await page.locator('body').innerText());
@@ -116,10 +119,17 @@ try {
     await context.tracing.stop({ path: join(ARTIFACT_DIR, 'trace.zip') });
     traceStopped = true;
   }
+  const afterSnapshot = snapshotFictionalWorkspace(fixture.root);
   writeFileSync(join(ARTIFACT_DIR, 'fixture-manifest.json'), `${JSON.stringify({
     stageCount: fixture.stages.length,
     opportunityCount: fixture.opportunities.length,
     workspaceFingerprint: fingerprintFictionalWorkspace(fixture.root),
+    changedPaths: beforeSnapshot
+      ? [...new Set([
+          ...Object.keys(beforeSnapshot),
+          ...Object.keys(afterSnapshot),
+        ])].filter((path) => beforeSnapshot[path] !== afterSnapshot[path])
+      : [],
   }, null, 2)}\n`);
   throw error;
 } finally {

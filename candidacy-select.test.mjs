@@ -2,6 +2,7 @@
 
 import { loadStates } from './tracker-utils.mjs';
 import {
+  decisionFromReport,
   decisionFromTrackerNotes,
   parseClusterRegistry,
   selectCandidacyCandidates,
@@ -44,6 +45,9 @@ const cluster = (id, company, members, primary = null) => ({
 });
 const decisions = (entries) => new Map(entries);
 const nums = (items) => items.map((item) => item.num).sort((a, b) => a - b);
+
+eq('Machine Summary report decision is canonical', decisionFromReport('final_decision: "Apply"'), 'apply');
+eq('Decision Snapshot report header normalizes quietly', decisionFromReport('## Decision Snapshot\n\n**Decision:** Research first'), 'research_first');
 
 // A progressed Primary reserves the surface and suppresses its agent-owned siblings.
 {

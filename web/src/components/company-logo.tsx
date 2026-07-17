@@ -15,10 +15,12 @@ export function CompanyLogo({
   name,
   size = 20,
   className,
+  persistCache = true,
 }: {
   name: string;
   size?: number;
   className?: string;
+  persistCache?: boolean;
 }) {
   const [enabled, setEnabled] = useState(false); // monogram-only until config known
   const [failed, setFailed] = useState(false);
@@ -58,7 +60,7 @@ export function CompanyLogo({
       {showImg && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/logo?domain=${encodeURIComponent(domain!)}`}
+          src={`/api/logo?domain=${encodeURIComponent(domain!)}${persistCache ? "" : "&persist=0"}`}
           alt=""
           width={size}
           height={size}

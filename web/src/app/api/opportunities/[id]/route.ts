@@ -1,5 +1,6 @@
 import { careerOpsRoot } from "@/lib/career-ops";
-import { LifecycleAdapterError, readOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
+import { lifecycleErrorResponse } from "@/lib/core/opportunity-lifecycle-api";
+import { readOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,10 +16,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   try {
     return Response.json(readOpportunityLifecycle(careerOpsRoot(), Number(id)));
   } catch (error) {
-    const failure = error instanceof LifecycleAdapterError
-      ? error
-      : new LifecycleAdapterError("lifecycle-read-failed", "The passive lifecycle read could not be completed.", 503);
-    return Response.json({ error: { code: failure.code, message: failure.message } }, { status: failure.status });
+    return lifecycleErrorResponse(error);
   }
 }
-

@@ -17,7 +17,7 @@ import {
   computeNextFollowupDate,
   computeUrgency,
   daysBetween,
-  parseAppliedDate,
+  parseAppliedDate as parseLegacyApproachDate,
   parseDate,
   parseNextOverrides,
   resolveCadenceConfig,
@@ -168,6 +168,7 @@ function resolveDeclaredArtifact({ root, tracker, kind, cell }) {
 function readArtifacts({ root, tracker, row }) {
   const artifacts = [];
   const warnings = [];
+  const provenance = [];
   const pack = findPack(row.num, join(root, 'output', 'next-packs'));
   if (pack) {
     const content = readFileSync(pack.abs, 'utf8');
@@ -181,6 +182,11 @@ function readArtifacts({ root, tracker, row }) {
       format,
       path: relativePath(root, pack.abs),
       suggests: artifact,
+    });
+    provenance.push({
+      kind: 'artifact',
+      path: relativePath(root, pack.abs),
+      fields: ['artifacts'],
     });
     if (format === 'unknown') {
       warnings.push({
@@ -199,9 +205,16 @@ function readArtifacts({ root, tracker, row }) {
       format: artifact.format,
       path: artifact.path,
     });
+    if (artifact.path && artifact.state === 'available') {
+      provenance.push({
+        kind: 'artifact',
+        path: artifact.path,
+        fields: ['artifacts'],
+      });
+    }
     if (artifact.warning) warnings.push(artifact.warning);
   }
-  return { artifacts, warnings };
+  return { artifacts, warnings, provenance };
 }
 
 function attemptsForRow(attempts, num) {
@@ -215,24 +228,24 @@ function deriveAttemptAttention({ row, stage, attempts, cadence, overrides, now 
     return { state: 'none', nextReview: null };
   }
   const latest = attempts.at(-1) ?? null;
-  const appliedDate = latest?.date?.slice(0, 10) || parseAppliedDate(row.notes) || row.date;
-  const applicationDate = parseDate(appliedDate);
-  if (!applicationDate) return { state: 'unknown', nextReview: null };
+  const approachDate = latest?.date?.slice(0, 10) || parseLegacyApproachDate(row.notes) || row.date;
+  const parsedApproachDate = parseDate(approachDate);
+  if (!parsedApproachDate) return { state: 'unknown', nextReview: null };
   const followups = attempts.filter((attempt) => attempt.type === 'follow_up');
   const latestFollowupDate = followups.map((attempt) => attempt.date.slice(0, 10)).sort().at(-1) ?? null;
   const latestFollowup = latestFollowupDate ? parseDate(latestFollowupDate) : null;
-  const daysSinceApplication = daysBetween(applicationDate, now.parsed);
+  const daysSinceApproach = daysBetween(parsedApproachDate, now.parsed);
   const daysSinceLastFollowup = latestFollowup ? daysBetween(latestFollowup, now.parsed) : null;
   let urgency = computeUrgency(
     stage.group,
-    daysSinceApplication,
+    daysSinceApproach,
     daysSinceLastFollowup,
     followups.length,
     cadence,
   );
   let nextReview = computeNextFollowupDate(
     stage.group,
-    appliedDate,
+    approachDate,
     latestFollowupDate,
     followups.length,
     cadence,
@@ -344,7 +357,13 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
   const rowAttempts = attemptsForRow(attempts, row.num);
   const artifactState = readArtifacts({ root, tracker, row });
   warnings.push(...artifactState.warnings);
+  provenance.push(...artifactState.provenance);
   const candidacyState = candidacyForRow(row, candidacy);
+  provenance.push({
+    kind: 'candidacy-authority',
+    path: 'candidacy-select.mjs',
+    fields: ['candidacy'],
+  });
   if (candidacy.registryPath) {
     provenance.push({
       kind: 'candidacy-registry',
@@ -352,18 +371,30 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
       fields: ['candidacy'],
     });
   }
-  if (rowAttempts.length > 0) {
+  if (existsSync(join(root, 'data', 'approach-attempts.md'))) {
     provenance.push({
       kind: 'approach-attempts',
       path: 'data/approach-attempts.md',
       fields: ['attemptAttention', 'attempts'],
     });
   }
-  if (artifactState.artifacts.length > 0) {
+  provenance.push({
+    kind: 'cadence-authority',
+    path: 'followup-cadence.mjs',
+    fields: ['attemptAttention'],
+  });
+  if (existsSync(join(root, 'config', 'profile.yml'))) {
     provenance.push({
-      kind: 'artifacts',
-      path: 'output/next-packs',
-      fields: ['artifacts'],
+      kind: 'cadence-profile',
+      path: 'config/profile.yml',
+      fields: ['attemptAttention'],
+    });
+  }
+  if (existsSync(join(root, 'data', 'follow-ups.md'))) {
+    provenance.push({
+      kind: 'cadence-overrides',
+      path: 'data/follow-ups.md',
+      fields: ['attemptAttention'],
     });
   }
   const approachedStage = states.records.find(
