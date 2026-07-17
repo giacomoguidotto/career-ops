@@ -1,8 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicWrite } from "@/lib/core/safe-write";
-import { parseApplications } from "@/lib/tracker-table.mjs";
-import yaml from "js-yaml";
+import { listOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
 
 /**
  * Resolve the career-ops "home" — the directory holding the user's sibling
@@ -119,73 +118,6 @@ export type Application = {
   approachAttention?: "waiting" | "review_due" | "cold";
 };
 
-function approachProjections(): Map<number, Partial<Application>> {
-  const content = read("data/approach-attempts.md");
-  if (!content) return new Map();
-  const byOpportunity = new Map<number, Array<{ id: string; date: string; type: string; channel: string; recipient: string; result: string }>>();
-  for (const line of content.split("\n")) {
-    if (!/^\|\s*A\d+\s*\|/.test(line)) continue;
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-    const opportunity = Number(cells[1]);
-    if (!Number.isInteger(opportunity)) continue;
-    const attempt = { id: cells[0], date: cells[2], type: cells[3], channel: cells[4], recipient: cells[5], result: cells[6] };
-    if (!byOpportunity.has(opportunity)) byOpportunity.set(opportunity, []);
-    byOpportunity.get(opportunity)!.push(attempt);
-  }
-  let firstDays = 7;
-  let subsequentDays = 7;
-  let maxFollowups = 2;
-  try {
-    const profile = yaml.load(read("config/profile.yml") ?? "") as { followup_cadence?: Record<string, unknown> };
-    const cadence = profile?.followup_cadence ?? {};
-    const number = (value: unknown, fallback: number) => Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : fallback;
-    firstDays = number(cadence.applied_first_days, firstDays);
-    subsequentDays = number(cadence.applied_subsequent_days, subsequentDays);
-    maxFollowups = number(cadence.applied_max_followups, maxFollowups);
-  } catch {
-    // Keep the same generic defaults as followup-cadence.mjs.
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  const reviewOverrides = new Map<number, { date: string; setDate: string }>();
-  for (const line of (read("data/follow-ups.md") ?? "").split("\n")) {
-    const match = line.trim().match(/^-\s+next\s+#(\d+)\s+(\d{4}-\d{2}-\d{2})(?:\s+\(set\s+(\d{4}-\d{2}-\d{2})\))?\s*$/i);
-    if (match) reviewOverrides.set(Number(match[1]), { date: match[2], setDate: match[3] || match[2] });
-  }
-  const projections = new Map<number, Partial<Application>>();
-  for (const [opportunity, attempts] of byOpportunity) {
-    attempts.sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));
-    const latest = attempts.at(-1)!;
-    const followups = attempts.filter((attempt) => attempt.type === "follow_up").length;
-    const latestFollowupDate = attempts.filter((attempt) => attempt.type === "follow_up").map((attempt) => attempt.date.slice(0, 10)).sort().at(-1);
-    const channels = [...new Set(attempts.map((attempt) => attempt.channel).filter(Boolean))].sort();
-    let nextReview: string | null = null;
-    let approachAttention: Application["approachAttention"] = "waiting";
-    const override = reviewOverrides.get(opportunity);
-    const activeOverride = override && (!latestFollowupDate || latestFollowupDate <= override.setDate) ? override : null;
-    if (activeOverride) {
-      nextReview = activeOverride.date;
-      approachAttention = nextReview <= today ? "review_due" : "waiting";
-    } else if (followups >= maxFollowups) {
-      approachAttention = "cold";
-    } else {
-      const dateOnly = latest.date.slice(0, 10);
-      const due = new Date(`${dateOnly}T00:00:00Z`);
-      due.setUTCDate(due.getUTCDate() + (followups > 0 ? subsequentDays : firstDays));
-      nextReview = due.toISOString().slice(0, 10);
-      if (nextReview <= today) approachAttention = "review_due";
-    }
-    projections.set(opportunity, {
-      attemptCount: attempts.length,
-      latestAttempt: latest,
-      attemptChannels: channels,
-      formalSubmitted: attempts.some((attempt) => attempt.type === "formal_application"),
-      nextReview,
-      approachAttention,
-    });
-  }
-  return projections;
-}
-
 /**
  * Parse data/applications.md — the tracker table (source of truth).
  * The header-aware parsing lives in tracker-table.mjs, which resolves headers
@@ -194,12 +126,25 @@ function approachProjections(): Map<number, Partial<Application>> {
  * web-side mirror to drift (#954, PR #1598 review).
  */
 export function readApplications(): Application[] {
-  const md = read("data/applications.md");
-  if (!md) return [];
-  const projections = approachProjections();
-  return parseApplications(md, careerOpsRoot()).map((application: Application) => ({
-    ...application,
-    ...(projections.get(Number(application.n)) ?? {}),
+  return listOpportunityLifecycle(careerOpsRoot()).opportunities.map((opportunity) => ({
+    n: String(opportunity.opportunity),
+    date: opportunity.date,
+    company: opportunity.company,
+    via: opportunity.via,
+    role: opportunity.role,
+    score: opportunity.score,
+    status: opportunity.stage.label,
+    pdf: opportunity.pdf,
+    report: opportunity.report,
+    notes: opportunity.notes,
+    attemptCount: opportunity.attempts.count,
+    latestAttempt: opportunity.attempts.latest ?? undefined,
+    attemptChannels: opportunity.attempts.channels,
+    formalSubmitted: opportunity.attempts.formalSubmitted,
+    nextReview: opportunity.attemptAttention.nextReview,
+    approachAttention: ["review_due", "cold"].includes(opportunity.attemptAttention.state)
+      ? opportunity.attemptAttention.state as "review_due" | "cold"
+      : "waiting",
   }));
 }
 

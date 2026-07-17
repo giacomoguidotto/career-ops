@@ -33,6 +33,7 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run approach:record` | `record-approach.mjs` | Append one confirmed Approach Attempt |
 | `npm run approach:migrate` | `migrate-approaches.mjs` | Preview/apply legacy state and attempt migration |
 | `npm run approach:evidence` | `approach-evidence.mjs` | Audit whether channel outcomes support a conclusion |
+| `npm run lifecycle -- list` | `opportunity-lifecycle.mjs` | Read the passive canonical Opportunity lifecycle contract |
 | `npm run paste-reply` | `paste-reply.mjs` | Manual/no-Gmail input into the `reply-watch.mjs` classification pipeline |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
 
@@ -144,6 +145,22 @@ least two channels, without same-Opportunity multi-channel confounding.
 ```bash
 npm run approach:evidence
 ```
+
+## lifecycle
+
+Returns passive structured reads from the canonical Opportunity lifecycle seam.
+The command composes the live Stage contract, cadence, confirmed Attempts,
+artifacts, and candidacy coordination without writing files or starting work.
+
+```bash
+npm run lifecycle -- contract
+npm run lifecycle -- list
+npm run lifecycle -- read --opportunity 247
+```
+
+Use `--root PATH` to read an alternate complete checkout. Known aliases and
+legacy tracker layouts normalize through the canonical readers. Unknown values
+remain visible with capability-scoped warnings.
 
 ---
 

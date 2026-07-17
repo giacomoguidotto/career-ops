@@ -8,10 +8,30 @@ on:
   pull_request:
     paths:
       - 'web/**'
+      - 'opportunity-lifecycle.mjs'
+      - 'tracker-utils.mjs'
+      - 'tracker-parse.mjs'
+      - 'tracker-aliases.json'
+      - 'followup-cadence.mjs'
+      - 'approach-attempts.mjs'
+      - 'candidacy-select.mjs'
+      - 'advance-stage.mjs'
+      - 'tests/fixtures/fictional-opportunity-workspace.mjs'
+      - 'tests/opportunity-lifecycle.test.mjs'
   push:
     branches: [main]
     paths:
       - 'web/**'
+      - 'opportunity-lifecycle.mjs'
+      - 'tracker-utils.mjs'
+      - 'tracker-parse.mjs'
+      - 'tracker-aliases.json'
+      - 'followup-cadence.mjs'
+      - 'approach-attempts.mjs'
+      - 'candidacy-select.mjs'
+      - 'advance-stage.mjs'
+      - 'tests/fixtures/fictional-opportunity-workspace.mjs'
+      - 'tests/opportunity-lifecycle.test.mjs'
 
 permissions:
   contents: read
@@ -33,3 +53,34 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build
+
+  passive-lifecycle-browser:
+    name: passive lifecycle browser
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install core test dependencies
+        run: npm install --ignore-scripts --no-package-lock
+        working-directory: ${{ github.workspace }}
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ${{ github.workspace }}
+      - run: npm run build
+      - run: npm run test:browser
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: passive-lifecycle-browser-failure
+          path: web/.lifecycle-browser-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

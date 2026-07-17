@@ -118,6 +118,7 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `followup-seed.mjs` | Legacy compatibility utility for old pinned follow-up data |
 | `set-status.mjs` | Canonical CLI to update a tracker row: `node set-status.mjs <report#\|company> <State> [--note]` — strict states.yml validation, shared tracker lock, atomic write |
 | `candidacy-select.mjs` | Read-only deterministic preflight for Agent-owned advancement — emits exclusive `eligible`, `suppressed`, and `researchRequired` sets after Hiring-surface coordination |
+| `opportunity-lifecycle.mjs` | Passive canonical contract, list, and focused reads for Opportunities; composes Stage, cadence, Attempt, artifact, and candidacy authorities without writing |
 | `invite-match.mjs` | Fuzzy-matches a pasted interview-invite email (company name, date, req ID) against `data/applications.md`, ranking candidates when a company has multiple tracker entries (JSON or `--summary` table output) |
 | `paste-reply.mjs` | Manual/no-Gmail input path into `reply-watch.mjs`'s classification pipeline — normalizes a pasted or file-provided email's subject/from/body into a candidate object and appends it to `data/reply-candidates.json` (never overwrites existing entries; never classifies or touches the tracker itself) |
 | `detect-reposts.mjs` | Repost detector — flags roles re-listed 2+ times in 90 days from scan-history.tsv (JSON or `--summary` table output) |

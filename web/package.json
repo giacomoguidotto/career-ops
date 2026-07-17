@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test-clean-chips.mjs"
+    "test": "node --test test-clean-chips.mjs",
+    "test:browser": "node test-opportunity-lifecycle-browser.mjs"
   },
   "dependencies": {
     "@paper-design/shaders-react": "^0.0.77",
