@@ -32,6 +32,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       <Link href="/pipeline" className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-brand">
         <ArrowLeft className="size-4" /> Pipeline
       </Link>
+      {job.batchId && <Link href={`/jobs/groups/${job.batchId}`} className="ml-4 inline-flex min-h-11 items-center text-sm text-brand-text hover:underline">Open owning work group</Link>}
 
       <section className="dot-bg relative mt-5 overflow-hidden rounded-2xl border border-border bg-surface/40 px-6 py-7">
         {job.status === "running" && <HeroGlow />}

@@ -28,11 +28,13 @@ import { buildTodayRunway, type TodayQueueItem, type TodayRunway } from "@/lib/t
 import type { LifecycleOwner, OpportunitySummary } from "@/lib/core/opportunity-lifecycle";
 
 type BatchCandidate = { opportunity: number; expectedStage: string; expectedRevision: string };
+type BatchReady = BatchCandidate & { workerId: string };
 type BatchResponse = {
   code: "batch-ready" | "nothing-started";
   message: string;
-  ready: BatchCandidate[];
+  ready: BatchReady[];
   skipped: Array<{ opportunity: number; code: string; message: string }>;
+  groupId: string | null;
 };
 
 function expectation(item: TodayQueueItem): BatchCandidate | null {
@@ -92,7 +94,8 @@ export function TodayDashboard({
     }
   }, [batchOpen]);
 
-  const start = (candidate: BatchCandidate, item?: TodayQueueItem, batchId?: string) => startJob({
+  const start = (candidate: BatchCandidate & { workerId?: string }, item?: TodayQueueItem, batchId?: string) => startJob({
+    workerId: candidate.workerId,
     title: item ? `Prepare ${item.artifactLabel}` : `Prepare Opportunity #${candidate.opportunity}`,
     subtitle: item ? `${item.opportunity.company} · ${item.opportunity.role}` : `Opportunity #${candidate.opportunity}`,
     kind: "lifecycle",
@@ -300,7 +303,7 @@ function BatchReview({ runway, onClose, onResult, onStart }: {
   runway: TodayRunway;
   onClose: () => void;
   onResult: (message: string) => void;
-  onStart: (candidate: BatchCandidate, batchId: string) => string | null;
+  onStart: (candidate: BatchReady, batchId: string) => string | null;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -329,19 +332,22 @@ function BatchReview({ runway, onClose, onResult, onStart }: {
   const confirm = async () => {
     setBusy(true);
     const candidates = runway.eligible.map(expectation).filter((item): item is BatchCandidate => item !== null);
+    const reviewed = runway.suppressed
+      .map(expectation)
+      .filter((item): item is BatchCandidate => item !== null);
     try {
       const response = await fetch("/api/opportunities/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ candidates }),
+        body: JSON.stringify({ candidates, reviewed }),
       });
       const result = await response.json() as BatchResponse;
       if (!response.ok) throw new Error("Batch preflight failed.");
       if (result.ready.length === 0) {
         onResult("Nothing started. The fresh preflight found no unchanged eligible work.");
       } else {
-        const batchId = `today-${Date.now()}`;
-        const started = result.ready.filter((candidate) => onStart(candidate, batchId)).length;
+        if (!result.groupId) throw new Error("Batch identity was not persisted.");
+        const started = result.ready.filter((candidate) => onStart(candidate, result.groupId!)).length;
         const skipped = result.skipped.length;
         onResult(`Starting ${started} eligible work item${started === 1 ? "" : "s"}.${skipped ? ` Skipped ${skipped} changed or excluded Opportunit${skipped === 1 ? "y" : "ies"}.` : ""}`);
       }

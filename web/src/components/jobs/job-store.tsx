@@ -30,7 +30,7 @@ export type Job = {
   endedAt?: number;
 };
 
-type StartOpts = { title: string; subtitle?: string; kind: string; input: string; page?: string; batchId?: string };
+type StartOpts = { workerId?: string; title: string; subtitle?: string; kind: string; input: string; page?: string; batchId?: string };
 
 type Ctx = {
   jobs: Job[];
@@ -118,6 +118,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       steps: [...job.steps, { kind: "status", label: recovery.message, ts: Date.parse(recovery.occurredAt) }],
     }));
     setAnnouncement(recovery.message);
+    window.dispatchEvent(new CustomEvent("co-worker-settled", { detail: { kind: "lifecycle", outcome: recovery.outcome } }));
     if (["changed", "recovered", "unchanged"].includes(recovery.outcome)) {
       window.dispatchEvent(new CustomEvent("co-job-done", { detail: { kind: "lifecycle" } }));
     }
@@ -333,7 +334,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       } catch {
         cliId = null;
       }
-      const id = `job-${Date.now()}-${seq.current++}`;
+      const id = opts.workerId ?? `job-${Date.now()}-${seq.current++}`;
       const job: Job = {
         id,
         title: opts.title,

@@ -11,6 +11,7 @@ import {
 } from "@/lib/core/run-registry";
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
 import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import { owningGroupForChild, ownsGroupChild } from "@/lib/core/work-group-store";
 import {
   appendWorkerPhase,
   createDurableWorker,
@@ -237,6 +238,17 @@ export async function POST(req: Request) {
         expectation = JSON.parse(input);
       } catch {
         return Response.json({ error: "invalid lifecycle expectation" }, { status: 400 });
+      }
+      const groupOwner = owningGroupForChild(careerOpsRoot(), durableWorkerId);
+      if (
+        (body.batchId && !ownsGroupChild(careerOpsRoot(), body.batchId, durableWorkerId, expectation.opportunity))
+        || (!body.batchId && groupOwner)
+        || (body.batchId && groupOwner?.id !== body.batchId)
+      ) {
+        return Response.json({ error: "This worker is not owned by the named work group.", code: "group-child-conflict" }, { status: 409 });
+      }
+      if (readDurableWorker(careerOpsRoot(), durableWorkerId)) {
+        return Response.json({ error: "This durable worker already has canonical history.", code: "worker-history-exists" }, { status: 409 });
       }
       try {
         const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
