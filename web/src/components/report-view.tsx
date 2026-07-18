@@ -105,7 +105,7 @@ export function ReportView({
       <header className="mt-5">
         <p className="font-mono text-xs uppercase tracking-[0.18em] text-faint">#{id}</p>
         <div className="mt-2 flex items-center gap-3">
-          <CompanyLogo name={app?.company ?? meta?.title ?? `Report #${id}`} size={40} persistCache={false} />
+          <CompanyLogo name={app?.company ?? meta?.title ?? `Report #${id}`} size={40} />
           <h1 className="font-display text-3xl tracking-tight text-landing">
             {app?.company ?? meta?.title ?? `Report #${id}`}
           </h1>

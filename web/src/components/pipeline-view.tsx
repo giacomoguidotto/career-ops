@@ -212,10 +212,12 @@ export function PipelineView({
               {filtered.map((r, i) => (
                 <tr key={`${r.n}-${i}`} className="group transition-colors hover:bg-surface/40">
                   <td className="px-4 py-3 font-medium">
-                    <Link href={`/pipeline/${r.n}`} className="flex items-center gap-2.5 transition-colors group-hover:text-brand">
-                      <CompanyLogo name={r.company} size={20} persistCache={false} />
-                      {r.company}
-                    </Link>
+                    <div className="flex items-center gap-2.5">
+                      <CompanyLogo name={r.company} size={20} />
+                      <Link href={`/pipeline/${r.n}`} className="transition-colors group-hover:text-brand">
+                        {r.company}
+                      </Link>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-muted">
                     <Link href={`/pipeline/${r.n}`}>{r.role}</Link>

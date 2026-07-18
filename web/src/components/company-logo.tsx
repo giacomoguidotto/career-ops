@@ -15,16 +15,15 @@ export function CompanyLogo({
   name,
   size = 20,
   className,
-  persistCache = false,
 }: {
   name: string;
   size?: number;
   className?: string;
-  persistCache?: boolean;
 }) {
   const [enabled, setEnabled] = useState(false); // monogram-only until config known
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadRequested, setLoadRequested] = useState(false);
 
   useEffect(() => {
     try {
@@ -45,9 +44,9 @@ export function CompanyLogo({
     <span
       className={cn("relative inline-flex shrink-0 items-center justify-center overflow-hidden ring-1 ring-black/5 dark:ring-white/10", className)}
       style={{ width: size, height: size, borderRadius: radius }}
-      aria-hidden="true"
     >
       <span
+        aria-hidden="true"
         className="absolute inset-0 flex items-center justify-center font-semibold leading-none text-white"
         style={{
           background: `linear-gradient(135deg, hsl(${hue} 55% 48%), hsl(${(hue + 28) % 360} 52% 38%))`,
@@ -60,17 +59,40 @@ export function CompanyLogo({
       {showImg && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/logo?domain=${encodeURIComponent(domain!)}${persistCache ? "&persist=1" : ""}`}
+          src={`/api/logo?domain=${encodeURIComponent(domain!)}${loadRequested ? "&persist=1" : ""}`}
           alt=""
           width={size}
           height={size}
           loading="lazy"
           referrerPolicy="no-referrer"
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onLoad={() => {
+            setLoaded(true);
+            setLoadRequested(false);
+          }}
+          onError={() => {
+            setFailed(true);
+            setLoadRequested(false);
+          }}
           className="absolute inset-0 h-full w-full bg-white object-contain transition-opacity duration-200"
           style={{ opacity: loaded ? 1 : 0, padding: Math.max(1, Math.round(size * 0.1)) }}
         />
+      )}
+      {enabled && domain && failed && (
+        <button
+          type="button"
+          aria-label={`Load ${name} logo`}
+          title={`Load ${name} logo`}
+          onClick={() => {
+            setLoaded(false);
+            setLoadRequested(true);
+            setFailed(false);
+          }}
+          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-[inherit] text-white outline-none ring-inset transition hover:bg-black/10 focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <span aria-hidden="true" className="absolute bottom-0 right-0 flex size-2/5 items-center justify-center rounded-tl bg-black/55 font-bold leading-none">
+            +
+          </span>
+        </button>
       )}
     </span>
   );

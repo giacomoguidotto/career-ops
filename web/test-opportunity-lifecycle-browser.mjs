@@ -127,6 +127,34 @@ try {
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
   await page.reload();
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
+  const loadLogo = page.getByRole('button', { name: 'Load Fictional Company 1 logo' });
+  await loadLogo.waitFor();
+  assert.equal(requests.some((request) => request.url.includes('/api/logo?') && request.url.includes('persist=1')), false);
+  let authorizedLogo = false;
+  const logoPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  await page.route('**/api/logo?*', async (route) => {
+    if (route.request().url().includes('persist=1')) {
+      authorizedLogo = true;
+      await route.fulfill({ status: 200, contentType: 'image/png', body: logoPng });
+    } else if (authorizedLogo) {
+      await route.fulfill({ status: 200, contentType: 'image/png', body: logoPng });
+    } else {
+      await route.continue();
+    }
+  });
+  const persistedLogoRequest = page.waitForRequest((request) => request.url().includes('/api/logo?') && request.url().includes('persist=1'));
+  await loadLogo.click();
+  const persistedLogo = await persistedLogoRequest;
+  const persistedDomain = new URL(persistedLogo.url()).searchParams.get('domain');
+  const cachedLogoRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/logo' && url.searchParams.get('domain') === persistedDomain && !url.searchParams.has('persist');
+  });
+  assert.equal(requests.some((request) => request.url.includes('/api/logo?') && request.url.includes('persist=1')), true);
+  assert.equal(new URL(page.url()).pathname, '/pipeline');
+  await page.reload();
+  await cachedLogoRequest;
+  await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
   await page.goto(`${baseUrl}/pipeline/1`);
   await page.reload();
 
