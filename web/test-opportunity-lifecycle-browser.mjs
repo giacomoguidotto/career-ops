@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -338,7 +338,9 @@ try {
   await page.waitForURL((url) => !url.searchParams.has('stage'));
   await page.goto(`${baseUrl}/pipeline?sort=score&dir=-1`);
   await page.locator('[data-opportunity-id="900"]:visible').waitFor();
+  await page.waitForURL((url) => url.searchParams.get('selected') === '900');
   assert.equal(await page.locator('tbody [data-opportunity-id]').first().getAttribute('data-opportunity-id'), '900');
+  assert.equal(await page.locator('[data-opportunity-id="900"]:visible').getAttribute('data-selected'), 'true');
   await page.setViewportSize({ width: 320, height: 844 });
   await pipelineSearch.fill('Fictional International Research Cooperative');
   const longCard = page.locator('[data-opportunity-id="900"]:visible');
@@ -443,6 +445,18 @@ try {
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `opportunity-${review.name}.png`), fullPage: true });
     await reviewContext.close();
+  }
+
+  const lifecycleScript = join(fixture.root, 'opportunity-lifecycle.mjs');
+  const unavailableLifecycleScript = `${lifecycleScript}.unavailable`;
+  renameSync(lifecycleScript, unavailableLifecycleScript);
+  try {
+    await page.goto(`${baseUrl}/pipeline?tab=INBOX`);
+    await page.getByRole('heading', { name: 'Inbox' }).waitFor();
+    assert.equal(await page.getByText('Lifecycle data is unavailable').isVisible(), true);
+    assert.equal(await page.getByText('Inbox Research').isVisible(), true);
+  } finally {
+    renameSync(unavailableLifecycleScript, lifecycleScript);
   }
 
   await page.goto(`${baseUrl}/explore`);

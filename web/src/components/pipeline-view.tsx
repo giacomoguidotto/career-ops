@@ -193,7 +193,7 @@ export function PipelineView({
 
   const selectedParam = Number(params.get("selected"));
   const selectedId = Number.isSafeInteger(selectedParam) && selectedParam > 0 ? selectedParam : null;
-  const stageSelection = stageRows.find((opportunity) => opportunity.opportunity === selectedId) ?? stageRows[0] ?? null;
+  const stageSelection = stageRows.find((opportunity) => opportunity.opportunity === selectedId) ?? visible[0] ?? stageRows[0] ?? null;
   const selected = visible.find((opportunity) => opportunity.opportunity === selectedId) ?? visible[0] ?? null;
   const previewed = visible.find((opportunity) => opportunity.opportunity === temporaryPreview) ?? selected;
 
@@ -279,12 +279,22 @@ export function PipelineView({
 
   if (!lifecycle) {
     return (
-      <main className="mx-auto max-w-6xl px-6 py-12">
-        <h1 className="font-display text-3xl text-landing">Pipeline</h1>
-        <div className="mt-6 rounded-2xl border border-dashed border-border bg-surface/30 px-6 py-12 text-center">
-          <p className="font-display text-lg">Lifecycle data is unavailable</p>
-          <p className="mx-auto mt-1 max-w-lg text-sm text-muted">This checkout cannot provide the canonical passive Opportunity contract.</p>
+      <main className="mx-auto max-w-6xl px-4 py-7 pb-24 sm:px-6 lg:px-8">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brand-text">Upstream triage</p>
+          <h1 className="mt-1 font-display text-3xl tracking-tight text-landing sm:text-4xl">Pipeline</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+            Inbox triage remains available while this checkout upgrades its lifecycle reader.
+          </p>
         </div>
+        <section className="mt-6" aria-labelledby="compatibility-inbox-heading">
+          <div className="border-b border-border pb-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Lifecycle data is unavailable</p>
+            <h2 id="compatibility-inbox-heading" className="mt-1 font-display text-2xl text-landing">Inbox</h2>
+            <p className="mt-1 text-sm text-muted">This checkout cannot provide the canonical passive Opportunity contract yet.</p>
+          </div>
+          {pendingInbox.length ? <InboxTriage inbox={pendingInbox} /> : <InboxEmpty />}
+        </section>
       </main>
     );
   }
