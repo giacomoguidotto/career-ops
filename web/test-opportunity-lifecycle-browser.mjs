@@ -286,8 +286,10 @@ try {
   assert.equal(await firstRow.evaluate((element) => document.activeElement === element), true);
 
   const commandButton = page.getByRole('button', { name: /Commands/ });
-  await commandButton.click();
+  await commandButton.focus();
+  await page.keyboard.press('Enter');
   await page.getByRole('dialog', { name: 'Pipeline commands' }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/pipeline');
   await page.getByRole('button', { name: /Prepare suggested artifact/ }).click();
   await page.getByRole('dialog', { name: 'Review preparation' }).waitFor();
   assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
@@ -308,6 +310,21 @@ try {
   await page.reload();
   assert.equal(page.url(), stageUrl);
   assert.equal(await page.getByRole('button', { name: new RegExp(`^${stage.label}`) }).getAttribute('aria-pressed'), 'true');
+
+  const offerOpportunityIds = fixture.stages
+    .map((candidate, index) => ({ candidate, opportunity: index + 1 }))
+    .filter(({ candidate }) => candidate.dashboard_group === 'offer')
+    .map(({ opportunity }) => opportunity);
+  assert.equal(offerOpportunityIds.length, 2);
+  await page.goto(`${baseUrl}/pipeline?tab=OFFER`);
+  await page.waitForURL((url) => url.searchParams.get('tab') === 'OFFER' && url.searchParams.has('selected'));
+  assert.equal(new URL(page.url()).searchParams.has('stage'), false);
+  for (const opportunity of offerOpportunityIds) {
+    await page.locator(`[data-opportunity-id="${opportunity}"]:visible`).waitFor();
+  }
+  for (const offerStage of fixture.stages.filter((candidate) => candidate.dashboard_group === 'offer')) {
+    assert.equal(await page.getByRole('button', { name: new RegExp(`^${offerStage.label}(?: \\d+)?$`) }).getAttribute('aria-pressed'), 'true');
+  }
 
   await page.getByRole('button', { name: /^All / }).click();
   await page.waitForURL((url) => !url.searchParams.has('stage'));

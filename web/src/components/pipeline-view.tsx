@@ -80,6 +80,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
     && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [contenteditable='true']")));
 }
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && Boolean(target.closest("a, button, input, textarea, select, summary, [role='button'], [contenteditable='true']"));
+}
+
 export function PipelineView({
   lifecycle,
   inbox,
@@ -100,14 +105,21 @@ export function PipelineView({
   const opportunities = useMemo(() => lifecycle?.opportunities ?? [], [lifecycle]);
   const legacyTab = (params.get("tab") ?? "").trim();
   const inboxOpen = params.get("view") === "inbox" || legacyTab.toUpperCase() === "INBOX";
-  const requestedStage = params.get("stage") ?? (
+  const explicitStage = (params.get("stage") ?? "").trim();
+  const legacyStage = (
     legacyTab && !["ALL", "INBOX"].includes(legacyTab.toUpperCase()) ? legacyTab : ""
   );
+  const requestedStage = explicitStage || legacyStage;
+  const activeDashboardGroup = !explicitStage && legacyStage
+    ? stages.find((stage) => stage.dashboardGroup.toLowerCase() === legacyStage.toLowerCase())?.dashboardGroup ?? null
+    : null;
   const activeStage = stages.find((stage) => {
     const requested = requestedStage.toLowerCase();
     return stage.id.toLowerCase() === requested
-      || stage.label.toLowerCase() === requested
-      || stage.dashboardGroup.toLowerCase() === requested;
+      || stage.label.toLowerCase() === requested;
+  }) ?? stages.find((stage) => {
+    const requested = requestedStage.toLowerCase();
+    return !explicitStage && stage.dashboardGroup.toLowerCase() === requested;
   }) ?? null;
   const pMin = Number.parseFloat(params.get("min") ?? "");
   const minFilter = Number.isFinite(pMin) ? pMin : null;
@@ -142,11 +154,12 @@ export function PipelineView({
   }, [inbox]);
 
   const stageRows = useMemo(() => opportunities.filter((opportunity) => {
-    if (activeStage && opportunity.stage.id !== activeStage.id) return false;
+    if (activeDashboardGroup && opportunity.stage.dashboardGroup !== activeDashboardGroup) return false;
+    if (!activeDashboardGroup && activeStage && opportunity.stage.id !== activeStage.id) return false;
     if (minFilter == null) return true;
     const score = scoreNum(opportunity.score);
     return !Number.isNaN(score) && score >= minFilter;
-  }), [activeStage, minFilter, opportunities]);
+  }), [activeDashboardGroup, activeStage, minFilter, opportunities]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -173,8 +186,10 @@ export function PipelineView({
   }, [inboxOpen, selectedId, setParams, stageSelection?.opportunity]);
 
   const select = useCallback((opportunity: number) => {
-    setParams({ selected: opportunity, stage: activeStage?.id ?? null, tab: null, view: null });
-  }, [activeStage?.id, setParams]);
+    setParams(activeDashboardGroup
+      ? { selected: opportunity, stage: null, tab: legacyTab, view: null }
+      : { selected: opportunity, stage: activeStage?.id ?? null, tab: null, view: null });
+  }, [activeDashboardGroup, activeStage?.id, legacyTab, setParams]);
 
   const focusOpportunity = useCallback((opportunity: number) => {
     requestAnimationFrame(() => {
@@ -227,7 +242,7 @@ export function PipelineView({
       } else if (event.key.toLowerCase() === "k") {
         event.preventDefault();
         moveSelection(-1);
-      } else if (event.key === "Enter" && selected) {
+      } else if (event.key === "Enter" && selected && !isInteractiveTarget(event.target)) {
         event.preventDefault();
         router.push(`/pipeline/${selected.opportunity}`);
       } else if (event.key === "?") {
@@ -274,7 +289,9 @@ export function PipelineView({
               value={pendingInbox.length}
               label="in inbox"
               active={inboxOpen}
-              onClick={() => setParams({ view: inboxOpen ? null : "inbox", stage: activeStage?.id ?? null, tab: null })}
+              onClick={() => setParams(activeDashboardGroup
+                ? { view: inboxOpen ? null : "inbox", stage: null, tab: legacyTab }
+                : { view: inboxOpen ? null : "inbox", stage: activeStage?.id ?? null, tab: null })}
             />
           </div>
         </div>
@@ -331,13 +348,13 @@ export function PipelineView({
 
             <div className="mt-5 overflow-x-auto border-b border-border" role="group" aria-label="Filter by Stage">
               <div className="flex min-w-max gap-1">
-                <StageTab label="All" count={opportunities.length} active={activeStage === null} onClick={() => setStage(null)} />
+                <StageTab label="All" count={opportunities.length} active={activeStage === null && activeDashboardGroup === null} onClick={() => setStage(null)} />
                 {stages.map((stage) => (
                   <StageTab
                     key={stage.id}
                     label={stage.label}
                     count={opportunities.filter((item) => item.stage.id === stage.id).length}
-                    active={activeStage?.id === stage.id}
+                    active={activeDashboardGroup ? stage.dashboardGroup === activeDashboardGroup : activeStage?.id === stage.id}
                     onClick={() => setStage(stage)}
                   />
                 ))}
