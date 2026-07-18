@@ -15,9 +15,10 @@ export { pillTone, TONE };
 export function WorkerPills() {
   const { jobs, removeJob, clearFinished } = useJobs();
   const pathname = usePathname();
-  if (jobs.length === 0) return null;
-  const running = jobs.filter((j) => j.status === "running").length;
-  const finished = jobs.length - running;
+  const visible = jobs.filter((job) => job.status === "running" || !job.acknowledgedAt);
+  if (visible.length === 0) return null;
+  const running = visible.filter((j) => j.status === "running").length;
+  const finished = visible.length - running;
 
   return (
     <div className="mt-4 border-t border-border pt-3">
@@ -34,7 +35,7 @@ export function WorkerPills() {
         )}
       </div>
       <ul className="space-y-1.5">
-        {jobs.slice(0, 6).map((j) => {
+        {visible.slice(0, 6).map((j) => {
           const active = pathname === `/jobs/${j.id}`;
           return (
             <li key={j.id}>
@@ -55,7 +56,7 @@ export function WorkerPills() {
                         removeJob(j.id);
                       }}
                       className="text-faint opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                      aria-label="Dismiss job"
+                      aria-label="Acknowledge worker outcome"
                     >
                       <X className="size-3" />
                     </button>

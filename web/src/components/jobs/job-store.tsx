@@ -2,6 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { scoreTone } from "@/lib/format";
+import type { LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
+import type { WorkRecovery, WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import type { DurableWorker } from "@/lib/core/worker-store";
 
 export type JobStep = { kind: "tool" | "status"; label: string; ts: number };
 export type JobResult = { score: number | null; summary: string; tone: "good" | "warn" | "bad" | "muted" };
@@ -19,6 +22,10 @@ export type Job = {
   text: string;
   result?: JobResult;
   cost?: { tokens: number; usd?: number }; // per-run token cost (Claude result event) — local only
+  workOrder?: LifecycleWorkOrder;
+  recovery?: WorkRecovery;
+  recoveryHistory?: WorkRecovery[];
+  acknowledgedAt?: number;
   startedAt: number;
   endedAt?: number;
 };
@@ -28,6 +35,8 @@ type StartOpts = { title: string; subtitle?: string; kind: string; input: string
 type Ctx = {
   jobs: Job[];
   startJob: (opts: StartOpts) => string | null;
+  actOnJob: (id: string) => void;
+  acknowledgeJob: (id: string) => void;
   removeJob: (id: string) => void;
   clearFinished: () => void;
 };
@@ -56,39 +65,264 @@ function parseVerdict(text: string): JobResult {
   return { score: null, summary: "", tone: "muted" };
 }
 
+function recoveryStatus(recovery: WorkRecovery): Job["status"] {
+  return ["changed", "recovered", "unchanged"].includes(recovery.outcome) ? "done" : "error";
+}
+
+function durableJob(worker: DurableWorker, local?: Job): Job {
+  const recovery = worker.recoveryHistory.at(-1);
+  return {
+    id: worker.id,
+    title: local?.title ?? worker.title,
+    subtitle: local?.subtitle ?? worker.subtitle ?? undefined,
+    page: local?.page ?? worker.page ?? undefined,
+    input: local?.input ?? JSON.stringify({
+      opportunity: worker.workOrder.opportunity,
+      expectedStage: worker.workOrder.source.stage,
+      expectedRevision: worker.workOrder.source.revision,
+    }),
+    kind: "lifecycle",
+    batchId: local?.batchId ?? worker.batchId ?? undefined,
+    status: worker.status === "active" ? "running" : recovery ? recoveryStatus(recovery) : "error",
+    steps: worker.phases.map((item) => ({ kind: "status", label: item.label, ts: Date.parse(item.at) })),
+    text: local?.text ?? "",
+    result: local?.result,
+    cost: local?.cost,
+    workOrder: worker.workOrder,
+    recovery,
+    recoveryHistory: worker.recoveryHistory,
+    acknowledgedAt: worker.acknowledgedAt ? Date.parse(worker.acknowledgedAt) : undefined,
+    startedAt: Date.parse(worker.startedAt),
+    endedAt: worker.endedAt ? Date.parse(worker.endedAt) : undefined,
+  };
+}
+
 export function JobsProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [announcement, setAnnouncement] = useState("");
   const seq = useRef(0);
   const loaded = useRef(false);
 
-  // restore history
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(JOBS_KEY);
-      const arr = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(arr)) {
-        // anything left "running" from a previous session is stale → mark interrupted
-        setJobs(arr.map((j: Job) => (j.status === "running" ? { ...j, status: "error", steps: [...(j.steps || []), { kind: "status", label: "Interrupted (page reloaded)", ts: Date.now() }] } : j)));
-      }
-    } catch {
-      /* ignore */
-    }
-    loaded.current = true;
+  const patch = useCallback((id: string, fn: (j: Job) => Job) => {
+    setJobs((js) => js.map((j) => (j.id === id ? fn(j) : j)));
   }, []);
 
-  // persist
+  const applyRecovery = useCallback((id: string, recovery: WorkRecovery, cost?: Job["cost"]) => {
+    patch(id, (job) => ({
+      ...job,
+      status: recoveryStatus(recovery),
+      recovery,
+      recoveryHistory: [...(job.recoveryHistory ?? []), recovery],
+      cost: cost ?? job.cost,
+      endedAt: Date.parse(recovery.occurredAt),
+      steps: [...job.steps, { kind: "status", label: recovery.message, ts: Date.parse(recovery.occurredAt) }],
+    }));
+    setAnnouncement(recovery.message);
+    if (["changed", "recovered", "unchanged"].includes(recovery.outcome)) {
+      window.dispatchEvent(new CustomEvent("co-job-done", { detail: { kind: "lifecycle" } }));
+    }
+  }, [patch]);
+
+  const recoverJob = useCallback(async (id: string, trigger: WorkRecoveryTrigger, polls = 0): Promise<void> => {
+    try {
+      const response = await fetch(`/api/workers/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "recover", trigger }),
+      });
+      const value = await response.json();
+      if (response.status === 202 && value.active) {
+        const delay = Math.min(250 * 2 ** Math.min(polls, 5), 5_000);
+        window.setTimeout(() => void recoverJob(id, trigger, polls + 1), delay);
+        return;
+      }
+      if (response.ok && value.recovery) {
+        applyRecovery(id, value.recovery as WorkRecovery);
+        return;
+      }
+      patch(id, (job) => ({
+        ...job,
+        status: "error",
+        endedAt: Date.now(),
+        steps: [...job.steps, { kind: "status", label: "Recovery evidence is unavailable", ts: Date.now() }],
+      }));
+      setAnnouncement("Recovery evidence is unavailable.");
+    } catch {
+      patch(id, (job) => ({
+        ...job,
+        status: "error",
+        endedAt: Date.now(),
+        steps: [...job.steps, { kind: "status", label: "Recovery inspection could not complete", ts: Date.now() }],
+      }));
+      setAnnouncement("Recovery inspection could not complete.");
+    }
+  }, [applyRecovery, patch]);
+
+  // Restore client presentation, then merge the durable canonical worker records.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let local: Job[] = [];
+      try {
+        const raw = localStorage.getItem(JOBS_KEY);
+        const value = raw ? JSON.parse(raw) : null;
+        if (Array.isArray(value)) local = value;
+      } catch {
+        /* presentation cache is optional */
+      }
+      try {
+        const response = await fetch("/api/workers", { cache: "no-store" });
+        const value = response.ok ? await response.json() : { workers: [] };
+        const byId = new Map(local.map((job) => [job.id, job]));
+        for (const worker of (value.workers ?? []) as DurableWorker[]) {
+          byId.set(worker.id, durableJob(worker, byId.get(worker.id)));
+        }
+        local = [...byId.values()].sort((left, right) => right.startedAt - left.startedAt);
+      } catch {
+        /* durable history remains on disk and can be loaded later */
+      }
+      if (cancelled) return;
+      setJobs((current) => {
+        const byId = new Map(local.map((job) => [job.id, job]));
+        for (const job of current) {
+          if (!byId.has(job.id) || job.status === "running") byId.set(job.id, job);
+        }
+        return [...byId.values()].sort((left, right) => right.startedAt - left.startedAt);
+      });
+      loaded.current = true;
+      for (const job of local) {
+        if (job.kind === "lifecycle" && job.status === "running") void recoverJob(job.id, "reload");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [recoverJob]);
+
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(JOBS_KEY, JSON.stringify(jobs.slice(0, 40)));
+      localStorage.setItem(JOBS_KEY, JSON.stringify(jobs.slice(0, 100)));
     } catch {
       /* quota */
     }
   }, [jobs]);
 
-  const patch = useCallback((id: string, fn: (j: Job) => Job) => {
-    setJobs((js) => js.map((j) => (j.id === id ? fn(j) : j)));
-  }, []);
+  const execute = useCallback((id: string, opts: StartOpts, cliId: string, continuation: "retry" | "resume" | null) => {
+    void (async () => {
+      let text = "";
+      let verdictLine = "";
+      let doneTokens = 0;
+      let doneCostUsd: number | null = null;
+      let sawTerminal = false;
+      const steps: JobStep[] = [];
+      const finish = (status: "done" | "error", lastLabel?: string) => {
+        const result = status === "done" ? parseVerdict(verdictLine || text) : undefined;
+        const cost = status === "done" && doneTokens > 0 ? { tokens: doneTokens, usd: doneCostUsd ?? undefined } : undefined;
+        patch(id, (job) => ({
+          ...job,
+          status,
+          result,
+          cost,
+          endedAt: Date.now(),
+          steps: lastLabel ? [...job.steps, { kind: "status", label: lastLabel, ts: Date.now() }] : job.steps,
+        }));
+        if (status === "done") {
+          fetch("/api/runs/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, title: opts.title, subtitle: opts.subtitle, page: opts.page, input: opts.input, result, cost, steps, output: text }),
+          }).catch(() => {});
+          if (["evaluate", "pdf"].includes(opts.kind)) {
+            window.dispatchEvent(new CustomEvent("co-job-done", { detail: { kind: opts.kind, input: opts.input } }));
+          }
+        }
+      };
+
+      try {
+        const response = await fetch("/api/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: opts.kind,
+            input: opts.input,
+            cliId,
+            workerId: id,
+            continuation: continuation ?? undefined,
+            title: opts.title,
+            subtitle: opts.subtitle,
+            page: opts.page,
+            batchId: opts.batchId,
+          }),
+        });
+        if (!response.ok || !response.body) {
+          const error = await response.json().catch(() => ({}));
+          if (error.recovery) {
+            applyRecovery(id, error.recovery as WorkRecovery);
+            return;
+          }
+          finish("error", error.error || "Failed to start");
+          return;
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline: number;
+          while ((newline = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            if (!line) continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.type === "identity") {
+                patch(id, (job) => ({
+                  ...job,
+                  workOrder: event.workOrder,
+                  steps: [...job.steps, { kind: "status", label: event.label, ts: Date.now() }],
+                }));
+              } else if (event.type === "tool") {
+                steps.push({ kind: "tool", label: event.name, ts: Date.now() });
+                patch(id, (job) => ({ ...job, steps: [...job.steps, { kind: "tool", label: event.name, ts: Date.now() }] }));
+              } else if (event.type === "status") {
+                steps.push({ kind: "status", label: event.label, ts: Date.now() });
+                patch(id, (job) => ({ ...job, steps: [...job.steps, { kind: "status", label: event.label, ts: Date.now() }] }));
+              } else if (event.type === "text") {
+                const full = text + event.text;
+                const match = full.match(/VERDICT:[^\n]*/i);
+                if (match) verdictLine = match[0];
+                text = full.slice(-8000);
+                patch(id, (job) => ({ ...job, text }));
+              } else if (event.type === "done") {
+                if (typeof event.tokens === "number") doneTokens = event.tokens;
+                if (typeof event.costUsd === "number") doneCostUsd = event.costUsd;
+              } else if (event.type === "terminal") {
+                sawTerminal = true;
+                const cost = typeof event.tokens === "number" && event.tokens > 0
+                  ? { tokens: event.tokens, usd: typeof event.costUsd === "number" ? event.costUsd : undefined }
+                  : undefined;
+                applyRecovery(id, event.recovery as WorkRecovery, cost);
+              } else if (event.type === "error") {
+                finish("error", event.msg || "Error");
+                return;
+              }
+            } catch {
+              /* skip malformed transport lines */
+            }
+          }
+        }
+        if (opts.kind === "lifecycle") {
+          if (!sawTerminal) await recoverJob(id, "uncertain-close");
+        } else {
+          finish("done", "Done");
+        }
+      } catch {
+        if (opts.kind === "lifecycle") await recoverJob(id, "disconnect");
+        else finish("error", "Connection error");
+      }
+    })();
+  }, [applyRecovery, patch, recoverJob]);
 
   const startJob = useCallback(
     (opts: StartOpts): string | null => {
@@ -116,105 +350,79 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       setJobs((js) => [job, ...js]);
 
       if (!cliId) {
-        patch(id, (j) => ({ ...j, status: "error", endedAt: Date.now(), steps: [...j.steps, { kind: "status", label: "No CLI configured — open Config", ts: Date.now() }] }));
+        patch(id, (j) => ({ ...j, status: "error", endedAt: Date.now(), steps: [...j.steps, { kind: "status", label: "No CLI configured: open Config", ts: Date.now() }] }));
         return id;
       }
-
-      (async () => {
-        let text = "";
-        let verdictLine = ""; // latched separately so the 8000-char tail can't drop it
-        let doneTokens = 0; // per-run token cost, forwarded on the done event (#6)
-        let doneCostUsd: number | null = null;
-        const steps: JobStep[] = [];
-        const finish = (status: "done" | "error", lastLabel?: string) => {
-          const result = status === "done" ? parseVerdict(verdictLine || text) : undefined;
-          const cost = status === "done" && doneTokens > 0 ? { tokens: doneTokens, usd: doneCostUsd ?? undefined } : undefined;
-          patch(id, (j) => ({
-            ...j,
-            status,
-            result,
-            cost,
-            endedAt: Date.now(),
-            steps: lastLabel ? [...j.steps, { kind: "status", label: lastLabel, ts: Date.now() }] : j.steps,
-          }));
-          // persist a readable log file so the CLI/assistant can read past runs
-          if (status === "done") {
-            fetch("/api/runs/save", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id, title: opts.title, subtitle: opts.subtitle, page: opts.page, input: opts.input, result, cost, steps, output: text }),
-            }).catch(() => {});
-            // Tell server-snapshot surfaces (Today, pipeline) to refetch — the
-            // worker just wrote a real tracker row / report they don't yet see.
-            if (typeof window !== "undefined" && (opts.kind === "evaluate" || opts.kind === "pdf" || opts.kind === "lifecycle")) {
-              window.dispatchEvent(new CustomEvent("co-job-done", { detail: { kind: opts.kind, input: opts.input } }));
-            }
-          }
-        };
-
-        try {
-          const res = await fetch("/api/run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind: opts.kind, input: opts.input, cliId }),
-          });
-          if (!res.ok || !res.body) {
-            const e = await res.json().catch(() => ({}));
-            finish("error", e.error || "Failed to start");
-            return;
-          }
-          const reader = res.body.getReader();
-          const dec = new TextDecoder();
-          let buf = "";
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += dec.decode(value, { stream: true });
-            let nl: number;
-            while ((nl = buf.indexOf("\n")) !== -1) {
-              const line = buf.slice(0, nl).trim();
-              buf = buf.slice(nl + 1);
-              if (!line) continue;
-              try {
-                const ev = JSON.parse(line);
-                if (ev.type === "tool") {
-                  steps.push({ kind: "tool", label: ev.name, ts: Date.now() });
-                  patch(id, (j) => ({ ...j, steps: [...j.steps, { kind: "tool", label: ev.name, ts: Date.now() }] }));
-                } else if (ev.type === "status") {
-                  steps.push({ kind: "status", label: ev.label, ts: Date.now() });
-                  patch(id, (j) => ({ ...j, steps: [...j.steps, { kind: "status", label: ev.label, ts: Date.now() }] }));
-                } else if (ev.type === "text") {
-                  const full = text + ev.text;
-                  const vm = full.match(/VERDICT:[^\n]*/i);
-                  if (vm) verdictLine = vm[0];
-                  text = full.slice(-8000);
-                  patch(id, (j) => ({ ...j, text }));
-                } else if (ev.type === "done") {
-                  // finish happens on stream-close; capture the per-run cost it carries
-                  if (typeof ev.tokens === "number") doneTokens = ev.tokens;
-                  if (typeof ev.costUsd === "number") doneCostUsd = ev.costUsd;
-                } else if (ev.type === "error") {
-                  finish("error", ev.msg || "Error");
-                  return;
-                }
-              } catch {
-                /* skip */
-              }
-            }
-          }
-          finish("done", "Done");
-        } catch {
-          finish("error", "Connection error");
-        }
-      })();
+      execute(id, opts, cliId, null);
 
       return id;
     },
-    [patch],
+    [execute, patch],
   );
 
-  const removeJob = useCallback((id: string) => setJobs((js) => js.filter((j) => j.id !== id)), []);
-  const clearFinished = useCallback(() => setJobs((js) => js.filter((j) => j.status === "running")), []);
+  const actOnJob = useCallback((id: string) => {
+    const job = jobs.find((candidate) => candidate.id === id);
+    if (!job || job.status === "running" || !job.recovery || !["retry", "resume"].includes(job.recovery.nextAction.kind)) return;
+    let cliId: string | null = null;
+    try {
+      cliId = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}").cliId || null;
+    } catch {
+      cliId = null;
+    }
+    if (!cliId) {
+      patch(id, (current) => ({ ...current, steps: [...current.steps, { kind: "status", label: "No CLI configured: open Config", ts: Date.now() }] }));
+      return;
+    }
+    const opts: StartOpts = {
+      title: job.title,
+      subtitle: job.subtitle,
+      kind: job.kind || "lifecycle",
+      input: job.input || "",
+      page: job.page,
+      batchId: job.batchId,
+    };
+    const continuation = job.recovery.nextAction.kind as "retry" | "resume";
+    patch(id, (current) => ({
+      ...current,
+      status: "running",
+      endedAt: undefined,
+      acknowledgedAt: undefined,
+      steps: [...current.steps, {
+        kind: "status",
+        label: continuation === "resume" ? "Resuming preserved work" : "Retrying work",
+        ts: Date.now(),
+      }],
+    }));
+    execute(id, opts, cliId, continuation);
+  }, [execute, jobs, patch]);
 
-  return <JobsContext.Provider value={{ jobs, startJob, removeJob, clearFinished }}>{children}</JobsContext.Provider>;
+  const acknowledgeJob = useCallback((id: string) => {
+    const job = jobs.find((candidate) => candidate.id === id);
+    if (!job || job.status === "running") return;
+    const at = Date.now();
+    const previous = job.acknowledgedAt;
+    patch(id, (current) => ({ ...current, acknowledgedAt: at }));
+    if (job.kind !== "lifecycle") return;
+    void fetch(`/api/workers/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "acknowledge" }),
+    }).then((response) => {
+      if (!response.ok) throw new Error("acknowledgement rejected");
+    }).catch(() => {
+      patch(id, (current) => ({ ...current, acknowledgedAt: previous }));
+      setAnnouncement("Worker acknowledgement could not be saved.");
+    });
+  }, [jobs, patch]);
+  const removeJob = acknowledgeJob;
+  const clearFinished = useCallback(() => {
+    for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) acknowledgeJob(job.id);
+  }, [acknowledgeJob, jobs]);
+
+  return (
+    <JobsContext.Provider value={{ jobs, startJob, actOnJob, acknowledgeJob, removeJob, clearFinished }}>
+      {children}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
+    </JobsContext.Provider>
+  );
 }

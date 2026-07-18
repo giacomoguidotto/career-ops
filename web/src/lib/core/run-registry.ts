@@ -10,6 +10,7 @@
 
 let seq = 0;
 const writing = new Set<number>();
+const activeWorkers = new Set<string>();
 
 /** Mark that a tracker-writing run has started; returns a token to release with. */
 export function acquireTrackerWrite(): number {
@@ -25,4 +26,19 @@ export function releaseTrackerWrite(token: number): void {
 /** True while any evaluation/pdf run that mutates applications.md is in flight. */
 export function isTrackerWriting(): boolean {
   return writing.size > 0;
+}
+
+/** Prevent two transports from driving the same durable worker identity. */
+export function acquireWorker(id: string): boolean {
+  if (activeWorkers.has(id)) return false;
+  activeWorkers.add(id);
+  return true;
+}
+
+export function releaseWorker(id: string): void {
+  activeWorkers.delete(id);
+}
+
+export function isWorkerActive(id: string): boolean {
+  return activeWorkers.has(id);
 }

@@ -3,8 +3,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveCli } from "@/lib/clis";
 import { careerOpsRoot, readMemory } from "@/lib/career-ops";
-import { acquireTrackerWrite, releaseTrackerWrite } from "@/lib/core/run-registry";
-import { LifecycleAdapterError, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
+import {
+  acquireTrackerWrite,
+  acquireWorker,
+  releaseTrackerWrite,
+  releaseWorker,
+} from "@/lib/core/run-registry";
+import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
+import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import {
+  appendWorkerPhase,
+  createDurableWorker,
+  readDurableWorker,
+  settleDurableWorker,
+} from "@/lib/core/worker-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,14 +94,32 @@ Posting URL: ${input}`;
 }
 
 export async function POST(req: Request) {
-  let body: { kind?: string; input?: string; cliId?: string };
+  let body: {
+    kind?: string;
+    input?: string;
+    cliId?: string;
+    workerId?: string;
+    resume?: boolean;
+    continuation?: "retry" | "resume";
+    title?: string;
+    subtitle?: string;
+    page?: string;
+    batchId?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: "bad json" }), { status: 400 });
   }
-  const { kind = "evaluate", input, cliId } = body;
-  if (!input || !cliId) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return new Response(JSON.stringify({ error: "bad json" }), { status: 400 });
+  }
+  const { kind = "evaluate", input = "", cliId, workerId } = body;
+  const continuation = body.continuation ?? (body.resume ? "resume" : null);
+  if (body.continuation !== undefined && !["retry", "resume"].includes(body.continuation)) {
+    return Response.json({ error: "invalid continuation" }, { status: 400 });
+  }
+  if (!cliId || (!input && !(kind === "lifecycle" && continuation))) {
     return new Response(JSON.stringify({ error: "input and cliId required" }), { status: 400 });
   }
   const resolved = resolveCli(cliId);
@@ -134,27 +164,123 @@ export async function POST(req: Request) {
 
   const today = new Date().toISOString().slice(0, 10);
   let promptInput = input;
+  let lifecycleWorkOrder: LifecycleWorkOrder | null = null;
+  const durableWorkerId = workerId ?? `job-api-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   if (kind === "lifecycle") {
-    let expectation: { opportunity: number; expectedStage: string; expectedRevision: string };
-    try {
-      expectation = JSON.parse(input);
-    } catch {
-      return Response.json({ error: "invalid lifecycle expectation" }, { status: 400 });
+    if (!/^job-[a-z0-9-]{1,96}$/i.test(durableWorkerId) || (continuation && !workerId)) {
+      return Response.json({ error: "valid workerId required" }, { status: 400 });
     }
-    try {
-      const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
-      if (outcome.code !== "work-requested" || !outcome.workOrder) {
-        const status = outcome.effect === "conflict" || outcome.code === "already-running" ? 409 : 422;
-        return Response.json({ error: outcome.message, code: outcome.code, outcome }, { status });
+    if (continuation) {
+      const existing = readDurableWorker(careerOpsRoot(), durableWorkerId);
+      const prior = existing?.recoveryHistory.at(-1);
+      if (
+        !existing
+        || existing.status !== "terminal"
+        || !prior
+        || prior.nextAction.kind !== continuation
+      ) {
+        return Response.json({ error: "This worker cannot continue safely." }, { status: 409 });
       }
-      promptInput = JSON.stringify(outcome.workOrder);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Lifecycle work could not be requested.";
-      return Response.json(
-        { error: message, code: error instanceof LifecycleAdapterError ? error.code : "lifecycle-request-failed" },
-        { status: error instanceof LifecycleAdapterError ? error.status : 503 },
-      );
+      try {
+        const recoveryToken = acquireTrackerWrite();
+        let currentRecovery;
+        try {
+          currentRecovery = await recoverLifecycleWork(careerOpsRoot(), existing.workOrder, {
+            trigger: prior.outcome === "paused" ? "paused" : "reload",
+          });
+        } finally {
+          releaseTrackerWrite(recoveryToken);
+        }
+        if (currentRecovery.nextAction.kind !== continuation) {
+          settleDurableWorker(careerOpsRoot(), durableWorkerId, currentRecovery);
+          return Response.json({ error: currentRecovery.message, code: currentRecovery.outcome, recovery: currentRecovery }, { status: 409 });
+        }
+        const current = (await readOpportunityLifecycle(careerOpsRoot(), existing.workOrder.opportunity)).opportunity;
+        if (current.stage.id !== existing.workOrder.source.stage) {
+          return Response.json({ error: "The Opportunity changed after this worker stopped.", code: "opportunity-conflict" }, { status: 409 });
+        }
+        if (current.stage.suggests !== existing.workOrder.action) {
+          return Response.json({ error: "The canonical work action changed after this worker stopped.", code: "work-action-conflict" }, { status: 409 });
+        }
+        if (continuation === "resume") {
+          lifecycleWorkOrder = {
+            ...existing.workOrder,
+            source: { stage: current.stage.id, revision: current.revision },
+          };
+        } else {
+          const refreshed = await requestOpportunityWork(careerOpsRoot(), {
+            opportunity: existing.workOrder.opportunity,
+            expectedStage: current.stage.id,
+            expectedRevision: current.revision,
+          });
+          if (!refreshed.workOrder || !["work-requested", "already-running"].includes(refreshed.code)) {
+            return Response.json({ error: refreshed.message, code: refreshed.code, outcome: refreshed }, { status: refreshed.effect === "conflict" ? 409 : 422 });
+          }
+          if (refreshed.workOrder.id !== existing.workOrder.id || refreshed.workOrder.action !== existing.workOrder.action) {
+            return Response.json({ error: "The canonical work action changed after this worker stopped.", code: "work-action-conflict" }, { status: 409 });
+          }
+          lifecycleWorkOrder = {
+            ...refreshed.workOrder,
+            source: { stage: current.stage.id, revision: current.revision },
+          };
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Lifecycle work could not be refreshed.";
+        return Response.json(
+          { error: message, code: error instanceof LifecycleAdapterError ? error.code : "lifecycle-refresh-failed" },
+          { status: error instanceof LifecycleAdapterError ? error.status : 503 },
+        );
+      }
+    } else {
+      let expectation: { opportunity: number; expectedStage: string; expectedRevision: string };
+      try {
+        expectation = JSON.parse(input);
+      } catch {
+        return Response.json({ error: "invalid lifecycle expectation" }, { status: 400 });
+      }
+      try {
+        const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
+        if (outcome.code !== "work-requested" || !outcome.workOrder) {
+          const status = outcome.effect === "conflict" || outcome.code === "already-running" ? 409 : 422;
+          return Response.json({ error: outcome.message, code: outcome.code, outcome }, { status });
+        }
+        lifecycleWorkOrder = outcome.workOrder;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Lifecycle work could not be requested.";
+        return Response.json(
+          { error: message, code: error instanceof LifecycleAdapterError ? error.code : "lifecycle-request-failed" },
+          { status: error instanceof LifecycleAdapterError ? error.status : 503 },
+        );
+      }
     }
+    if (!acquireWorker(durableWorkerId)) {
+      return Response.json({ error: "Already running.", code: "already-running" }, { status: 409 });
+    }
+    try {
+      if (continuation) {
+        const continued = appendWorkerPhase(
+          careerOpsRoot(),
+          durableWorkerId,
+          continuation === "resume" ? "resuming" : "retrying",
+          continuation === "resume" ? "Resuming preserved work" : "Retrying work",
+          lifecycleWorkOrder,
+        );
+        if (!continued) throw new Error("durable worker missing");
+      } else {
+        createDurableWorker(careerOpsRoot(), {
+          id: durableWorkerId,
+          title: body.title || `Prepare Opportunity #${lifecycleWorkOrder.opportunity}`,
+          subtitle: body.subtitle,
+          page: body.page,
+          batchId: body.batchId,
+          workOrder: lifecycleWorkOrder,
+        });
+      }
+    } catch {
+      releaseWorker(durableWorkerId);
+      return Response.json({ error: "Durable worker state could not be initialized.", code: "worker-state-unavailable" }, { status: 503 });
+    }
+    promptInput = JSON.stringify(lifecycleWorkOrder);
   }
   const prompt = buildPrompt(kind, promptInput, readMemory(), today);
 
@@ -199,6 +325,26 @@ export async function POST(req: Request) {
   // otherwise a late enqueue onto a closed controller throws uncaught (see #1155).
   let closed = false;
   let killer: ReturnType<typeof setTimeout> | undefined;
+  let escalation: ReturnType<typeof setTimeout> | undefined;
+  let resourcesReleased = false;
+  let terminationTrigger: WorkRecoveryTrigger | null = null;
+  const terminateChild = (trigger: WorkRecoveryTrigger) => {
+    terminationTrigger = trigger;
+    try { child.kill("SIGTERM"); } catch { /* ignore */ }
+    if (escalation) clearTimeout(escalation);
+    escalation = setTimeout(() => {
+      if (child.exitCode === null) {
+        try { child.kill("SIGKILL"); } catch { /* ignore */ }
+      }
+    }, 5_000);
+    escalation.unref?.();
+  };
+  const releaseResources = () => {
+    if (resourcesReleased) return;
+    resourcesReleased = true;
+    if (writeToken !== null) releaseTrackerWrite(writeToken);
+    if (kind === "lifecycle") releaseWorker(durableWorkerId);
+  };
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let buf = "";
@@ -206,25 +352,30 @@ export async function POST(req: Request) {
       let sawError = false;
       let lastTokens = 0; // per-run token cost from the Claude result event (#6) — local only
       let lastCostUsd: number | null = null;
-      if (kind === "lifecycle") {
-        controller.enqueue(enc.encode(`${JSON.stringify({ type: "status", label: "Canonical work reserved" })}\n`));
+      if (kind === "lifecycle" && lifecycleWorkOrder) {
+        controller.enqueue(enc.encode(`${JSON.stringify({
+          type: "identity",
+          workerId: durableWorkerId,
+          workOrder: lifecycleWorkOrder,
+          label: continuation === "resume" ? "Resuming preserved work" : continuation === "retry" ? "Retrying work" : "Canonical work reserved",
+        })}\n`));
       }
       // pdf-mode tailors a full CV + renders it — give it more headroom.
       const killMs = kind === "pdf" ? 720_000 : 285_000;
       killer = setTimeout(() => {
-        try { child.kill("SIGTERM"); } catch { /* ignore */ }
+        terminateChild("timeout");
       }, killMs);
       const send = (obj: unknown) => {
         if (closed) return;
         try { controller.enqueue(enc.encode(JSON.stringify(obj) + "\n")); } catch { closed = true; }
       };
       const close = () => {
-        if (!closed) {
-          closed = true;
-          if (killer) clearTimeout(killer);
-          if (writeToken !== null) releaseTrackerWrite(writeToken);
-          try { controller.close(); } catch { /* */ }
-        }
+        if (killer) clearTimeout(killer);
+        if (escalation) clearTimeout(escalation);
+        releaseResources();
+        if (closed) return;
+        closed = true;
+        try { controller.close(); } catch { /* */ }
       };
 
       child.stdout.on("data", (d: Buffer) => {
@@ -246,12 +397,14 @@ export async function POST(req: Request) {
               const e = ev.event;
               if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
                 send({ type: "tool", name: e.content_block.name });
+                if (kind === "lifecycle") appendWorkerPhase(careerOpsRoot(), durableWorkerId, "tool", e.content_block.name);
               } else if (e?.type === "content_block_delta" && e.delta?.text) {
                 emittedText = true;
                 send({ type: "text", text: e.delta.text });
               }
             } else if (ev.type === "system" && ev.subtype === "init") {
               send({ type: "status", label: "Agent ready" });
+              if (kind === "lifecycle") appendWorkerPhase(careerOpsRoot(), durableWorkerId, "agent-ready", "Agent ready");
             } else if (ev.type === "result") {
               // Capture the per-run cost; the authoritative "done" is sent on close
               // (so the honesty gate decides done-vs-error first). Tokens = the same
@@ -269,15 +422,43 @@ export async function POST(req: Request) {
         const s = d.toString();
         // Widened: auth/login/quota failures are the most common real error and
         // the old narrow regex missed them (silent false "success").
-        if (/error|denied|fatal|not found|unauthorized|forbidden|auth|login|credential|api[ -]?key|quota|rate limit|not authenticated/i.test(s)) {
+        if (/error|denied|fatal|not found|unauthorized|forbidden|auth|login|credential|api[ -]?key|quota|rate limit|capacity|not authenticated/i.test(s)) {
           sawError = true;
-          send({ type: "error", msg: s.trim().slice(0, 200) });
+          if (/rate limit|capacity/i.test(s)) terminationTrigger = "paused";
+          if (kind === "lifecycle") {
+            appendWorkerPhase(careerOpsRoot(), durableWorkerId, "checking", "Checking canonical work after a process warning");
+            send({ type: "status", label: "Checking canonical work" });
+          } else {
+            send({ type: "error", msg: s.trim().slice(0, 200) });
+          }
         }
       });
-      child.on("error", (e) => { send({ type: "error", msg: e.message }); close(); });
-      child.on("close", (code) => {
+      child.on("error", (e) => {
+        terminationTrigger = "non-zero-exit";
+        if (kind !== "lifecycle") send({ type: "error", msg: e.message });
+      });
+      child.on("close", async (code, signal) => {
         const wroteReport = countReports() > reportsBefore;
         const cleanExit = code === 0; // non-zero OR null (killed/signal) = NOT clean
+        if (kind === "lifecycle" && lifecycleWorkOrder) {
+          try {
+            const trigger = terminationTrigger ?? (cleanExit && !sawError ? "completed" : "non-zero-exit");
+            appendWorkerPhase(careerOpsRoot(), durableWorkerId, "reconciling", "Inspecting canonical artifact and lifecycle state");
+            const recovery = await recoverLifecycleWork(careerOpsRoot(), lifecycleWorkOrder, {
+              trigger,
+              exitCode: code,
+              signal: signal ? String(signal) : null,
+              parserCode: emittedText ? null : "no-worker-output",
+            });
+            settleDurableWorker(careerOpsRoot(), durableWorkerId, recovery);
+            send({ type: "terminal", recovery, tokens: lastTokens, costUsd: lastCostUsd });
+          } catch {
+            send({ type: "error", msg: "Canonical recovery state could not be persisted." });
+          } finally {
+            close();
+          }
+          return;
+        }
         // Honesty gate (#9): a green "done" with a parsed score requires a CLEAN exit,
         // real output, AND (for evaluations) a report actually written. Anything else
         // is surfaced — an errored run must never be banked as a confident score.
@@ -302,8 +483,7 @@ export async function POST(req: Request) {
     cancel() {
       closed = true;
       if (killer) clearTimeout(killer);
-      if (writeToken !== null) releaseTrackerWrite(writeToken);
-      try { child.kill("SIGTERM"); } catch { /* ignore */ }
+      terminateChild("disconnect");
     },
   });
 

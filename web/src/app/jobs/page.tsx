@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, AlertTriangle, Loader2, Trash2 } from "lucide-react";
+import { Check, AlertTriangle, Loader2, CheckCheck } from "lucide-react";
 import { useJobs } from "@/components/jobs/job-store";
 import { pillTone } from "@/components/jobs/worker-pills";
 import { cn } from "@/lib/cn";
@@ -30,7 +30,7 @@ export default function JobsHistory() {
             onClick={clearFinished}
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
           >
-            <Trash2 className="size-3.5" /> Clear finished
+            <CheckCheck className="size-3.5" /> Acknowledge finished
           </button>
         )}
       </div>
@@ -55,8 +55,8 @@ export default function JobsHistory() {
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{j.title}</div>
-                    {(j.subtitle || j.result?.summary) && (
-                      <div className="truncate text-xs text-muted">{j.result?.summary || j.subtitle}</div>
+                    {(j.recovery?.message || j.subtitle || j.result?.summary) && (
+                      <div className="truncate text-xs text-muted">{j.recovery?.message || j.result?.summary || j.subtitle}</div>
                     )}
                   </div>
                   {j.result?.score != null && (
@@ -64,7 +64,7 @@ export default function JobsHistory() {
                       {j.result.score}/5
                     </span>
                   )}
-                  <span className="hidden shrink-0 text-xs capitalize text-faint sm:block">{j.status}</span>
+                  <span className="hidden shrink-0 text-xs capitalize text-faint sm:block">{j.recovery?.outcome ?? j.status}</span>
                 </Link>
               </li>
             );

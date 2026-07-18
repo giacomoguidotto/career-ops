@@ -81,6 +81,7 @@ const fixture = createFictionalOpportunityWorkspace({
     { num: 112, company: 'First Attempt Co', role: 'Engineer', stage: 'Approach Ready' },
     { num: 113, company: 'Repair Attempt Co', role: 'Engineer', stage: 'Approach Ready' },
     { num: 114, company: 'Review Flow Co', role: 'Engineer', stage: 'Approach Ready' },
+    { num: 115, company: 'Stranded Artifact Co', role: 'Engineer', stage: 'Evaluated' },
   ],
   attempts: [
     {
@@ -218,6 +219,15 @@ const fixture = createFictionalOpportunityWorkspace({
       '',
       'Hi Elena, I wanted to add one useful detail to my application. Happy to share the short case study if useful.',
       '',
+    ].join('\n'),
+    '115-stranded-artifact.md': [
+      '# Stranded Artifact Co Approach Plan',
+      '',
+      '**Stage:** evaluated',
+      '**Owner:** agent',
+      '**Suggests:** generate_approach_plan',
+      '',
+      'Fictional canonical work waiting for reconciliation.',
     ].join('\n'),
   },
   clusters: [
@@ -874,6 +884,17 @@ try {
   assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
   assert.equal(await page.getByText(/Email the founders together/).isVisible(), true);
 
+  await page.goto(`${baseUrl}/pipeline/115`);
+  await page.getByRole('heading', { name: 'Stranded Artifact Co', exact: true }).waitFor();
+  assert.equal(await page.getByText('Source: output/next-packs/115-stranded-artifact.md').first().isVisible(), true);
+  const resumeReconciliation = page.getByRole('button', { name: 'Resume reconciliation' }).first();
+  await resumeReconciliation.click();
+  await page.getByText(/Canonical reconciliation recovered the completed artifact/).waitFor();
+  await page.waitForFunction(async () => {
+    const value = await (await fetch('/api/opportunities/115')).json();
+    return value.opportunity.stage.id === 'approach_ready';
+  });
+
   await page.goto(`${baseUrl}/pipeline/3`);
   await page.getByRole('heading', { name: 'Attempts' }).waitFor();
   assert.equal(await page.locator('[data-history-type="attempt"]').count(), 1);
@@ -1000,10 +1021,15 @@ try {
     await reviewPage.goto(`${baseUrl}/pipeline/114`);
     await reviewPage.getByRole('heading', { name: 'Review Flow Co', exact: true }).waitFor();
     await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
-    await reviewPage.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor();
+    const guidedReviewDialog = reviewPage.getByRole('dialog', { name: 'Guided approach preparation' });
+    await guidedReviewDialog.waitFor();
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    const smallestControl = await reviewPage.getByRole('dialog').getByRole('button').evaluateAll((nodes) => Math.min(...nodes.map((node) => node.getBoundingClientRect().height)));
-    assert.equal(review.viewport.width > 390 || smallestControl >= 44, true);
+    const controls = await guidedReviewDialog.getByRole('button').evaluateAll((nodes) => nodes.map((node) => ({
+      label: node.getAttribute('aria-label') || node.textContent?.trim().replace(/\s+/g, ' '),
+      height: node.getBoundingClientRect().height,
+    })));
+    const smallestControl = Math.min(...controls.map((control) => control.height));
+    assert.equal(review.viewport.width > 390 || smallestControl >= 44, true, `${review.name}: ${JSON.stringify(controls)}`);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `guided-approach-${review.name}.png`), fullPage: true });
     await reviewPage.goto(`${baseUrl}/pipeline/101`);
     await reviewPage.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
@@ -1035,11 +1061,11 @@ try {
     ...Array.from({ length: 8 }, () => ['POST', '/api/opportunities/2/reported-event']),
     ['POST', '/api/opportunities/112/reported-event'],
     ['POST', '/api/opportunities/113/reported-event'],
+    ['POST', '/api/opportunities/115/reconcile'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/100'],
     ['POST', '/api/run'],
-    ['POST', '/api/runs/save'],
   ]);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), true);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
