@@ -661,7 +661,7 @@ function SelectionInspector({ selected }: { selected: OpportunitySummary | null 
     <aside data-testid="pipeline-preview" className="hidden h-fit rounded-2xl border border-border bg-surface/70 p-5 xl:sticky xl:top-5 xl:block">
       <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Preview · #{String(selected.opportunity).padStart(3, "0")}</p>
       <div className="mt-3 flex items-start gap-3">
-        <CompanyLogo name={selected.company} size={40} />
+        <CompanyLogo key={selected.company} name={selected.company} size={40} />
         <div className="min-w-0 [overflow-wrap:anywhere]">
           <h2 className="font-display text-2xl leading-tight text-landing">{selected.company}</h2>
           <p className="mt-1 text-xs leading-relaxed text-muted">{selected.role}</p>

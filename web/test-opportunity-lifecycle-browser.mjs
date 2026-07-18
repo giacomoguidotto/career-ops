@@ -252,6 +252,7 @@ try {
   assert.equal(await firstRow.locator('button').count(), 0);
   await secondRow.hover();
   await page.getByTestId('pipeline-preview').getByText('Northstar Fictional', { exact: true }).waitFor();
+  await page.getByTestId('pipeline-preview').getByRole('button', { name: 'Load Northstar Fictional logo' }).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
   await secondRow.focus();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
