@@ -96,6 +96,7 @@ test("adapter validates Attempt links, notes, artifact metadata, and safe Opport
 
 test("adapter rejects malformed Attempt dates and negative or unsafe counters", async () => {
   const listCases = [
+    (result) => { result.opportunities[0].date = "not-a-date"; },
     (result) => { result.opportunities[0].attempts.latest.date = "tomorrow"; },
     (result) => { result.opportunities[0].attempts.count = -1; },
     (result) => { result.opportunities[0].attempts.count = Number.MAX_SAFE_INTEGER + 1; },
@@ -130,6 +131,29 @@ test("adapter rejects malformed Attempt dates and negative or unsafe counters", 
     );
   } finally {
     removeFictionalOpportunityWorkspace(focusedFixture.root);
+  }
+
+  const identityCases = [
+    (result) => { result.opportunity.opportunity = 2; },
+    (result) => { result.attempts[0].opportunity = 2; },
+  ];
+  for (const mutate of identityCases) {
+    const fixture = createFictionalOpportunityWorkspace({
+      materializeCore: true,
+      opportunities: [{ num: 1, company: "Fictional", role: "Researcher", stage: "Approached" }],
+      attempts: [{ id: "A001", opportunity: 1 }],
+    });
+    try {
+      const malformed = clone(await readOpportunityLifecycle(fixture.root, 1));
+      mutate(malformed);
+      servePayload(fixture.root, malformed);
+      await assert.rejects(
+        readOpportunityLifecycle(fixture.root, 1),
+        (error) => error instanceof LifecycleAdapterError && error.code === "invalid-opportunity-detail" && error.status === 503,
+      );
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
   }
 });
 

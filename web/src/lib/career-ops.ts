@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicWrite } from "@/lib/core/safe-write";
-import { tryListOpportunityLifecycle } from "@/lib/core/opportunity-lifecycle";
+import {
+  LifecycleAdapterError,
+  readOpportunityLifecycle,
+  tryListOpportunityLifecycle,
+  type OpportunitySummary,
+} from "@/lib/core/opportunity-lifecycle";
 
 /**
  * Resolve the career-ops "home" — the directory holding the user's sibling
@@ -125,10 +130,8 @@ export type Application = {
  * exported by tracker-parse.mjs as HEADER_ALIASES) — one shared source, no
  * web-side mirror to drift (#954, PR #1598 review).
  */
-export async function readApplications(): Promise<Application[]> {
-  const lifecycle = await tryListOpportunityLifecycle(careerOpsRoot());
-  if (!lifecycle) return [];
-  return lifecycle.opportunities.map((opportunity) => ({
+function applicationFromOpportunity(opportunity: OpportunitySummary): Application {
+  return {
     n: String(opportunity.opportunity),
     date: opportunity.date,
     company: opportunity.company,
@@ -147,7 +150,13 @@ export async function readApplications(): Promise<Application[]> {
     approachAttention: ["waiting", "review_due", "cold"].includes(opportunity.attemptAttention.state)
       ? opportunity.attemptAttention.state as "waiting" | "review_due" | "cold"
       : undefined,
-  }));
+  };
+}
+
+export async function readApplications(): Promise<Application[]> {
+  const lifecycle = await tryListOpportunityLifecycle(careerOpsRoot());
+  if (!lifecycle) return [];
+  return lifecycle.opportunities.map(applicationFromOpportunity);
 }
 
 /**
@@ -169,7 +178,10 @@ export type LifecyclePhase = "first-run" | "in-between" | "established";
  *   - established → all 4 prereqs present.
  * onboardingNeeded mirrors doctor.mjs: true if ANY prereq is missing → show banner.
  */
-export async function doctorState(): Promise<{
+export async function doctorState(snapshot: {
+  applications?: Application[];
+  inbox?: InboxJob[];
+} = {}): Promise<{
   phase: LifecyclePhase;
   onboardingNeeded: boolean;
   missing: string[];
@@ -191,7 +203,9 @@ export async function doctorState(): Promise<{
   ];
   const missing = prereqs.filter(([rel]) => !has(rel)).map(([, label]) => label);
   const hasCv = has("cv.md");
-  const hasData = (await readApplications()).length > 0 || readInbox().some((j) => !j.done);
+  const applications = snapshot.applications ?? await readApplications();
+  const inbox = snapshot.inbox ?? readInbox();
+  const hasData = applications.length > 0 || inbox.some((j) => !j.done);
   const onboardingNeeded = missing.length > 0;
   const phase: LifecyclePhase = !hasCv && !hasData ? "first-run" : onboardingNeeded ? "in-between" : "established";
   return { phase, onboardingNeeded, missing, hasCv, hasData };
@@ -244,8 +258,53 @@ export function readReport(n: string): ReportData | null {
   }
 }
 
+async function focusedOpportunity(n: string) {
+  if (!/^\d+$/.test(n)) return null;
+  const opportunity = Number(n);
+  if (!Number.isSafeInteger(opportunity) || opportunity <= 0) return null;
+  try {
+    return await readOpportunityLifecycle(careerOpsRoot(), opportunity);
+  } catch (error) {
+    if (
+      error instanceof LifecycleAdapterError
+      && ["opportunity-not-found", "checkout-unavailable", "lifecycle-contract-unavailable", "lifecycle-read-failed"].includes(error.code)
+    ) return null;
+    throw error;
+  }
+}
+
+function readFocusedReport(relativeFile: string | null): ReportData | null {
+  if (!relativeFile) return null;
+  try {
+    const root = fs.realpathSync(careerOpsRoot());
+    const lexical = path.resolve(root, relativeFile);
+    const lexicalRelative = path.relative(root, lexical);
+    if (lexicalRelative === ".." || lexicalRelative.startsWith(`..${path.sep}`)) return null;
+    const canonical = fs.realpathSync(lexical);
+    const canonicalRelative = path.relative(root, canonical);
+    if (canonicalRelative === ".." || canonicalRelative.startsWith(`..${path.sep}`)) return null;
+    if (!fs.statSync(canonical).isFile()) return null;
+    return { content: fs.readFileSync(canonical, "utf8"), file: path.basename(canonical) };
+  } catch {
+    return null;
+  }
+}
+
 export async function findApplication(n: string): Promise<Application | null> {
-  return (await readApplications()).find((a) => a.n === n) ?? null;
+  const focused = await focusedOpportunity(n);
+  return focused ? applicationFromOpportunity(focused.opportunity) : null;
+}
+
+export async function readApplicationReport(n: string): Promise<{ app: Application | null; report: ReportData | null }> {
+  const focused = await focusedOpportunity(n);
+  if (!focused) return { app: null, report: null };
+  const artifact = focused.opportunity.artifacts.find(
+    (candidate) => candidate.kind === "report" && candidate.state === "available",
+  );
+  return {
+    app: applicationFromOpportunity(focused.opportunity),
+    report: readFocusedReport(artifact?.path ?? null),
+  };
 }
 
 /** The CANONICAL user-customization file the CLI/TUI reads. Durable facts the

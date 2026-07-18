@@ -17,6 +17,7 @@ import {
   readOpportunity,
 } from '../opportunity-lifecycle.mjs';
 import { loadStates } from '../tracker-utils.mjs';
+import { detectColumns, inspectColumns } from '../tracker-parse.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -258,6 +259,16 @@ test('legacy tracker headers and column order normalize without warnings', () =>
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
+});
+
+test('duplicate tracker headers resolving to one canonical field are incompatible', () => {
+  const lines = [
+    '| Opportunity | # | Company | Role | Score | Stage |',
+    '|---|---|---|---|---|---|',
+    '| 1 | 2 | Duplicate Co | Researcher | 4.2/5 | Evaluated |',
+  ];
+  assert.equal(detectColumns(lines), null);
+  assert.equal(inspectColumns(lines).format, 'unknown');
 });
 
 test('an alternate checkout uses its own declared tracker aliases and isolates unknown artifact formats', () => {

@@ -20,13 +20,40 @@ function cacheDir(): string {
   return path.join(careerOpsRoot(), ".career-ops-web", "logo-cache");
 }
 
+function controlledLogoSource(): string | undefined {
+  const raw = process.env.CAREER_OPS_LOGO_SOURCE_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    return ["127.0.0.1", "::1", "localhost"].includes(url.hostname) ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sameOriginPersistence(req: NextRequest): boolean {
+  if (req.headers.get("sec-fetch-site") === "same-origin") return true;
+  const referrer = req.headers.get("referer");
+  if (!referrer) return false;
+  try {
+    return new URL(referrer).origin === req.nextUrl.origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
+  const persistRequested = sp.get("persist") === "1";
+  if (persistRequested && !sameOriginPersistence(req)) {
+    return new Response("persistence requires a same-origin user action", { status: 403 });
+  }
   const result = await resolveCompanyLogo({
     cacheDirectory: cacheDir(),
     domain: sp.get("domain") ?? "",
     company: sp.get("company") ?? "",
-    persist: sp.get("persist") === "1",
+    persist: persistRequested,
+    sourceUrl: controlledLogoSource(),
   });
   if (result.status !== 200) return new Response(result.message, { status: result.status });
   return new Response(result.bytes, {

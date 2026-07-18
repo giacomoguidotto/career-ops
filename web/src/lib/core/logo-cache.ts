@@ -7,7 +7,7 @@ type Fetcher = typeof fetch;
 
 export type CompanyLogoResult =
   | { status: 200; bytes: Uint8Array<ArrayBuffer> }
-  | { status: 400 | 404; message: string };
+  | { status: 400 | 404 | 429; message: string };
 
 /** Plausible domains for a company name, cheapest/likeliest first. */
 function companyDomains(company: string): string[] {
@@ -24,9 +24,12 @@ function companyDomains(company: string): string[] {
   return domains.slice(0, 5);
 }
 
-async function fetchFavicon(domain: string, fetcher: Fetcher): Promise<Uint8Array<ArrayBuffer> | null> {
+async function fetchFavicon(domain: string, fetcher: Fetcher, sourceUrl: string): Promise<Uint8Array<ArrayBuffer> | null> {
   try {
-    const response = await fetcher(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`, {
+    const url = new URL(sourceUrl);
+    url.searchParams.set("domain", domain);
+    url.searchParams.set("sz", "64");
+    const response = await fetcher(url, {
       headers: { Accept: "image/*" },
       signal: AbortSignal.timeout(3500),
       redirect: "follow",
@@ -49,12 +52,16 @@ export async function resolveCompanyLogo({
   company = "",
   persist = false,
   fetcher = fetch,
+  sourceUrl = "https://www.google.com/s2/favicons",
+  maxCacheEntries = 512,
 }: {
   cacheDirectory: string;
   domain?: string;
   company?: string;
   persist?: boolean;
   fetcher?: Fetcher;
+  sourceUrl?: string;
+  maxCacheEntries?: number;
 }): Promise<CompanyLogoResult> {
   const normalizedDomain = domain.trim().toLowerCase();
   const normalizedCompany = company.trim();
@@ -93,9 +100,18 @@ export async function resolveCompanyLogo({
 
   if (!persist) return { status: 404, message: "no logo" };
 
+  try {
+    const entries = await fs.readdir(resolvedCacheDirectory);
+    if (entries.filter((entry) => entry.endsWith(".png")).length >= maxCacheEntries) {
+      return { status: 429, message: "logo cache full" };
+    }
+  } catch {
+    // A missing cache directory has zero entries and is created after fetch.
+  }
+
   let bytes: Uint8Array<ArrayBuffer> | null = null;
   for (const candidate of candidates) {
-    bytes = await fetchFavicon(candidate, fetcher);
+    bytes = await fetchFavicon(candidate, fetcher, sourceUrl);
     if (bytes) break;
   }
 

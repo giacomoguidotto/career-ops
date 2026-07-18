@@ -201,13 +201,17 @@ function isOpportunityStage(value: unknown): value is OpportunityStage {
     && typeof value.description === "string";
 }
 
+function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 function isIsoOccurrence(value: unknown): value is string {
+  if (isIsoDate(value)) return true;
   if (typeof value !== "string") return false;
-  const date = value.match(/^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/);
-  if (!date) return false;
-  const parsedDate = new Date(`${date[1]}T00:00:00Z`);
-  if (Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date[1]) return false;
-  return !value.includes("T") || !Number.isNaN(Date.parse(value));
+  const timestamp = value.match(/^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/);
+  return Boolean(timestamp && isIsoDate(timestamp[1]) && !Number.isNaN(Date.parse(value)));
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
@@ -302,12 +306,13 @@ function validateContract(value: unknown): asserts value is LifecycleContract {
 }
 
 function validateOpportunity(value: unknown): asserts value is OpportunitySummary {
-  const stringFields = ["date", "company", "via", "role", "location", "score", "pdf", "report", "notes", "rawStage"];
+  const stringFields = ["company", "via", "role", "location", "score", "pdf", "report", "notes", "rawStage"];
   if (
     !isRecord(value)
     || typeof value.opportunity !== "number"
     || !Number.isSafeInteger(value.opportunity)
     || value.opportunity <= 0
+    || !isIsoDate(value.date)
     || !stringFields.every((field) => typeof value[field] === "string")
     || (value.rawFields !== undefined && !isStringRecord(value.rawFields))
     || !isOpportunityStage(value.stage)
@@ -413,6 +418,12 @@ export async function readOpportunityLifecycle(root: string, opportunity: number
   }
   validateContract(result.contract);
   validateOpportunity(result.opportunity);
+  if (
+    result.opportunity.opportunity !== opportunity
+    || result.attempts.some((attempt) => attempt.opportunity !== opportunity)
+  ) {
+    throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
+  }
   if (typeof result.revision !== "string") {
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
   }

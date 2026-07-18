@@ -99,8 +99,14 @@ export function detectColumns(lines, aliases = HEADER_ALIASES) {
     if (!line.startsWith('|')) continue;
     const cells = line.split('|').map((cell) => cell.trim().toLowerCase());
     const map = {};
-    cells.forEach((cell, index) => { if (aliases[cell] != null) map[aliases[cell]] = index; });
-    if (['num', 'company', 'role', 'score', 'status'].every((key) => map[key] != null)) return map;
+    const duplicates = new Set();
+    cells.forEach((cell, index) => {
+      const canonical = aliases[cell];
+      if (canonical == null) return;
+      if (map[canonical] != null) duplicates.add(canonical);
+      else map[canonical] = index;
+    });
+    if (duplicates.size === 0 && ['num', 'company', 'role', 'score', 'status'].every((key) => map[key] != null)) return map;
   }
   return null;
 }
@@ -124,13 +130,16 @@ export function inspectColumns(lines, aliases = HEADER_ALIASES) {
     const cells = line.split('|').map((cell) => cell.trim());
     const headers = cells.slice(1, line.trimEnd().endsWith('|') ? -1 : undefined);
     const map = {};
+    const duplicates = new Set();
     cells.forEach((cell, cellIndex) => {
       const canonical = aliases[String(cell).trim().toLowerCase()];
-      if (canonical != null) map[canonical] = cellIndex;
+      if (canonical == null) return;
+      if (map[canonical] != null) duplicates.add(canonical);
+      else map[canonical] = cellIndex;
     });
     const essential = ['num', 'company', 'role', 'score', 'status'];
     return {
-      format: essential.every((key) => map[key] != null) ? 'declared' : 'unknown',
+      format: duplicates.size === 0 && essential.every((key) => map[key] != null) ? 'declared' : 'unknown',
       columns: map,
       headers,
       headerIndex: index,
