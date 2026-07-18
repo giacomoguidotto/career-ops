@@ -27,6 +27,7 @@ import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { CandidacyCoordination } from "@/components/candidacy-coordination";
+import { ReportedEventLauncher } from "@/components/reported-event";
 
 type Stage = LifecycleContract["stages"][number];
 type Artifact = OpportunitySummary["artifacts"][number];
@@ -407,7 +408,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             {approachPlan ? (
               <>
                 <p className="mt-3 text-sm text-muted">Reviewing this plan is passive. Acting outside career-ops and reporting the result are separate steps.</p>
-                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity.opportunity} />}
+                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity} contract={contract} attempts={attempts} />}
                 <article className="report-prose mt-5 rounded-2xl border border-border bg-surface/35 p-5" aria-label="Approach Plan artifact">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{approachPlan.content}</ReactMarkdown>
                 </article>
@@ -446,6 +447,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
               </div>
               <span className="text-xs text-faint tabular-nums">{attempts.length} recorded</span>
             </div>
+            <div className="mt-4"><ReportedEventLauncher opportunity={opportunity} contract={contract} attempts={attempts} /></div>
             {attempts.length > 0 ? (
               <ol className="mt-5 space-y-3">
                 {[...attempts].reverse().map((attempt) => (
@@ -503,7 +505,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
               ))}
             </ol>
             <p className="mt-5 rounded-xl border border-border bg-surface/30 p-4 text-xs leading-relaxed text-muted">
-              Reported events appear here only when represented by a confirmed canonical Attempt. No event is reconstructed from filenames, notes, or UI activity.
+              Approach actions appear here only as confirmed canonical Attempts. Other reported events may change Stage only through a fresh allowed successor. No event is reconstructed from filenames, notes, or UI activity.
             </p>
           </section>
         </div>

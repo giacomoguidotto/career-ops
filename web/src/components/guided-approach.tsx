@@ -18,10 +18,12 @@ import {
 import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { ReportedEventCheckpoint } from "@/components/reported-event";
+import type { ApproachAttempt, LifecycleContract, OpportunitySummary } from "@/lib/core/opportunity-lifecycle";
 
 type RouteType = "outreach" | "application" | "qualifying" | "followup";
 type AnswerState = "generated" | "user-edited" | "protected" | "blocked";
-type Phase = "choose" | "prepare" | "act";
+type Phase = "choose" | "prepare" | "act" | "report";
 
 type PlanAnswer = {
   id: string;
@@ -80,7 +82,7 @@ function StatePill({ state }: { state: AnswerState }) {
   );
 }
 
-export function GuidedApproach({ plan, opportunity }: { plan: string; opportunity: number }) {
+export function GuidedApproach({ plan, opportunity, contract, attempts }: { plan: string; opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[] }) {
   const routes = useMemo(() => parseApproachPlan(plan) as PlanRoute[], [plan]);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -109,12 +111,12 @@ export function GuidedApproach({ plan, opportunity }: { plan: string; opportunit
           The canonical Approach Plan has no ranked route that can be prepared here.
         </p>
       )}
-      {open && <GuidedApproachDialog routes={routes} opportunity={opportunity} onClose={close} />}
+      {open && <GuidedApproachDialog routes={routes} opportunity={opportunity} contract={contract} attempts={attempts} onClose={close} />}
     </div>
   );
 }
 
-function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRoute[]; opportunity: number; onClose: () => void }) {
+function GuidedApproachDialog({ routes, opportunity, contract, attempts, onClose }: { routes: PlanRoute[]; opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[]; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>("choose");
   const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
   const [draft, setDraft] = useState(routes[0]?.body ?? "");
@@ -172,6 +174,7 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
     { id: "choose", label: "Choose" },
     { id: "prepare", label: "Prepare" },
     { id: "act", label: "Act outside" },
+    { id: "report", label: "Report" },
   ];
   const phaseIndex = steps.findIndex((step) => step.id === phase);
 
@@ -214,7 +217,7 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
       <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-text">Opportunity #{String(opportunity).padStart(3, "0")} · Preparation only</p>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-text">Opportunity #{String(opportunity.opportunity).padStart(3, "0")} · Guarded journey</p>
             <h2 className="truncate font-display text-xl text-landing sm:text-2xl">Guided approach</h2>
           </div>
           <button ref={closeRef} type="button" onClick={onClose} className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50" aria-label="Close guided approach">
@@ -224,7 +227,7 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
       </header>
 
       <main className="mx-auto max-w-5xl px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-5 sm:px-6">
-        <ol className="mx-auto grid max-w-2xl grid-cols-3 gap-2" aria-label="Guided approach progress">
+        <ol className="mx-auto grid max-w-2xl grid-cols-4 gap-2" aria-label="Guided approach progress">
           {steps.map((step, index) => (
             <li key={step.id} className="min-w-0 text-center" aria-current={step.id === phase ? "step" : undefined}>
               <span className={cn(
@@ -263,7 +266,24 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
               onContinue={() => setPhase("act")}
             />
           )}
-          {phase === "act" && <Act route={selected} onBack={() => setPhase("prepare")} onClose={onClose} />}
+          {phase === "act" && <Act route={selected} onBack={() => setPhase("prepare")} onContinue={() => setPhase("report")} />}
+          {phase === "report" && (
+            <ReportedEventCheckpoint
+              opportunity={opportunity}
+              contract={contract}
+              attempts={attempts}
+              route={{
+                id: selected.id,
+                type: selected.type,
+                label: selected.label,
+                destination: selected.destination,
+                channel: selected.channel,
+                follows: selected.follows,
+              }}
+              onBack={() => setPhase("act")}
+              onRecorded={() => window.location.reload()}
+            />
+          )}
         </section>
       </main>
     </div>
@@ -485,7 +505,7 @@ function ApplicationAnswers(props: PrepareProps) {
   );
 }
 
-function Act({ route, onBack, onClose }: { route: PlanRoute; onBack: () => void; onClose: () => void }) {
+function Act({ route, onBack, onContinue }: { route: PlanRoute; onBack: () => void; onContinue: () => void }) {
   return (
     <div>
       <Heading eyebrow="Checkpoint 3 · Outside career-ops" title="You do this part" body="Use the reviewed material at the declared destination. career-ops sent or submitted nothing, and no Approach Attempt was recorded." />
@@ -504,12 +524,12 @@ function Act({ route, onBack, onClose }: { route: PlanRoute; onBack: () => void;
           <ShieldCheck className="size-5 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
           <p className="mt-3 font-semibold">Preparation boundary intact</p>
           <p className="mt-2 text-sm leading-relaxed text-muted">Copied, edited, opened, and viewed are preparation states. None is an Attempt.</p>
-          <p className="mt-3 text-xs text-faint">Reporting and confirmation belong to the next guarded journey.</p>
+          <p className="mt-3 text-xs text-faint">The next checkpoint interprets your report without recording it.</p>
         </div>
       </div>
       <div className="mt-7 flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:justify-between">
         <SecondaryButton onClick={onBack}><ArrowLeft className="size-4" aria-hidden="true" /> Edit preparation</SecondaryButton>
-        <PrimaryButton onClick={onClose}>Close and act outside <ExternalLink className="size-4" aria-hidden="true" /></PrimaryButton>
+        <PrimaryButton onClick={onContinue}>I acted outside career-ops <ArrowRight className="size-4" aria-hidden="true" /></PrimaryButton>
       </div>
     </div>
   );

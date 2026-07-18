@@ -23,7 +23,11 @@ import {
   resolveCadenceConfig,
   resolveNextOverride,
 } from './followup-cadence.mjs';
-import { readApproachAttempts } from './approach-attempts.mjs';
+import {
+  APPROACH_ATTEMPT_TYPES,
+  readApproachAttempts,
+  recordApproachAttempt,
+} from './approach-attempts.mjs';
 import {
   candidacyStageIsReleased,
   decisionFromReport,
@@ -184,7 +188,15 @@ function primaryAction(stage, enabled = true, disabledReason = null) {
   return { kind: 'terminal', id: null, enabled: false, reason: 'terminal-stage' };
 }
 
-function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifactWarnings }) {
+function reportableSuccessorIds(stage, states) {
+  if (!stage || !['user', 'external'].includes(stage.owner)) return [];
+  return stage.nextStates.filter((id) => {
+    const successor = resolveState(id, states);
+    return successor && !successor.onDemand.includes('review_approach');
+  });
+}
+
+function baseCapabilities({ stage, states, contract, candidacy, mayRecordAttempt, artifactWarnings }) {
   const blockedActions = new Set(artifactWarnings.flatMap((warning) => warning.blocksActions ?? []));
   const generationBlocked = candidacy.state === 'suppressed'
     || candidacy.state === 'research-required'
@@ -199,7 +211,7 @@ function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifa
       && !generationBlocked,
     ),
     recordAttempt: Boolean(contract.capabilities.attemptRecording && mayRecordAttempt),
-    reportSuccessor: Boolean(stage && stage.owner !== 'none' && stage.nextStates.length > 0),
+    reportSuccessor: reportableSuccessorIds(stage, states).length > 0,
     openArtifacts: true,
   };
 }
@@ -652,6 +664,7 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
   );
   const capabilities = baseCapabilities({
     stage: stageRecord,
+    states,
     contract,
     candidacy: candidacyState,
     mayRecordAttempt: mayRecordAttempt && !row.unknownTrackerFormat,
@@ -1036,6 +1049,217 @@ function conflictOutcome(summary) {
     code: 'opportunity-conflict', effect: 'conflict', retryable: false,
     message: 'The Opportunity changed. Review the fresh summary before retrying.',
     before: summary, after: summary, artifacts: commandArtifacts(summary),
+  });
+}
+
+function parseAttemptConfirmation(options) {
+  const attempt = options.attempt;
+  if (!attempt || typeof attempt !== 'object' || Array.isArray(attempt)) {
+    throw new Error('attempt must be a typed Approach Attempt');
+  }
+  const allowed = new Set(['occurredAt', 'type', 'channel', 'recipient', 'result', 'followUpTo', 'notes']);
+  if (Object.keys(attempt).some((key) => !allowed.has(key))) {
+    throw new Error('attempt contains unsupported fields');
+  }
+  for (const field of ['occurredAt', 'type', 'channel', 'recipient', 'result']) {
+    if (typeof attempt[field] !== 'string' || !attempt[field].trim()) {
+      throw new Error(`attempt.${field} is required`);
+    }
+  }
+  if (!APPROACH_ATTEMPT_TYPES.has(attempt.type)) {
+    throw new Error(`unsupported approach type: ${attempt.type}`);
+  }
+  const followUpTo = attempt.followUpTo == null || attempt.followUpTo === '' ? null : attempt.followUpTo;
+  if (followUpTo !== null && (typeof followUpTo !== 'string' || !/^A\d+$/.test(followUpTo))) {
+    throw new Error('attempt.followUpTo must be a canonical Attempt id or null');
+  }
+  if (attempt.type === 'follow_up' && !followUpTo) {
+    throw new Error('attempt.followUpTo is required for a follow-up Attempt');
+  }
+  if (attempt.type !== 'follow_up' && followUpTo) {
+    throw new Error('attempt.followUpTo is valid only for a follow-up Attempt');
+  }
+  if (attempt.notes !== undefined && typeof attempt.notes !== 'string') {
+    throw new Error('attempt.notes must be a string');
+  }
+  return {
+    occurredAt: attempt.occurredAt,
+    type: attempt.type,
+    channel: attempt.channel,
+    recipient: attempt.recipient,
+    result: attempt.result,
+    followUpTo,
+    notes: attempt.notes ?? '',
+  };
+}
+
+function sameConfirmedAttempt(left, right) {
+  const normalized = (value) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return left.date === right.occurredAt
+    && normalized(left.type) === normalized(right.type)
+    && normalized(left.channel) === normalized(right.channel)
+    && normalized(left.recipient) === normalized(right.recipient)
+    && normalized(left.result) === normalized(right.result)
+    && normalized(left.followUpTo) === normalized(right.followUpTo);
+}
+
+/**
+ * Append one explicitly confirmed Approach Attempt, then repair the canonical
+ * Stage when this is the first Attempt. The Attempt writer stays authoritative
+ * for validation, id allocation, append-only persistence, and retry repair.
+ */
+export async function recordOpportunityAttempt(options = {}) {
+  const expected = parseCommandExpectation(options);
+  const attempt = parseAttemptConfirmation(options);
+  const root = checkoutRoot(options.root);
+  return withLifecycleLock(root, options, async (tracker) => {
+    const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+    if (!focused) {
+      return commandOutcome({
+        code: 'opportunity-not-found', effect: 'unavailable', retryable: false,
+        message: 'The Opportunity was not found.',
+      });
+    }
+    const before = focused.opportunity;
+    if (expectationConflict(before, expected)) return conflictOutcome(before);
+    if (!before.capabilities.recordAttempt) {
+      return commandOutcome({
+        code: 'attempt-recording-blocked', effect: 'blocked', retryable: false,
+        message: 'An Approach Attempt cannot be recorded from the current Stage.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    const writerOptions = {
+      appsFile: tracker,
+      attemptsFile: join(root, 'data', 'approach-attempts.md'),
+      rootDir: root,
+      lockHeld: true,
+      opportunity: expected.opportunity,
+      date: attempt.occurredAt,
+      type: attempt.type,
+      channel: attempt.channel,
+      recipient: attempt.recipient,
+      result: attempt.result,
+      followUpTo: attempt.followUpTo,
+      notes: attempt.notes,
+    };
+    try {
+      await recordApproachAttempt({ ...writerOptions, dryRun: true });
+    } catch {
+      return commandOutcome({
+        code: 'attempt-confirmation-invalid', effect: 'blocked', retryable: false,
+        message: 'The typed Attempt is incomplete or incompatible with current canonical history.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    let recorded;
+    try {
+      recorded = await recordApproachAttempt({
+        ...writerOptions,
+        onMutationStep: options.onMutationStep,
+      });
+    } catch (error) {
+      const failedDetail = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+      const afterFailure = failedDetail?.opportunity ?? before;
+      const appended = Boolean(
+        failedDetail?.attempts.some((candidate) => sameConfirmedAttempt(candidate, attempt)),
+      );
+      return commandOutcome({
+        code: appended ? 'attempt-stage-repair-required' : 'attempt-write-failed',
+        effect: 'unavailable',
+        retryable: true,
+        message: appended
+          ? 'The Attempt was appended, but Stage repair did not finish. Retry from the fresh Opportunity summary.'
+          : 'The confirmed Attempt could not be recorded. Retry after reviewing the current Opportunity.',
+        before,
+        after: afterFailure,
+        artifacts: commandArtifacts(afterFailure),
+        consequences: appended ? { kind: 'approach-attempt', appended: true, stageRepairRequired: true } : null,
+      });
+    }
+    const after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now })?.opportunity ?? before;
+    return commandOutcome({
+      code: recorded.reason === 'duplicate' ? 'attempt-unchanged' : 'attempt-recorded',
+      effect: recorded.changed ? 'changed' : 'unchanged',
+      retryable: false,
+      message: recorded.reason === 'repaired-stage'
+        ? 'The existing confirmed Attempt repaired the Opportunity Stage.'
+        : recorded.reason === 'duplicate'
+          ? 'This confirmed Attempt is already in append-only history.'
+          : 'The confirmed Attempt was added to append-only history.',
+      before,
+      after,
+      artifacts: commandArtifacts(after),
+      consequences: {
+        kind: 'approach-attempt',
+        attempt: recorded.attempt,
+        stageRepaired: recorded.oldStage !== recorded.newStage,
+      },
+    });
+  });
+}
+
+/** Record a non-Attempt real-world event only through a fresh allowed successor. */
+export async function reportOpportunitySuccessor(options = {}) {
+  const expected = parseCommandExpectation(options);
+  if (typeof options.successor !== 'string' || !/^[a-z][a-z0-9_]*$/.test(options.successor)) {
+    throw new Error('successor must be a canonical Stage id');
+  }
+  const root = checkoutRoot(options.root);
+  return withLifecycleLock(root, options, async (tracker) => {
+    const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+    if (!focused) {
+      return commandOutcome({
+        code: 'opportunity-not-found', effect: 'unavailable', retryable: false,
+        message: 'The Opportunity was not found.',
+      });
+    }
+    const before = focused.opportunity;
+    if (expectationConflict(before, expected)) return conflictOutcome(before);
+    const states = loadStates({ rootDir: root, force: true });
+    const current = resolveState(before.rawStage, states);
+    const successor = resolveState(options.successor, states);
+    if (!before.capabilities.reportSuccessor || !successor || !reportableSuccessorIds(current, states).includes(successor.id)) {
+      return commandOutcome({
+        code: 'successor-report-blocked', effect: 'blocked', retryable: false,
+        message: 'That reported event is not an allowed successor of the current Stage.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    if (successor.id === current.id) {
+      return commandOutcome({
+        code: 'successor-unchanged', effect: 'unchanged', retryable: false,
+        message: 'The reported event keeps the Opportunity at its current Stage.',
+        before, artifacts: commandArtifacts(before),
+        consequences: { kind: 'world-stage-event', successor: successor.id },
+      });
+    }
+    const replacement = prepareTrackerStageReplacement(tracker, before.opportunity, successor.label);
+    if (!replacement.ok) {
+      return commandOutcome({
+        code: replacement.reason, effect: 'unavailable', retryable: false,
+        message: 'The Opportunity tracker row could not be updated safely.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    try {
+      writeFileAtomic(tracker, replacement.content);
+    } catch {
+      return commandOutcome({
+        code: 'successor-write-failed', effect: 'unavailable', retryable: true,
+        message: 'The reported event was not recorded.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    const after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now })?.opportunity ?? before;
+    return commandOutcome({
+      code: 'successor-recorded', effect: 'changed', retryable: false,
+      message: `The confirmed event advanced the Opportunity to ${successor.label}.`,
+      before, after, artifacts: commandArtifacts(after),
+      consequences: { kind: 'world-stage-event', successor: successor.id },
+    });
   });
 }
 
@@ -1466,12 +1690,12 @@ export async function reconcileOpportunityWork(options = {}) {
 
 function parseCliArgs(argv) {
   const [action, ...rest] = argv;
-  if (!['contract', 'list', 'read', 'request', 'reconcile', 'primary'].includes(action)) {
-    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read|request|reconcile|primary> [--root PATH] [--opportunity NUM] [--expected-stage ID] [--expected-revision SHA256] [--primary NUM|none] [--candidacy-override] [--now YYYY-MM-DD]');
+  if (!['contract', 'list', 'read', 'request', 'reconcile', 'primary', 'attempt', 'successor'].includes(action)) {
+    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read|request|reconcile|primary|attempt|successor> [options]');
   }
   const options = {
     action, root: MODULE_ROOT, opportunity: null, expectedStage: null, expectedRevision: null,
-    primary: undefined, candidacyOverride: false, now: null,
+    primary: undefined, candidacyOverride: false, attempt: undefined, successor: undefined, now: null,
   };
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
@@ -1486,19 +1710,23 @@ function parseCliArgs(argv) {
       const value = rest[++index];
       options.primary = value === 'none' ? null : value;
     } else if (argument === '--candidacy-override') options.candidacyOverride = true;
+    else if (argument === '--attempt-stdin') options.attempt = 'stdin';
+    else if (argument === '--successor') options.successor = rest[++index];
     else if (argument === '--now') options.now = rest[++index];
     else throw new Error(`unknown argument: ${argument}`);
   }
   if (!options.root) throw new Error('--root requires a path');
-  if (['read', 'request', 'reconcile', 'primary'].includes(action) && options.opportunity == null) {
+  if (['read', 'request', 'reconcile', 'primary', 'attempt', 'successor'].includes(action) && options.opportunity == null) {
     throw new Error(`${action} requires --opportunity NUM`);
   }
-  if (['request', 'reconcile', 'primary'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
+  if (['request', 'reconcile', 'primary', 'attempt', 'successor'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
     throw new Error(`${action} requires --expected-stage ID and --expected-revision SHA256`);
   }
   if (action === 'primary' && options.primary === undefined) {
     throw new Error('primary requires --primary NUM|none');
   }
+  if (action === 'attempt' && options.attempt !== 'stdin') throw new Error('attempt requires --attempt-stdin');
+  if (action === 'successor' && !options.successor) throw new Error('successor requires --successor ID');
   return options;
 }
 
@@ -1524,6 +1752,12 @@ async function runCli() {
       }
     } else if (options.action === 'request') result = await requestOpportunityWork(options);
     else if (options.action === 'primary') result = await setOpportunityPrimary(options);
+    else if (options.action === 'attempt') {
+      try { options.attempt = JSON.parse(readFileSync(0, 'utf8')); }
+      catch { throw new Error('attempt stdin must contain valid JSON'); }
+      result = await recordOpportunityAttempt(options);
+    }
+    else if (options.action === 'successor') result = await reportOpportunitySuccessor(options);
     else result = await reconcileOpportunityWork(options);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {

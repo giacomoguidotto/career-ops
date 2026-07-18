@@ -36,7 +36,7 @@ type OpportunityStage = Omit<LifecycleStage, "id" | "owner" | "dashboardGroup"> 
   dashboardGroup: string | null;
 };
 
-type ApproachAttempt = {
+export type ApproachAttempt = {
   id: string;
   opportunity: number;
   date: string;
@@ -504,8 +504,9 @@ function lifecycleScript(root: string): string {
 
 async function run(
   root: string,
-  action: "contract" | "list" | "read" | "request" | "reconcile" | "primary",
+  action: "contract" | "list" | "read" | "request" | "reconcile" | "primary" | "attempt" | "successor",
   extra: string[] = [],
+  input: string | null = null,
 ): Promise<unknown> {
   const resolvedRoot = path.resolve(root);
   if (!fs.existsSync(resolvedRoot)) {
@@ -513,7 +514,7 @@ async function run(
   }
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
-      execFile(
+      const child = execFile(
         process.execPath,
         [lifecycleScript(resolvedRoot), action, "--root", resolvedRoot, ...extra],
         {
@@ -524,6 +525,7 @@ async function run(
         },
         (error, output) => error ? reject(error) : resolve(output),
       );
+      if (input !== null) child.stdin?.end(input);
     });
     let parsed: unknown;
     try {
@@ -587,6 +589,49 @@ export async function setOpportunityPrimaryLifecycle(
   const result = normalizeCommandOutcome(await run(root, "primary", [
     ...commandArguments(opportunity, expectedStage, expectedRevision),
     "--primary", primary == null ? "none" : String(primary),
+  ]));
+  validateCommandOutcome(result);
+  return result;
+}
+
+export type AttemptConfirmation = {
+  occurredAt: string;
+  type: string;
+  channel: string;
+  recipient: string;
+  result: string;
+  followUpTo: string | null;
+  notes: string;
+};
+
+export async function recordOpportunityAttemptLifecycle(
+  root: string,
+  opportunity: number,
+  expectedStage: string,
+  expectedRevision: string,
+  attempt: AttemptConfirmation,
+): Promise<LifecycleCommandOutcome> {
+  const result = normalizeCommandOutcome(await run(root, "attempt", [
+    ...commandArguments(opportunity, expectedStage, expectedRevision),
+    "--attempt-stdin",
+  ], JSON.stringify(attempt)));
+  validateCommandOutcome(result);
+  return result;
+}
+
+export async function reportOpportunitySuccessorLifecycle(
+  root: string,
+  opportunity: number,
+  expectedStage: string,
+  expectedRevision: string,
+  successor: string,
+): Promise<LifecycleCommandOutcome> {
+  if (!/^[a-z][a-z0-9_]*$/.test(successor)) {
+    throw new LifecycleAdapterError("invalid-successor", "Successor must be a canonical Stage id.", 400);
+  }
+  const result = normalizeCommandOutcome(await run(root, "successor", [
+    ...commandArguments(opportunity, expectedStage, expectedRevision),
+    "--successor", successor,
   ]));
   validateCommandOutcome(result);
   return result;
