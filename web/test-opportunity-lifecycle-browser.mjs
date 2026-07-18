@@ -253,11 +253,17 @@ try {
   await secondRow.hover();
   await page.getByTestId('pipeline-preview').getByText('Northstar Fictional', { exact: true }).waitFor();
   await page.getByTestId('pipeline-preview').getByRole('button', { name: 'Load Northstar Fictional logo' }).waitFor();
+  const previewLink = page.getByTestId('pipeline-preview').getByRole('link', { name: 'Open Opportunity' });
+  await previewLink.hover();
+  assert.equal(await previewLink.getAttribute('href'), '/pipeline/2');
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
   await secondRow.focus();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
 
   await firstRow.focus();
+  await page.keyboard.press('Control+j');
+  await page.keyboard.press('Alt+k');
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
   await page.keyboard.press('j');
   await page.waitForURL((url) => url.searchParams.get('selected') === '2');
   assert.equal(await secondRow.getAttribute('data-selected'), 'true');

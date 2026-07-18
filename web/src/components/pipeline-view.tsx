@@ -251,6 +251,8 @@ export function PipelineView({
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         openDialog("commands");
+      } else if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
       } else if (event.key === "/") {
         event.preventDefault();
         searchRef.current?.focus();
@@ -574,9 +576,7 @@ function LedgerRow({
   return (
     <tr
       onMouseEnter={() => onPreview(opportunity.opportunity)}
-      onMouseLeave={() => onPreview(null)}
       onFocus={() => onPreview(opportunity.opportunity)}
-      onBlur={() => onPreview(null)}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("a, button, input, textarea, select")) return;
         onOpen(opportunity.opportunity);
