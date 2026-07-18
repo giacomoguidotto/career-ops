@@ -148,6 +148,7 @@ const SYSTEM_PATHS = [
   'tracker-parse.mjs',
   'tracker-aliases.json',
   'opportunity-lifecycle.mjs',
+  'pdf-artifact.mjs',
   'set-status.mjs',
   'set-status-tests.mjs',
   'candidacy-select.mjs',
