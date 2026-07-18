@@ -134,12 +134,13 @@ function unavailable(path: DiscoveryPath, diagnostic: string): PathResult {
   };
 }
 
-function legacy(path: DiscoveryPath, offers: DiscoveredOffer[], searched: number, unreachable: number): PathResult {
+function legacy(path: DiscoveryPath, offers: DiscoveredOffer[], searched: number, unreachable: number, details: Partial<ScannerPathSummary> = {}): PathResult {
   return {
     offers,
     summary: {
       path,
       contract: "legacy",
+      ...details,
       complete: false,
       searched,
       unreachable,
@@ -210,7 +211,17 @@ async function supportsJson(script: string): Promise<boolean> {
   const cached = jsonSupportProbes.get(script);
   if (cached) return cached;
   const pending = runCommand(script, ["--help"], { ...process.env }, undefined, JSON_HELP_TIMEOUT_MS).then((probe) => {
-    const supported = !probe.failed && probe.code === 0 && /(?:^|\s)--json(?:\s|$)/m.test(`${probe.stdout}\n${probe.stderr}`);
+    const advertised = !probe.failed && probe.code === 0 && /(?:^|\s)--json(?:\s|$)/m.test(`${probe.stdout}\n${probe.stderr}`);
+    let sourceContract = false;
+    if (!advertised) {
+      try {
+        const source = fs.readFileSync(script, "utf8");
+        sourceContract = source.includes("--json") && (source.includes("career-ops.scanner.") || source.includes("capHit"));
+      } catch {
+        sourceContract = false;
+      }
+    }
+    const supported = advertised || sourceContract;
     if (!supported) jsonSupportProbes.delete(script);
     return supported;
   });
@@ -362,9 +373,19 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
     && searched !== null && available !== null && unreachable !== null && dropped !== null && malformedSources !== null
     && datasetStatus !== null && companyLimit !== undefined;
   if (!structured) {
-    return raw.contract === undefined
-      ? legacy("reverse-ats", normalized.offers, searched ?? 0, unreachable ?? 0)
-      : null;
+    if (raw.contract !== undefined) return null;
+    const legacyDetails: Partial<ScannerPathSummary> = sampling !== null && capHit !== null && available !== null && dropped !== null && datasetStatus !== null && companyLimit !== undefined
+      ? {
+          available,
+          sampling,
+          capHit,
+          datasetStatus,
+          droppedRecords: dropped,
+          malformedRecords: normalized.dropped,
+          companyCap: { limit: companyLimit, deferred: Math.max(0, available - (searched ?? 0)) },
+        }
+      : {};
+    return legacy("reverse-ats", normalized.offers, searched ?? 0, unreachable ?? 0, legacyDetails);
   }
   if (sources === null
     || sources.length !== expectedSources.length

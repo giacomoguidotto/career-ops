@@ -9,14 +9,15 @@ import { runDiscovery } from "./src/lib/core/scan.ts";
 
 const ORIGINAL_ROOT = process.env.CAREER_OPS_ROOT;
 
-function script({ help = "--json", result = {}, legacy = "", requireArgs = [], helpMarker = "" } = {}) {
+function script({ help = "--json", result = {}, legacy = "", requireArgs = [], helpMarker = "", structuredWithoutHelp = false } = {}) {
   return [
     `import { appendFileSync } from "node:fs";`,
+    structuredWithoutHelp ? `// Supports --json with capHit fields, but legacy help omits the flag.` : "",
     `const args = process.argv.slice(2);`,
     `if (args.includes("--help")) { ${helpMarker ? `appendFileSync(${JSON.stringify(helpMarker)}, "probe\\n");` : ""} process.stdout.write(${JSON.stringify(`${help}\n`)}); process.exit(0); }`,
     `const required = ${JSON.stringify(requireArgs)};`,
     `if (required.some((arg) => !args.includes(arg))) process.exit(9);`,
-    help.includes("--json")
+    help.includes("--json") || structuredWithoutHelp
       ? `process.stdout.write(${JSON.stringify(`${JSON.stringify(result)}\n`)});`
       : `process.stdout.write(${JSON.stringify(legacy)});`,
     "",
@@ -244,6 +245,27 @@ test("legacy output renders without claiming completeness", async () => {
     assert.equal(result.offers.length, 1);
     assert.equal(result.summaries["company-first"].contract, "legacy");
     assert.equal(result.summaries["reverse-ats"].contract, "legacy");
+    assert.equal(result.summaries["reverse-ats"].complete, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("source contract fallback detects structured output omitted from legacy help", async () => {
+  const root = workspace({
+    "scan.mjs": script({ result: companyResult() }),
+    "scan-ats-full.mjs": script({
+      help: "Usage: reverse scan",
+      structuredWithoutHelp: true,
+      result: reverseResult({ contract: undefined, sources: undefined, sourceRecordsDropped: undefined, companiesAvailable: 12, companiesScanned: 8, capHit: true, postingsDroppedNoDate: 3 }),
+    }),
+  });
+  try {
+    const result = await discover(root);
+    assert.equal(result.summaries["reverse-ats"].contract, "legacy");
+    assert.equal(result.summaries["reverse-ats"].sampling, "alphabetical");
+    assert.equal(result.summaries["reverse-ats"].capHit, true);
+    assert.equal(result.summaries["reverse-ats"].droppedRecords, 3);
     assert.equal(result.summaries["reverse-ats"].complete, false);
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -315,7 +315,12 @@ function CompletenessPanel({ summaries, onRefine }: { summaries: Partial<Record<
 function completenessLine(summary: ScannerPathSummary): string {
   const label = summary.path === "company-first" ? "Tracked companies" : "Reverse ATS";
   if (summary.contract === "unavailable") return `${label}: unavailable. ${summary.diagnostic ?? "This path was not run."}`;
-  if (summary.contract === "legacy") return `${label}: results may be shown, but completeness details are unavailable. This slice is not exhaustive.`;
+  if (summary.contract === "legacy") {
+    const partial = summary.path === "reverse-ats" && summary.sampling
+      ? ` ${summary.sampling} sampling; ${summary.searched.toLocaleString()}${typeof summary.available === "number" ? ` of ${summary.available.toLocaleString()}` : ""} targets searched${summary.capHit ? "; capped slice" : ""}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}.`
+      : "";
+    return `${label}: results may be shown, but completeness details are unavailable.${partial} This slice is not exhaustive.`;
+  }
   const scope = `${summary.searched.toLocaleString()}${typeof summary.available === "number" && summary.available !== summary.searched ? ` of ${summary.available.toLocaleString()}` : ""} targets searched`;
   if (summary.path === "company-first") {
     const priority = `${summary.configuredPrioritySources ?? 0} configured priority source${summary.configuredPrioritySources === 1 ? "" : "s"}`;
