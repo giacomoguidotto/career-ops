@@ -159,12 +159,19 @@ export function listDurableWorkers(root: string): DurableWorker[] {
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
-export function appendWorkerPhase(root: string, id: string, code: string, label: string): DurableWorker | null {
+export function appendWorkerPhase(
+  root: string,
+  id: string,
+  code: string,
+  label: string,
+  workOrder?: LifecycleWorkOrder,
+): DurableWorker | null {
   const worker = readDurableWorker(root, id);
   if (!worker) return null;
   const next = phase(code, label.slice(0, 160));
   return write(root, {
     ...worker,
+    workOrder: workOrder ?? worker.workOrder,
     status: "active",
     currentPhase: next,
     phases: [...worker.phases, next].slice(-200),

@@ -25,6 +25,7 @@ export function ResumeReconciliation({ opportunity, expectedStage, expectedRevis
         body: JSON.stringify({ expectedStage, expectedRevision }),
       });
       const value = await response.json();
+      if (value.error && !value.recovery) throw new Error(value.error);
       if (!value.recovery) throw new Error("Canonical reconciliation did not complete.");
       setRecovery(value.recovery as WorkRecovery);
     } catch (error) {
@@ -38,7 +39,10 @@ export function ResumeReconciliation({ opportunity, expectedStage, expectedRevis
     return (
       <div>
         <p role="status" className="text-center text-[11px] text-muted">{recovery.message}</p>
-        <button type="button" onClick={() => router.refresh()} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-200">
+        <button type="button" onClick={() => {
+          router.refresh();
+          if (recovery.nextAction.href) router.push(recovery.nextAction.href);
+        }} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-200">
           {recovery.nextAction.label} <ArrowRight className="size-4" />
         </button>
       </div>

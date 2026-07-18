@@ -58,6 +58,19 @@ async function waitForTerminalWorker(request, baseUrl, minimumHistory = 1) {
   throw new Error("durable lifecycle worker did not settle");
 }
 
+async function waitForAcknowledgedWorker(request, baseUrl, id) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const response = await request.get(`${baseUrl}/api/workers/${id}`);
+    if (response.ok()) {
+      const worker = (await response.json()).worker;
+      if (worker?.acknowledgedAt) return worker;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("durable lifecycle worker acknowledgement did not persist");
+}
+
 function replaceStage(root, opportunity, from, to) {
   const tracker = join(root, "data", "applications.md");
   const lines = readFileSync(tracker, "utf8").split("\n");
@@ -177,13 +190,29 @@ try {
   await phone.getByText("Content-safe diagnostics").click();
   assert.equal(await phone.getByText("career-ops.opportunity-lifecycle v1").isVisible(), true);
   await phone.getByRole("button", { name: "Retry safely" }).click();
-  await phone.getByText("Resuming preserved work", { exact: true }).waitFor();
+  await phone.getByText("Retrying work", { exact: true }).waitFor();
   const retried = await waitForTerminalWorker(phone.request, baseUrl, 2);
   assert.equal(retried.id, terminalWorker.id, "retry preserves one durable worker identity");
   assert.equal(retried.recoveryHistory.length, 2, "retry appends typed recovery history");
-  await phone.getByRole("button", { name: "Acknowledge", exact: true }).click();
+  replaceStage(fixture.root, 7, leader.stage.label, "Discarded");
+  const staleResume = await phone.request.post(`${baseUrl}/api/run`, {
+    data: {
+      kind: "lifecycle",
+      cliId: "codex",
+      input: "",
+      workerId: terminalWorker.id,
+      continuation: "retry",
+    },
+  });
+  assert.equal(staleResume.status(), 409, "retry rechecks current canonical Stage before launching work");
+  assert.equal((await staleResume.json()).code, "conflict");
+  replaceStage(fixture.root, 7, "Discarded", leader.stage.label);
   await phone.reload();
-  await phone.getByRole("heading", { name: "No complete artifact exists, and a fresh attempt is safe." }).waitFor();
+  await phone.getByRole("heading", { name: "The Opportunity changed after this worker started. Current state was preserved." }).waitFor();
+  await phone.getByRole("button", { name: "Acknowledge", exact: true }).click();
+  await waitForAcknowledgedWorker(phone.request, baseUrl, terminalWorker.id);
+  await phone.reload();
+  await phone.getByRole("heading", { name: "The Opportunity changed after this worker started. Current state was preserved." }).waitFor();
   assert.equal(await phone.getByRole("heading", { name: "Recovery history" }).isVisible(), true, "acknowledgement preserves worker history");
   assert.equal(await phone.getByRole("button", { name: "Acknowledge", exact: true }).count(), 0, "acknowledgement persists across reload");
   await phone.goto(baseUrl);

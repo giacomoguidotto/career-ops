@@ -1,5 +1,6 @@
 import { careerOpsRoot } from "@/lib/career-ops";
 import { LifecycleAdapterError, requestOpportunityWork } from "@/lib/core/opportunity-lifecycle";
+import { acquireTrackerWrite, releaseTrackerWrite } from "@/lib/core/run-registry";
 import { recoverLifecycleWork } from "@/lib/core/work-recovery";
 
 export const runtime = "nodejs";
@@ -17,6 +18,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch {
     return Response.json({ error: "bad json" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ error: "bad json" }, { status: 400 });
+  }
   if (
     Object.keys(body).sort().join("\0") !== ["expectedRevision", "expectedStage"].sort().join("\0")
     || typeof body.expectedStage !== "string"
@@ -24,6 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   ) {
     return Response.json({ error: "invalid reconciliation expectation" }, { status: 400 });
   }
+  const writeToken = acquireTrackerWrite();
   try {
     const reservation = await requestOpportunityWork(careerOpsRoot(), {
       opportunity,
@@ -39,5 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     const code = error instanceof LifecycleAdapterError ? error.code : "reconciliation-unavailable";
     return Response.json({ error: code }, { status: error instanceof LifecycleAdapterError ? error.status : 503 });
+  } finally {
+    releaseTrackerWrite(writeToken);
   }
 }

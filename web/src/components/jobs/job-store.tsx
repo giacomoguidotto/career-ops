@@ -131,8 +131,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ action: "recover", trigger }),
       });
       const value = await response.json();
-      if (response.status === 202 && value.active && polls < 20) {
-        window.setTimeout(() => void recoverJob(id, trigger, polls + 1), 250);
+      if (response.status === 202 && value.active) {
+        const delay = Math.min(250 * 2 ** Math.min(polls, 5), 5_000);
+        window.setTimeout(() => void recoverJob(id, trigger, polls + 1), delay);
         return;
       }
       if (response.ok && value.recovery) {
@@ -181,7 +182,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         /* durable history remains on disk and can be loaded later */
       }
       if (cancelled) return;
-      setJobs(local);
+      setJobs((current) => {
+        const byId = new Map(local.map((job) => [job.id, job]));
+        for (const job of current) {
+          if (!byId.has(job.id) || job.status === "running") byId.set(job.id, job);
+        }
+        return [...byId.values()].sort((left, right) => right.startedAt - left.startedAt);
+      });
       loaded.current = true;
       for (const job of local) {
         if (job.kind === "lifecycle" && job.status === "running") void recoverJob(job.id, "reload");
@@ -199,7 +206,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [jobs]);
 
-  const execute = useCallback((id: string, opts: StartOpts, cliId: string, resume: boolean) => {
+  const execute = useCallback((id: string, opts: StartOpts, cliId: string, continuation: "retry" | "resume" | null) => {
     void (async () => {
       let text = "";
       let verdictLine = "";
@@ -239,7 +246,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             input: opts.input,
             cliId,
             workerId: id,
-            resume,
+            continuation: continuation ?? undefined,
             title: opts.title,
             subtitle: opts.subtitle,
             page: opts.page,
@@ -248,6 +255,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         });
         if (!response.ok || !response.body) {
           const error = await response.json().catch(() => ({}));
+          if (error.recovery) {
+            applyRecovery(id, error.recovery as WorkRecovery);
+            return;
+          }
           finish("error", error.error || "Failed to start");
           return;
         }
@@ -342,7 +353,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         patch(id, (j) => ({ ...j, status: "error", endedAt: Date.now(), steps: [...j.steps, { kind: "status", label: "No CLI configured: open Config", ts: Date.now() }] }));
         return id;
       }
-      execute(id, opts, cliId, false);
+      execute(id, opts, cliId, null);
 
       return id;
     },
@@ -370,25 +381,39 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       page: job.page,
       batchId: job.batchId,
     };
+    const continuation = job.recovery.nextAction.kind as "retry" | "resume";
     patch(id, (current) => ({
       ...current,
       status: "running",
       endedAt: undefined,
       acknowledgedAt: undefined,
-      steps: [...current.steps, { kind: "status", label: "Resuming preserved work", ts: Date.now() }],
+      steps: [...current.steps, {
+        kind: "status",
+        label: continuation === "resume" ? "Resuming preserved work" : "Retrying work",
+        ts: Date.now(),
+      }],
     }));
-    execute(id, opts, cliId, true);
+    execute(id, opts, cliId, continuation);
   }, [execute, jobs, patch]);
 
   const acknowledgeJob = useCallback((id: string) => {
+    const job = jobs.find((candidate) => candidate.id === id);
+    if (!job || job.status === "running") return;
     const at = Date.now();
-    patch(id, (job) => job.status === "running" ? job : { ...job, acknowledgedAt: at });
-    fetch(`/api/workers/${encodeURIComponent(id)}`, {
+    const previous = job.acknowledgedAt;
+    patch(id, (current) => ({ ...current, acknowledgedAt: at }));
+    if (job.kind !== "lifecycle") return;
+    void fetch(`/api/workers/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "acknowledge" }),
-    }).catch(() => {});
-  }, [patch]);
+    }).then((response) => {
+      if (!response.ok) throw new Error("acknowledgement rejected");
+    }).catch(() => {
+      patch(id, (current) => ({ ...current, acknowledgedAt: previous }));
+      setAnnouncement("Worker acknowledgement could not be saved.");
+    });
+  }, [jobs, patch]);
   const removeJob = acknowledgeJob;
   const clearFinished = useCallback(() => {
     for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) acknowledgeJob(job.id);

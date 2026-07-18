@@ -196,6 +196,9 @@ test("durable worker acknowledgement preserves typed history and canonical files
     assert.equal(worker.status, "active");
     const recovery = await recoverLifecycleWork(fixture.root, workOrder, { trigger: "timeout" });
     settleDurableWorker(fixture.root, worker.id, recovery);
+    const preservedArtifact = artifactPath(fixture.root);
+    writeFileSync(preservedArtifact, "preserve this artifact\n");
+    const artifactBefore = readFileSync(preservedArtifact, "utf8");
     const statePath = path.join(fixture.root, ".career-ops-web", "workers", `${worker.id}.json`);
     assert.equal(existsSync(statePath), true);
     const before = readFileSync(statePath, "utf8");
@@ -206,6 +209,7 @@ test("durable worker acknowledgement preserves typed history and canonical files
     assert.equal(typeof after.acknowledgedAt, "string");
     assert.notEqual(readFileSync(statePath, "utf8"), before);
     assert.equal(listDurableWorkers(fixture.root).some((candidate) => candidate.id === worker.id), true);
+    assert.equal(readFileSync(preservedArtifact, "utf8"), artifactBefore);
     assert.equal((await readOpportunityLifecycle(fixture.root, 1)).opportunity.stage.id, "evaluated");
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);

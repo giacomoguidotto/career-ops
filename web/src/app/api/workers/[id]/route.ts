@@ -1,5 +1,5 @@
 import { careerOpsRoot } from "@/lib/career-ops";
-import { isWorkerActive } from "@/lib/core/run-registry";
+import { acquireTrackerWrite, acquireWorker, isWorkerActive, releaseTrackerWrite, releaseWorker } from "@/lib/core/run-registry";
 import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
 import {
   acknowledgeDurableWorker,
@@ -38,6 +38,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch {
     return Response.json({ error: "bad json" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ error: "bad json" }, { status: 400 });
+  }
   if (body.action === "acknowledge") {
     return Response.json({ worker: acknowledgeDurableWorker(root, id) });
   }
@@ -47,8 +50,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (isWorkerActive(id)) {
     return Response.json({ active: true, worker }, { status: 202 });
   }
-  const recovery = await recoverLifecycleWork(root, worker.workOrder, {
-    trigger: body.trigger as WorkRecoveryTrigger,
-  });
-  return Response.json({ active: false, worker: settleDurableWorker(root, id, recovery), recovery });
+  if (!acquireWorker(id)) {
+    return Response.json({ active: true, worker }, { status: 202 });
+  }
+  const writeToken = acquireTrackerWrite();
+  try {
+    const recovery = await recoverLifecycleWork(root, worker.workOrder, {
+      trigger: body.trigger as WorkRecoveryTrigger,
+    });
+    return Response.json({ active: false, worker: settleDurableWorker(root, id, recovery), recovery });
+  } finally {
+    releaseTrackerWrite(writeToken);
+    releaseWorker(id);
+  }
 }

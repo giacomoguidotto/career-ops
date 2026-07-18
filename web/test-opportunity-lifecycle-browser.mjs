@@ -1021,10 +1021,15 @@ try {
     await reviewPage.goto(`${baseUrl}/pipeline/114`);
     await reviewPage.getByRole('heading', { name: 'Review Flow Co', exact: true }).waitFor();
     await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
-    await reviewPage.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor();
+    const guidedReviewDialog = reviewPage.getByRole('dialog', { name: 'Guided approach preparation' });
+    await guidedReviewDialog.waitFor();
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    const smallestControl = await reviewPage.getByRole('dialog').getByRole('button').evaluateAll((nodes) => Math.min(...nodes.map((node) => node.getBoundingClientRect().height)));
-    assert.equal(review.viewport.width > 390 || smallestControl >= 44, true);
+    const controls = await guidedReviewDialog.getByRole('button').evaluateAll((nodes) => nodes.map((node) => ({
+      label: node.getAttribute('aria-label') || node.textContent?.trim().replace(/\s+/g, ' '),
+      height: node.getBoundingClientRect().height,
+    })));
+    const smallestControl = Math.min(...controls.map((control) => control.height));
+    assert.equal(review.viewport.width > 390 || smallestControl >= 44, true, `${review.name}: ${JSON.stringify(controls)}`);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `guided-approach-${review.name}.png`), fullPage: true });
     await reviewPage.goto(`${baseUrl}/pipeline/101`);
     await reviewPage.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
@@ -1056,11 +1061,11 @@ try {
     ...Array.from({ length: 8 }, () => ['POST', '/api/opportunities/2/reported-event']),
     ['POST', '/api/opportunities/112/reported-event'],
     ['POST', '/api/opportunities/113/reported-event'],
+    ['POST', '/api/opportunities/115/reconcile'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/100'],
     ['POST', '/api/run'],
-    ['POST', '/api/runs/save'],
   ]);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), true);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);

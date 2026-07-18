@@ -274,9 +274,9 @@ export async function recoverLifecycleWork(
     return result(
       workOrder,
       evidence,
-      reconciled.retryable ? "resumable" : "unavailable",
+      "unavailable",
       reconciled.retryable
-        ? "The complete artifact remains available and reconciliation can be resumed."
+        ? "The complete artifact remains available, but only reconciliation may be retried."
         : "The complete artifact remains available, but reconciliation is blocked.",
       reconciled.after ?? summary,
       contract,
