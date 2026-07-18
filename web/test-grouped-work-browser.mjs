@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import {
@@ -52,6 +53,19 @@ async function workOrder(root, opportunity) {
   return requested.workOrder;
 }
 
+async function waitForWorker(request, baseUrl, id, minimumHistory = 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const response = await request.get(`${baseUrl}/api/workers/${id}`);
+    if (response.ok()) {
+      const worker = (await response.json()).worker;
+      if (worker?.status === "terminal" && worker.recoveryHistory.length >= minimumHistory) return worker;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`durable worker ${id} did not settle`);
+}
+
 function recovery(order, outcome, options = {}) {
   const nextAction = {
     changed: { kind: "open", label: "Open result", href: `/pipeline/${order.opportunity}#materials` },
@@ -85,7 +99,7 @@ function recovery(order, outcome, options = {}) {
 
 const fixture = createFictionalOpportunityWorkspace({
   materializeCore: true,
-  opportunities: Array.from({ length: 9 }, (_, index) => ({
+  opportunities: Array.from({ length: 10 }, (_, index) => ({
     num: index + 1,
     date: "2026-07-18",
     company: `Grouped Browser ${index + 1}`,
@@ -94,15 +108,23 @@ const fixture = createFictionalOpportunityWorkspace({
     score: "4.5/5",
   })),
   missingOptionalFiles: true,
+  files: {
+    "cv.md": "# Fictional CV\n",
+    "config/profile.yml": "followup_cadence: {}\n",
+    "modes/_profile.md": "# Fictional profile\n",
+    "modes/next.md": "# Fictional next mode\n",
+  },
 });
 const orders = await Promise.all(Array.from({ length: 9 }, (_, index) => workOrder(fixture.root, index + 1)));
+const reserved = (await readOpportunityLifecycle(fixture.root, 10)).opportunity;
+writeFileSync(join(fixture.root, "output", "next-packs", "004-partial.md"), "# Preserved partial checkpoint\n");
 const groupId = "group-browser-mixed-truth";
-const dispositions = ["ready", "ready", "ready", "ready", "ready", "ready", "conflict", "suppressed", "ready"];
+const dispositions = ["ready", "ready", "ready", "ready", "ready", "ready", "conflict", "suppressed", "ready", "ready"];
 createDurableWorkGroup(fixture.root, {
   id: groupId,
   title: "Mixed browser truth",
   page: "/",
-  children: orders.map((order, index) => ({
+  children: [...orders.map((order, index) => ({
     workerId: `job-browser-${index + 1}`,
     opportunity: order.opportunity,
     title: `Grouped Browser ${index + 1}`,
@@ -112,7 +134,17 @@ createDurableWorkGroup(fixture.root, {
     disposition: dispositions[index],
     code: dispositions[index],
     message: dispositions[index] === "suppressed" ? "Canonical candidacy suppressed this child." : dispositions[index] === "conflict" ? "Opportunity changed after review." : "Canonical work was reviewed.",
-  })),
+  })), {
+    workerId: "job-browser-10",
+    opportunity: 10,
+    title: "Grouped Browser 10",
+    subtitle: "Engineer",
+    expectedStage: reserved.stage.id,
+    expectedRevision: reserved.revision,
+    disposition: "ready",
+    code: "ready",
+    message: "Canonical work was reviewed.",
+  }],
 });
 
 const outcomes = ["changed", "recovered", "retryable", "resumable", "paused", "unchanged"];
@@ -125,12 +157,18 @@ createDurableWorker(fixture.root, { id: "job-browser-9", title: "Grouped Browser
 settleDurableWorker(fixture.root, "job-browser-9", recovery(orders[8], "unavailable", { artifact: true, lifecycleCode: "reconciliation-unavailable", message: "Complete artifact awaits canonical reconciliation." }));
 acknowledgeDurableWorker(fixture.root, "job-browser-9");
 
+const binDir = join(fixture.root, "fixture-bin");
+mkdirSync(binDir, { recursive: true });
+const codex = join(binDir, "codex");
+writeFileSync(codex, "#!/bin/sh\nprintf 'VERDICT: 5/5 | fictional grouped worker completed\\n'\n");
+chmodSync(codex, 0o755);
+
 const port = await availablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const output = [];
 const child = spawn(process.execPath, [join(WEB_ROOT, "node_modules", "next", "dist", "bin", "next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
   cwd: WEB_ROOT,
-  env: { ...process.env, BUILD_DIST: DIST_DIR, CAREER_OPS_ROOT: fixture.root },
+  env: { ...process.env, BUILD_DIST: DIST_DIR, CAREER_OPS_ROOT: fixture.root, PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}` },
   stdio: ["ignore", "pipe", "pipe"],
 });
 child.stdout.on("data", (chunk) => output.push(String(chunk)));
@@ -143,10 +181,15 @@ try {
   await waitUntilReady(baseUrl, child, output);
   browser = await chromium.launch({ headless: true });
   desktopContext = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme: "light" });
+  await desktopContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
   const desktop = await desktopContext.newPage();
   await desktop.goto(`${baseUrl}/jobs`);
   await desktop.getByRole("link", { name: /Mixed browser truth/ }).click();
   await desktop.getByRole("heading", { name: "Mixed browser truth" }).waitFor();
+  const malformedOwner = await desktop.request.post(`${baseUrl}/api/run`, {
+    data: { kind: "lifecycle", cliId: "codex", input: "{}", batchId: 42 },
+  });
+  assert.equal(malformedOwner.status(), 400, "runtime group ownership input is validated before lifecycle access");
   for (const label of ["changed", "recovered", "failed", "paused", "unchanged", "suppressed", "conflict"]) {
     assert.equal(await desktop.getByText(label, { exact: true }).first().isVisible(), true, `${label} summary renders`);
   }
@@ -158,9 +201,23 @@ try {
   assert.equal(await desktop.getByRole("button", { name: "Resume work" }).count(), 1, "partial child has one resume action");
   assert.equal(await desktop.getByRole("button", { name: "Resume when available" }).count(), 1, "paused child has one resume action");
   assert.equal(await desktop.getByText("Complete artifact exists, but canonical reconciliation has not succeeded.").isVisible(), true);
+  const recoveredCard = active.locator("article").filter({ hasText: "#2 · Grouped Browser 2" });
+  await recoveredCard.getByRole("button", { name: "Acknowledge" }).click();
+  await assert.doesNotReject(async () => active.getByText("#2 · Grouped Browser 2").waitFor({ state: "detached" }));
+  await history.getByText("#2 · Grouped Browser 2").waitFor();
+  await desktop.getByRole("button", { name: "Retry safely" }).click();
+  assert.equal((await waitForWorker(desktop.request, baseUrl, "job-browser-3", 2)).recoveryHistory.length, 2, "retry appends canonical recovery history");
+  await desktop.getByRole("button", { name: "Resume work" }).click();
+  assert.equal((await waitForWorker(desktop.request, baseUrl, "job-browser-4", 2)).recoveryHistory.at(-1).outcome, "resumable", "resume preserves partial canonical work");
+  await desktop.getByRole("button", { name: "Resume when available" }).click();
+  assert.equal((await waitForWorker(desktop.request, baseUrl, "job-browser-5", 2)).recoveryHistory.length, 2, "paused work resumes through the same worker identity");
+  await desktop.getByRole("button", { name: "Start reserved work" }).click();
+  const started = await waitForWorker(desktop.request, baseUrl, "job-browser-10");
+  assert.equal(started.batchId, groupId, "interrupted launch starts only under its durable group owner");
   assert.equal(await desktop.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
 
   phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", reducedMotion: "reduce" });
+  await phoneContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
   const phone = await phoneContext.newPage();
   await phone.goto(`${baseUrl}/jobs/groups/${groupId}`);
   await phone.getByRole("heading", { name: "Mixed browser truth" }).waitFor();
@@ -171,8 +228,8 @@ try {
   assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
 
   const api = await (await phone.request.get(`${baseUrl}/api/work-groups/${groupId}`)).json();
-  assert.equal(api.group.children.length, 9);
-  assert.equal(api.group.summary.failed, 3, "partial failure does not collapse successful siblings");
+  assert.equal(api.group.children.length, 10);
+  assert.equal(api.group.summary.failed, 5, "partial failure does not collapse successful siblings");
   console.log("PASS grouped work browser journeys");
 } finally {
   await desktopContext?.close();

@@ -28,6 +28,10 @@ function groupPath(root: string, id: string): string {
   return path.join(groupDir(root), `${id}.json`);
 }
 
+function creationLockPath(root: string): string {
+  return path.join(root, ".career-ops-web", "work-group-create.lock");
+}
+
 function validMember(value: unknown): value is DurableWorkGroupMember {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const member = value as DurableWorkGroupMember;
@@ -43,13 +47,45 @@ function validMember(value: unknown): value is DurableWorkGroupMember {
     && typeof member.message === "string";
 }
 
-function write(root: string, group: DurableWorkGroup): DurableWorkGroup {
+function writeNew(root: string, group: DurableWorkGroup): DurableWorkGroup {
   const target = groupPath(root, group.id);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(group, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, target);
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(group, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    fs.linkSync(temporary, target);
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      // The target hard link is already durable, or creation failed before the temporary existed.
+    }
+  }
   return group;
+}
+
+function withCreationLock<T>(root: string, create: () => T): T {
+  const lockPath = creationLockPath(root);
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  let lock: number;
+  try {
+    lock = fs.openSync(lockPath, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("work group creation is already in progress");
+    }
+    throw error;
+  }
+  try {
+    return create();
+  } finally {
+    fs.closeSync(lock);
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      // A failed cleanup cannot make a partially-created group look successful.
+    }
+  }
 }
 
 export function createDurableWorkGroup(
@@ -69,7 +105,7 @@ export function createDurableWorkGroup(
   if (workerIds.size !== input.children.length || opportunities.size !== input.children.length) {
     throw new Error("work group children must be unique");
   }
-  return write(root, {
+  const group: DurableWorkGroup = {
     version: 1,
     id: input.id,
     kind: "lifecycle-batch",
@@ -77,6 +113,15 @@ export function createDurableWorkGroup(
     page: input.page?.startsWith("/") ? input.page.slice(0, 240) : null,
     createdAt: new Date().toISOString(),
     children: input.children,
+  };
+  return withCreationLock(root, () => {
+    if (fs.existsSync(groupPath(root, input.id))) throw new Error("work group id already exists");
+    const reservedWorkerIds = new Set(listDurableWorkGroups(root).flatMap((existing) => existing.children.map((child) => child.workerId)));
+    for (const worker of listDurableWorkers(root)) reservedWorkerIds.add(worker.id);
+    if (input.children.some((child) => reservedWorkerIds.has(child.workerId))) {
+      throw new Error("work group child id already exists");
+    }
+    return writeNew(root, group);
   });
 }
 
@@ -159,7 +204,11 @@ function projectMember(member: DurableWorkGroupMember, worker: DurableWorker | n
       },
       artifacts: [],
       diagnostic: { code: member.code, stage: member.expectedStage, revision: member.expectedRevision },
-      nextAction: member.disposition === "ready" ? null : {
+      nextAction: member.disposition === "ready" ? {
+        kind: "resume",
+        label: "Start reserved work",
+        href: null,
+      } : {
         kind: "review",
         label: "Review current Opportunity",
         href: `/pipeline/${member.opportunity}`,
@@ -200,12 +249,8 @@ function projectMember(member: DurableWorkGroupMember, worker: DurableWorker | n
   };
 }
 
-export function projectWorkGroup(root: string, group: DurableWorkGroup): ProjectedWorkGroup {
-  const workers = new Map(
-    listDurableWorkers(root)
-      .filter((worker) => worker.batchId === group.id)
-      .map((worker) => [worker.id, worker]),
-  );
+export function projectWorkGroup(root: string, group: DurableWorkGroup, workerIndex?: ReadonlyMap<string, DurableWorker>): ProjectedWorkGroup {
+  const workers = workerIndex ?? new Map(listDurableWorkers(root).map((worker) => [worker.id, worker]));
   const children = group.children.map((member) => projectMember(member, workers.get(member.workerId) ?? null));
   const summary = Object.fromEntries(GROUP_CHILD_OUTCOMES.map((outcome) => [outcome, 0])) as Record<GroupChildOutcome, number>;
   for (const child of children) if (child.outcome) summary[child.outcome] += 1;
@@ -224,5 +269,6 @@ export function readProjectedWorkGroup(root: string, id: string): ProjectedWorkG
 }
 
 export function listProjectedWorkGroups(root: string): ProjectedWorkGroup[] {
-  return listDurableWorkGroups(root).map((group) => projectWorkGroup(root, group));
+  const workers = new Map(listDurableWorkers(root).map((worker) => [worker.id, worker]));
+  return listDurableWorkGroups(root).map((group) => projectWorkGroup(root, group, workers));
 }

@@ -36,8 +36,8 @@ type Ctx = {
   jobs: Job[];
   startJob: (opts: StartOpts) => string | null;
   actOnJob: (id: string) => void;
-  acknowledgeJob: (id: string) => void;
-  removeJob: (id: string) => void;
+  acknowledgeJob: (id: string) => Promise<void>;
+  removeJob: (id: string) => Promise<void>;
   clearFinished: () => void;
 };
 
@@ -348,7 +348,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         text: "",
         startedAt: Date.now(),
       };
-      setJobs((js) => [job, ...js]);
+      setJobs((js) => [job, ...js.filter((existing) => existing.id !== id)]);
 
       if (!cliId) {
         patch(id, (j) => ({ ...j, status: "error", endedAt: Date.now(), steps: [...j.steps, { kind: "status", label: "No CLI configured: open Config", ts: Date.now() }] }));
@@ -397,14 +397,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     execute(id, opts, cliId, continuation);
   }, [execute, jobs, patch]);
 
-  const acknowledgeJob = useCallback((id: string) => {
+  const acknowledgeJob = useCallback(async (id: string): Promise<void> => {
     const job = jobs.find((candidate) => candidate.id === id);
     if (!job || job.status === "running") return;
     const at = Date.now();
     const previous = job.acknowledgedAt;
     patch(id, (current) => ({ ...current, acknowledgedAt: at }));
     if (job.kind !== "lifecycle") return;
-    void fetch(`/api/workers/${encodeURIComponent(id)}`, {
+    await fetch(`/api/workers/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "acknowledge" }),
@@ -417,7 +417,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   }, [jobs, patch]);
   const removeJob = acknowledgeJob;
   const clearFinished = useCallback(() => {
-    for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) acknowledgeJob(job.id);
+    for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) void acknowledgeJob(job.id);
   }, [acknowledgeJob, jobs]);
 
   return (

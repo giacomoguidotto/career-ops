@@ -254,6 +254,18 @@ try {
   const grouped = await (await phone.request.get(`${baseUrl}/api/work-groups/${batchPayload.groupId}`)).json();
   assert.equal(grouped.group.children.length, 3, "group owns ready and reviewed child identities");
   assert.equal(grouped.group.summary.conflict, 2, "fresh revision drift is preserved per child");
+  const conflictOnlyResponse = await phone.request.post(`${baseUrl}/api/opportunities/batch`, {
+    data: {
+      candidates: [{ opportunity: 1, expectedStage: "evaluated", expectedRevision: "0".repeat(64) }],
+      reviewed: [],
+    },
+  });
+  assert.equal(conflictOnlyResponse.status(), 200);
+  const conflictOnly = await conflictOnlyResponse.json();
+  assert.equal(conflictOnly.code, "nothing-started");
+  assert.match(conflictOnly.groupId, /^group-today-/, "review truth persists even when no worker starts");
+  const conflictOnlyGroup = await (await phone.request.get(`${baseUrl}/api/work-groups/${conflictOnly.groupId}`)).json();
+  assert.equal(conflictOnlyGroup.group.summary.conflict, 1);
   const detachedChild = await phone.request.post(`${baseUrl}/api/run`, {
     data: {
       kind: "lifecycle",

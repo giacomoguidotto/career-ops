@@ -6,6 +6,7 @@ import { X, History, Layers3 } from "lucide-react";
 import { useJobs } from "@/components/jobs/job-store";
 import { WorkerCard, pillTone, TONE } from "@/components/jobs/worker-card";
 import { cn } from "@/lib/cn";
+import { isWorkGroupId } from "@/lib/core/work-group";
 
 // Back-compat re-exports (app/jobs/page.tsx imports pillTone from here).
 export { pillTone, TONE };
@@ -21,7 +22,7 @@ export function WorkerPills() {
   const finished = visible.length - running;
   const grouped = new Map<string, typeof visible>();
   const individual = visible.filter((job) => {
-    if (!job.batchId) return true;
+    if (!isWorkGroupId(job.batchId)) return true;
     grouped.set(job.batchId, [...(grouped.get(job.batchId) ?? []), job]);
     return false;
   });

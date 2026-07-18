@@ -12,6 +12,7 @@ import {
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
 import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
 import { owningGroupForChild, ownsGroupChild } from "@/lib/core/work-group-store";
+import { isWorkGroupId } from "@/lib/core/work-group";
 import {
   appendWorkerPhase,
   createDurableWorker,
@@ -168,6 +169,9 @@ export async function POST(req: Request) {
   let lifecycleWorkOrder: LifecycleWorkOrder | null = null;
   const durableWorkerId = workerId ?? `job-api-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   if (kind === "lifecycle") {
+    if (body.batchId !== undefined && !isWorkGroupId(body.batchId)) {
+      return Response.json({ error: "invalid lifecycle work group" }, { status: 400 });
+    }
     if (!/^job-[a-z0-9-]{1,96}$/i.test(durableWorkerId) || (continuation && !workerId)) {
       return Response.json({ error: "valid workerId required" }, { status: 400 });
     }

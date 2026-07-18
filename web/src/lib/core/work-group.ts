@@ -65,3 +65,7 @@ export type ProjectedWorkGroup = DurableWorkGroup & {
   historyChildren: ProjectedGroupChild[];
   attentionCount: number;
 };
+
+export function isWorkGroupId(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^group-[a-z0-9-]{1,96}$/i.test(value);
+}

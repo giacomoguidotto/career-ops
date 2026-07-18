@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       });
     }
 
-    if (ready.length > 0) {
+    if (children.length > 0) {
       createDurableWorkGroup(careerOpsRoot(), {
         id: groupId,
         title: `Today batch · ${ready.length} started`,
@@ -152,7 +152,7 @@ export async function POST(request: Request) {
       message: ready.length > 0 ? `${ready.length} eligible work item${ready.length === 1 ? "" : "s"} ready to start.` : "Nothing started.",
       ready,
       skipped,
-      groupId: ready.length > 0 ? groupId : null,
+      groupId: children.length > 0 ? groupId : null,
       revision: fresh.revision,
     });
   } catch (error) {

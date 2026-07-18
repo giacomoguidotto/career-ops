@@ -11,6 +11,7 @@ import {
   ownsGroupChild,
   readProjectedWorkGroup,
 } from "./src/lib/core/work-group-store.ts";
+import { isWorkGroupId } from "./src/lib/core/work-group.ts";
 import { acknowledgeDurableWorker, createDurableWorker, settleDurableWorker } from "./src/lib/core/worker-store.ts";
 
 async function workOrder(root, opportunity) {
@@ -114,7 +115,55 @@ test("group projection preserves mixed canonical child truth and processed histo
     assert.equal(projected.activeChildren.find((child) => child.workerId === "job-mixed-4").nextAction.kind, "resume");
     assert.equal(ownsGroupChild(fixture.root, group.id, "job-mixed-2", 2), true);
     assert.equal(ownsGroupChild(fixture.root, group.id, "job-mixed-7", 7), false, "suppressed child cannot be launched");
+    assert.throws(() => createDurableWorkGroup(fixture.root, {
+      id: group.id,
+      title: "Must not replace canonical group history",
+      children: [group.children[5]],
+    }), /already exists/, "group identity cannot overwrite durable truth");
+    assert.throws(() => createDurableWorkGroup(fixture.root, {
+      id: "group-colliding-child",
+      title: "Must not steal a child identity",
+      children: [group.children[0]],
+    }), /child id already exists/, "child identity belongs to exactly one durable group");
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
+});
+
+test("reviewed ready child without a worker remains safely startable", async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [{ num: 1, company: "Interrupted Launch", role: "Engineer", stage: "Evaluated" }],
+    missingOptionalFiles: true,
+  });
+  try {
+    const order = await workOrder(fixture.root, 1);
+    const group = createDurableWorkGroup(fixture.root, {
+      id: "group-interrupted-launch",
+      title: "Interrupted launch",
+      children: [{
+        workerId: "job-interrupted-launch-1",
+        opportunity: 1,
+        title: "Interrupted Launch",
+        subtitle: "Engineer",
+        expectedStage: order.source.stage,
+        expectedRevision: order.source.revision,
+        disposition: "ready",
+        code: "ready",
+        message: "Canonical work is ready to start.",
+      }],
+    });
+    const child = readProjectedWorkGroup(fixture.root, group.id).activeChildren[0];
+    assert.equal(child.state, "queued");
+    assert.deepEqual(child.nextAction, { kind: "resume", label: "Start reserved work", href: null });
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("only durable group identities qualify for grouped navigation", () => {
+  assert.equal(isWorkGroupId("group-today-123-abc"), true);
+  assert.equal(isWorkGroupId("shortlist-123"), false);
+  assert.equal(isWorkGroupId("assistant-123"), false);
+  assert.equal(isWorkGroupId(null), false);
 });
