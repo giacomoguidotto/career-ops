@@ -629,6 +629,7 @@ try {
   assert.equal(await page.getByText(/Continues confirmed Attempt A014/).isVisible(), true);
   await page.keyboard.press('Escape');
   await page.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor({ state: 'detached' });
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Start guided approach');
   assert.equal(await guidedTrigger.evaluate((node) => node === document.activeElement), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
