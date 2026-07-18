@@ -132,16 +132,15 @@ function tableAnswers(lines) {
 function missingDestination(value) {
   const text = clean(value);
   if (!text) return true;
-  if (/(?:https?:\/\/|mailto:)/i.test(text)) return false;
-  return /\{[^{}]+\}/.test(text)
-    || /\burl\b/i.test(text)
-    || /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
+  return !/(?:https?:\/\/|mailto:|tel:)/i.test(text)
+    && !/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text);
 }
 
 function destinationToken(value) {
   const text = clean(value);
-  const url = text.match(/(?:https?:\/\/|mailto:)[^\s|)]+/i)?.[0]?.replace(/[.,;:]+$/, "");
-  return clean(url || text).toLowerCase();
+  const concrete = text.match(/(?:https?:\/\/|mailto:|tel:)[^\s|)]+/i)?.[0]?.replace(/[.,;:]+$/, "")
+    ?? text.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)?.[0];
+  return clean(concrete || text).toLowerCase();
 }
 
 function materialDestination(material) {

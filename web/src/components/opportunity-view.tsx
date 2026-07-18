@@ -150,7 +150,7 @@ function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean, 
         return {
           eyebrow: "Your next step",
           title: action || "Act outside career-ops",
-          detail: "Review the readable Approach Plan. This legacy format has no ranked route that the guided preparation flow can safely interpret.",
+          detail: "Review the readable Approach Plan. Its format has no compatible ranked route that guided preparation can safely interpret.",
           href: "#approach-plan",
           cta: "Review Approach Plan",
         };
@@ -301,7 +301,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
-  const hasGuideableRoutes = approachPlan
+  const hasGuideableRoutes = approachArtifact?.format === "canonical" && approachPlan
     ? (parseApproachPlan(approachPlan.content) as unknown[]).length > 0
     : false;
   const canGuideApproach = opportunity.primaryAction.kind === "act-outside"

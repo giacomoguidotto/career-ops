@@ -203,3 +203,22 @@ test("unresolved destination templates stay blocked", () => {
   ].join("\n");
   assert.match(parseApproachPlan(unresolved)[0].blockedReason, /verified destination is missing/);
 });
+
+test("a contact name alone is blocked while a concrete email is actionable", () => {
+  const nameOnly = [
+    "### 1. Warm peer note",
+    "- **Route:** peer outreach",
+    "- **To:** Maya Chen",
+    "- **Channel:** Email",
+    "",
+    "### Send the Outreach Message",
+    "- **To:** Maya Chen",
+    "- **Channel:** Email",
+    "",
+    "Hello Maya.",
+  ].join("\n");
+  assert.match(parseApproachPlan(nameOnly)[0].blockedReason, /verified destination is missing/);
+
+  const withEmail = nameOnly.replaceAll("Maya Chen", "Maya Chen | maya@example.com");
+  assert.equal(parseApproachPlan(withEmail)[0].blockedReason, null);
+});

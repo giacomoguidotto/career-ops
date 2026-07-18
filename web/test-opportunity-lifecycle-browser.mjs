@@ -74,7 +74,22 @@ const fixture = createFictionalOpportunityWorkspace({
     notes: 'Confirmed fictional submission.',
   }],
   approachPlans: {
-    '004-legacy-founder-pack.md': readFileSync(join(WEB_ROOT, '..', 'tests', 'fixtures', 'approaches', '247-founder-pack.md'), 'utf8'),
+    '004-legacy-founder-pack.md': [
+      '**Action:** execute_approach',
+      '',
+      readFileSync(join(WEB_ROOT, '..', 'tests', 'fixtures', 'approaches', '247-founder-pack.md'), 'utf8'),
+      '',
+      '### 1. Legacy founder outreach',
+      '- **Route:** peer outreach',
+      '- **To:** Founders | founders@example.invalid',
+      '- **Channel:** Email',
+      '',
+      '### Send the Outreach Message',
+      '- **To:** Founders | founders@example.invalid',
+      '- **Channel:** Email',
+      '',
+      'Hello founders.',
+    ].join('\n'),
     '002-northstar-fictional.md': [
       '# Northstar Fictional Approach Plan',
       '',
