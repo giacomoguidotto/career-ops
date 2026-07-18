@@ -686,7 +686,7 @@ test('a suppressed persisted Primary can release when an accepted sibling leads'
       '',
       '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
       '|---|---|---|---|---|---|---|---|---|',
-      `| accepted-surface | Accepted Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      `| accepted-surface | Accepted Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY}`,
       '',
     ].join('\n'),
   });
@@ -710,6 +710,10 @@ test('a suppressed persisted Primary can release when an accepted sibling leads'
     assert.equal(released.after.candidacy.persistedPrimary, null);
     assert.equal(released.after.candidacy.outreachAnchor, 1);
     assert.equal(released.after.stage.id, before.stage.id);
+    const registryAfter = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.match(registryAfter, new RegExp(`accepted-surface.*\\| ${TODAY}$`, 'm'));
+    assert.equal(released.after.candidacy.state, 'suppressed');
+    assert.equal(released.after.candidacy.research, null);
     assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
@@ -801,6 +805,32 @@ test('one-generation exception is scoped to one suppressed Opportunity and never
       candidacyOverride: true,
     });
     assert.equal(repeated.code, 'already-running');
+
+    const artifactPath = join(fixture.root, 'output', 'next-packs', '002-one-generation.md');
+    writeFileSync(artifactPath, [
+      '# One-generation artifact',
+      '',
+      '**Stage:** evaluated',
+      '**Owner:** agent',
+      '**Suggests:** generate_approach_plan',
+      '',
+    ].join('\n'));
+    const current = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const reconciled = await reconcileOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: current.stage.id,
+      expectedRevision: current.revision,
+    });
+    assert.equal(reconciled.code, 'work-reconciled');
+    assert.equal(reconciled.after.stage.id, 'approach_ready');
+    assert.equal(existsSync(join(
+      fixture.root,
+      '.career-ops-web',
+      'lifecycle-work',
+      `${accepted.workOrder.id}.json`,
+    )), false);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

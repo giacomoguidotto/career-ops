@@ -954,6 +954,15 @@ function readWorkState(path, canonicalWorkOrder = null, nowMs = Date.now()) {
   }
 }
 
+function sameWorkOrderForReconciliation(stored, current) {
+  if (!validWorkOrder(stored) || !validWorkOrder(current)) return false;
+  const normalize = (workOrder) => {
+    const { authorization: _authorization, ...canonical } = workOrder;
+    return { ...canonical, source: { ...canonical.source, revision: null } };
+  };
+  return digest(normalize(stored)) === digest(normalize(current));
+}
+
 function writeWorkState(root, workOrder, nowMs, leaseMs) {
   const path = workStatePath(root, workOrder);
   mkdirSync(dirname(path), { recursive: true });
@@ -1104,7 +1113,10 @@ function replaceClusterPrimary(content, clusterId, primary) {
   let changed = 0;
   for (let index = 0; index < lines.length; index += 1) {
     if (!lines[index].startsWith('|')) continue;
-    const cells = lines[index].split('|').slice(1, -1).map((cell) => cell.trim());
+    const trailingPipe = lines[index].trimEnd().endsWith('|');
+    const parts = lines[index].split('|').slice(1);
+    if (parts.at(-1)?.trim() === '') parts.pop();
+    const cells = parts.map((cell) => cell.trim());
     const lower = cells.map((cell) => cell.toLowerCase());
     if (lower.includes('cluster id') && lower.includes('primary')) {
       headers = Object.fromEntries(lower.map((name, cellIndex) => [name, cellIndex]));
@@ -1113,7 +1125,7 @@ function replaceClusterPrimary(content, clusterId, primary) {
     if (!headers || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
     if (cells[headers['cluster id']] !== clusterId) continue;
     cells[headers.primary] = primary == null ? '' : `#${primary}`;
-    lines[index] = `| ${cells.join(' | ')} |`;
+    lines[index] = `| ${cells.join(' | ')}${trailingPipe ? ' |' : ''}`;
     changed += 1;
   }
   if (changed !== 1) return { ok: false, reason: changed ? 'duplicate-candidacy-cluster' : 'candidacy-cluster-not-found' };
@@ -1318,7 +1330,24 @@ export async function reconcileOpportunityWork(options = {}) {
         before, artifacts: commandArtifacts(before),
       });
     }
-    if (stage.owner !== 'agent' || !before.capabilities.generate) {
+    const workOrder = workOrderFor(before, states);
+    const activeWork = workOrder
+      ? readWorkState(workStatePath(root, workOrder))
+      : null;
+    const authorization = activeWork
+      && !activeWork.invalid
+      && !activeWork.stale
+      && sameWorkOrderForReconciliation(activeWork.workOrder, workOrder)
+      ? activeWork.workOrder.authorization
+      : null;
+    const oneGenerationAuthorized = Boolean(
+      authorization
+      && authorization.kind === 'single-generation-exception'
+      && authorization.opportunity === before.opportunity
+      && authorization.clusterId === before.candidacy.clusterId
+      && before.candidacy.canGenerateOnce,
+    );
+    if (stage.owner !== 'agent' || (!before.capabilities.generate && !oneGenerationAuthorized)) {
       return commandOutcome({
         code: 'reconciliation-blocked', effect: 'blocked', retryable: false,
         message: 'Reconciliation is not available for the current Opportunity state.',
@@ -1335,7 +1364,13 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
 
-    const workOrder = workOrderFor(before, states);
+    if (!workOrder) {
+      return commandOutcome({
+        code: 'generation-unavailable', effect: 'unavailable', retryable: false,
+        message: 'A canonical work order could not be derived.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
     const replacement = prepareTrackerStageReplacement(tracker, before.opportunity, advance.toLabel);
     if (!replacement.ok) {
       return commandOutcome({
