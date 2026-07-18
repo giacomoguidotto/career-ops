@@ -6,6 +6,7 @@ import {
   readOpportunityLifecycle,
   tryListOpportunityLifecycle,
   type OpportunityDetailResult,
+  type OpportunityListResult,
   type OpportunitySummary,
 } from "@/lib/core/opportunity-lifecycle";
 
@@ -217,18 +218,21 @@ export type PipelineSummary = {
   rootExists: boolean;
   inbox: InboxJob[];
   applications: Application[];
+  lifecycle: OpportunityListResult | null;
 };
 
 export async function pipelineSummary(): Promise<PipelineSummary> {
   const root = careerOpsRoot();
   const scanDates = readScanDates();
+  const lifecycle = await tryListOpportunityLifecycle(root);
   return {
     root,
     rootExists: fs.existsSync(root),
     // join the freshness date (first_seen) onto each raw posting — the inbox's
     // triage view orders/faceted-filters on it entirely client-side.
     inbox: readInbox().map((j) => ({ ...j, postedAt: scanDates.get(j.url) })),
-    applications: await readApplications(),
+    applications: lifecycle?.opportunities.map(applicationFromOpportunity) ?? [],
+    lifecycle,
   };
 }
 

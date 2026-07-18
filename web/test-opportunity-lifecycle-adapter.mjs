@@ -10,6 +10,7 @@ import {
   LifecycleAdapterError,
   listOpportunityLifecycle,
   readOpportunityLifecycle,
+  requestOpportunityWork,
   tryListOpportunityLifecycle,
 } from "./src/lib/core/opportunity-lifecycle.ts";
 
@@ -176,6 +177,41 @@ test("adapter gracefully falls back only when the passive contract is unavailabl
       tryListOpportunityLifecycle(fixture.root),
       (error) => error instanceof LifecycleAdapterError && error.code === "invalid-lifecycle-output",
     );
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("adapter guards explicit work requests and validates duplicate suppression", async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [{ num: 7, company: "Fictional Runway", role: "Applied AI Engineer", stage: "Evaluated" }],
+    files: { "cv.md": "# Fictional CV\n" },
+  });
+  try {
+    const before = await readOpportunityLifecycle(fixture.root, 7);
+    const expectation = {
+      opportunity: 7,
+      expectedStage: before.opportunity.stage.id,
+      expectedRevision: before.opportunity.revision,
+    };
+    const requested = await requestOpportunityWork(fixture.root, expectation);
+    assert.equal(requested.code, "work-requested");
+    assert.equal(requested.effect, "accepted");
+    assert.equal(requested.workOrder.opportunity, 7);
+    assert.equal(requested.workOrder.artifact.kind, "approach-plan");
+    assert.equal(requested.before.stage.id, "evaluated");
+    assert.equal(requested.after.stage.id, "evaluated");
+
+    const repeated = await requestOpportunityWork(fixture.root, expectation);
+    assert.equal(repeated.code, "already-running");
+    assert.equal(repeated.effect, "unchanged");
+    assert.equal(repeated.workOrder.id, requested.workOrder.id);
+
+    const conflict = await requestOpportunityWork(fixture.root, { ...expectation, expectedRevision: "0".repeat(64) });
+    assert.equal(conflict.code, "opportunity-conflict");
+    assert.equal(conflict.effect, "conflict");
+    assert.equal(conflict.workOrder, null);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
