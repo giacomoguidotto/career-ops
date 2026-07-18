@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
-import { readApplicationReport, trackerCanDelete } from "@/lib/career-ops";
-import { ReportView } from "@/components/report-view";
+import { readOpportunityWorkspace } from "@/lib/career-ops";
+import { OpportunityView } from "@/components/opportunity-view";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function OpportunityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { app, report } = await readApplicationReport(id);
-  if (!app && !report) notFound();
-  return <ReportView id={id} app={app} report={report?.content ?? null} file={report?.file ?? null} canDelete={trackerCanDelete()} />;
+  const workspace = await readOpportunityWorkspace(id);
+  if (!workspace) notFound();
+  return <OpportunityView workspace={workspace} />;
 }

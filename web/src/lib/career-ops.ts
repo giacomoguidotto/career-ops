@@ -5,6 +5,7 @@ import {
   LifecycleAdapterError,
   readOpportunityLifecycle,
   tryListOpportunityLifecycle,
+  type OpportunityDetailResult,
   type OpportunitySummary,
 } from "@/lib/core/opportunity-lifecycle";
 
@@ -273,7 +274,7 @@ async function focusedOpportunity(n: string) {
   }
 }
 
-function readFocusedReport(relativeFile: string | null): ReportData | null {
+function readFocusedArtifact(relativeFile: string | null): ReportData | null {
   if (!relativeFile) return null;
   try {
     const root = fs.realpathSync(careerOpsRoot());
@@ -290,6 +291,32 @@ function readFocusedReport(relativeFile: string | null): ReportData | null {
   }
 }
 
+export type OpportunityWorkspace = {
+  detail: OpportunityDetailResult;
+  report: ReportData | null;
+  textArtifacts: Record<string, ReportData>;
+};
+
+/**
+ * Read the complete passive Opportunity surface from one canonical lifecycle
+ * snapshot. Artifact bytes are opened only after the core has confined and
+ * marked the path available. Text rendering is limited to Markdown artifacts;
+ * PDFs keep their existing dedicated viewer path.
+ */
+export async function readOpportunityWorkspace(n: string): Promise<OpportunityWorkspace | null> {
+  const detail = await focusedOpportunity(n);
+  if (!detail) return null;
+
+  const textArtifacts: Record<string, ReportData> = {};
+  for (const artifact of detail.opportunity.artifacts) {
+    if (artifact.state !== "available" || !artifact.path?.toLowerCase().endsWith(".md")) continue;
+    const content = readFocusedArtifact(artifact.path);
+    if (content) textArtifacts[artifact.kind] = content;
+  }
+  const report = textArtifacts.report ?? null;
+  return { detail, report, textArtifacts };
+}
+
 export async function findApplication(n: string): Promise<Application | null> {
   const focused = await focusedOpportunity(n);
   return focused ? applicationFromOpportunity(focused.opportunity) : null;
@@ -303,7 +330,7 @@ export async function readApplicationReport(n: string): Promise<{ app: Applicati
   );
   return {
     app: applicationFromOpportunity(focused.opportunity),
-    report: readFocusedReport(artifact?.path ?? null),
+    report: readFocusedArtifact(artifact?.path ?? null),
   };
 }
 

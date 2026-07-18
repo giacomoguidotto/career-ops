@@ -186,9 +186,15 @@ export function createFictionalOpportunityWorkspace(options = {}) {
     write(join(root, 'tracker-aliases.json'), `${JSON.stringify({ ...aliases, ...options.trackerAliases }, null, 2)}\n`);
   }
 
-  const opportunities = options.opportunities
+  let opportunities = options.opportunities
     ? [...options.opportunities]
     : defaultOpportunities(stages);
+  if (options.opportunityPatches) {
+    opportunities = opportunities.map((opportunity) => ({
+      ...opportunity,
+      ...(options.opportunityPatches[opportunity.num] ?? {}),
+    }));
+  }
   if (options.includeAliases) {
     opportunities.push(...aliasOpportunities(stages, opportunities.length + 1));
   }

@@ -49,8 +49,68 @@ const fixture = createFictionalOpportunityWorkspace({
   materializeCore: true,
   includeAliases: true,
   includeUnknownStage: true,
+  opportunityPatches: {
+    2: {
+      company: 'Northstar Fictional',
+      role: 'Senior Applied AI Researcher',
+      location: 'Remote, Europe',
+      report: '[report](../reports/002-northstar-fictional.md)',
+      pdf: '[pdf](../output/002-northstar-fictional.pdf)',
+    },
+  },
+  attempts: [{
+    id: 'A001',
+    opportunity: 3,
+    date: '2026-01-16T09:42:00Z',
+    type: 'formal_application',
+    channel: 'fictional_portal',
+    recipient: 'Fictional Hiring Team',
+    result: 'sent',
+    notes: 'Confirmed fictional submission.',
+  }],
+  approachPlans: {
+    '002-northstar-fictional.md': [
+      '# Northstar Fictional Approach Plan',
+      '',
+      '**Stage:** approach_ready',
+      '**Owner:** user',
+      '**Suggests:** generate_approach_plan',
+      '',
+      '## Recommended route',
+      '',
+      'Review the fictional application route before acting elsewhere.',
+      '',
+    ].join('\n'),
+  },
+  reports: {
+    '002-northstar-fictional.md': [
+      '# Evaluation: Northstar Fictional',
+      '',
+      '**Date:** 2026-01-15',
+      '**URL:** https://example.invalid/jobs/northstar',
+      '**Score:** 4.6/5',
+      '',
+      '## Decision Snapshot',
+      '',
+      '**Decision:** Apply',
+      '',
+      '**Why:** Strong fictional fit with one capability to verify.',
+      '',
+      '## Machine Summary',
+      '',
+      '```yaml',
+      'final_decision: apply',
+      '```',
+      '',
+      '## A. Requirements',
+      '',
+      'Evidence from the fictional job description.',
+      '',
+    ].join('\n'),
+  },
   files: {
     'cv.md': '# Fictional CV\n',
+    'output/002-northstar-fictional.pdf': 'fictional pdf bytes',
     'modes/_profile.md': '# Fictional profile\n',
     'portals.yml': 'title_filter:\n  positive:\n    - researcher\n',
     'doctor.mjs': [
@@ -175,6 +235,54 @@ try {
   assert.equal(logoSourceRequests, 1);
   await page.goto(`${baseUrl}/pipeline/1`);
   await page.reload();
+
+  await page.goto(`${baseUrl}/pipeline/2`);
+  await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+  const lifecycle = page.getByLabel(/Lifecycle: previous Evaluated, current Approach Ready/);
+  await lifecycle.waitFor();
+  assert.equal(await lifecycle.getByText('Agent-made').isVisible(), true);
+  for (const section of ['Overview', 'Initial evaluation', 'Approach Plan', 'Materials', 'Attempts', 'History']) {
+    assert.equal(await page.getByRole('navigation', { name: 'Opportunity sections' }).getByRole('link', { name: section }).isVisible(), true);
+  }
+  assert.equal(await page.getByRole('heading', { name: 'Decision Snapshot' }).isVisible(), true);
+  assert.equal(await page.getByText('Source: 002-northstar-fictional.md').isVisible(), true);
+  assert.equal(await page.locator('[data-history-type="artifact"]').count() >= 2, true);
+  const nextStepBox = await page.getByText('Your next step').boundingBox();
+  const evaluationBox = await page.getByRole('heading', { name: 'Initial evaluation' }).boundingBox();
+  assert.equal(Boolean(nextStepBox && evaluationBox && nextStepBox.y < evaluationBox.y), true);
+  const mobileAction = page.getByLabel('Primary Opportunity action');
+  await page.locator('#history').scrollIntoViewIfNeeded();
+  assert.equal(await mobileAction.isVisible(), true);
+  const mobileActionLink = mobileAction.getByRole('link');
+  const mobileActionBox = await mobileActionLink.boundingBox();
+  assert.equal(Boolean(mobileActionBox && mobileActionBox.height >= 44), true);
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert.equal(horizontalOverflow <= 0, true);
+
+  await page.goto(`${baseUrl}/pipeline/3`);
+  await page.getByRole('heading', { name: 'Attempts' }).waitFor();
+  assert.equal(await page.locator('[data-history-type="attempt"]').count(), 1);
+  assert.equal(await page.locator('[data-history-type="confirmed-attempt"]').count(), 1);
+
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  for (const review of [
+    { name: 'desktop-light', viewport: { width: 1440, height: 960 }, colorScheme: 'light' },
+    { name: 'desktop-dark', viewport: { width: 1440, height: 960 }, colorScheme: 'dark' },
+    { name: 'mobile-light', viewport: { width: 390, height: 844 }, colorScheme: 'light' },
+    { name: 'mobile-dark', viewport: { width: 390, height: 844 }, colorScheme: 'dark' },
+  ]) {
+    const reviewContext = await browser.newContext({
+      viewport: review.viewport,
+      colorScheme: review.colorScheme,
+      reducedMotion: 'reduce',
+    });
+    const reviewPage = await reviewContext.newPage();
+    await reviewPage.goto(`${baseUrl}/pipeline/2`);
+    await reviewPage.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `opportunity-${review.name}.png`), fullPage: true });
+    await reviewContext.close();
+  }
 
   await page.goto(`${baseUrl}/explore`);
   await page.getByRole('heading', { name: 'Explore' }).waitFor();
