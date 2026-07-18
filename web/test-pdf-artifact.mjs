@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
@@ -156,6 +156,29 @@ test("an exact page-count allowance is separate, guarded, and idempotent", async
       allowPageCount: 2,
     });
     assert.equal(repeated.effect, "unchanged");
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("an accepted PDF link is relative to a legacy flat tracker", async () => {
+  const fixture = pdfFixture();
+  try {
+    renameSync(
+      path.join(fixture.root, "data", "applications.md"),
+      path.join(fixture.root, "applications.md"),
+    );
+    const rendered = await record(fixture, { pages: 1 });
+    const outcome = await reconcilePdfArtifact({
+      root: fixture.root,
+      opportunity: 1,
+      expectedRevision: rendered.record.revision,
+    });
+    assert.equal(outcome.effect, "changed");
+    assert.match(
+      readFileSync(path.join(fixture.root, "applications.md"), "utf8"),
+      /\[pdf\]\(output\/cv-fictional\.pdf\)/,
+    );
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

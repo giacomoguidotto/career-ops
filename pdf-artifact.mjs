@@ -304,7 +304,7 @@ export async function reconcilePdfArtifact(options) {
       return { code: 'pdf-column-missing', effect: 'unavailable', retryable: false, message: 'The tracker has no PDF column.' };
     }
     while (parts.length <= snapshot.columns.pdf) parts.push('');
-    const trackerValue = `[pdf](../${accepted.pdfPath})`;
+    const trackerValue = `[pdf](${relativePath(dirname(snapshot.path), join(root, accepted.pdfPath))})`;
     const trackerChanged = parts[snapshot.columns.pdf] !== trackerValue;
     if (!acceptanceChanged && !trackerChanged) {
       return {
