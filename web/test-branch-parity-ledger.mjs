@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const WEB_ROOT = import.meta.dirname;
 const ROOT = join(WEB_ROOT, "..");
@@ -36,30 +36,33 @@ for (const row of ledger.rows) {
   }
   assert.equal(typeof row.implementationSlice, "string");
   for (const check of row.automatedChecks) {
-    assert.equal(existsSync(join(ROOT, check)), true, `${row.id} references existing check ${check}`);
+    assert.equal(check.endsWith(".mjs"), true, `${row.id} check is executable: ${check}`);
+    assert.equal(isAbsolute(check), false, `${row.id} check is repository-relative: ${check}`);
+    const resolved = resolve(ROOT, check);
+    const fromRoot = relative(ROOT, resolved);
+    assert.equal(
+      fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot),
+      true,
+      `${row.id} check stays inside the repository: ${check}`,
+    );
+    assert.equal(existsSync(resolved), true, `${row.id} references existing check ${check}`);
   }
 }
 
-const browserScript = readFileSync(join(WEB_ROOT, "test-opportunity-lifecycle-browser.mjs"), "utf8");
-const todayScript = readFileSync(join(WEB_ROOT, "test-today-supervision-browser.mjs"), "utf8");
-const groupedScript = readFileSync(join(WEB_ROOT, "test-grouped-work-browser.mjs"), "utf8");
 const workflow = readFileSync(join(ROOT, ".github", "workflows", "web-ci.yml"), "utf8");
 const renderedCases = new Set(ledger.rows.flatMap((row) => row.renderedCases));
-for (const renderedCase of renderedCases) {
-  assert.equal([browserScript, todayScript, groupedScript].some((source) => source.includes(renderedCase)), true, `rendered case ${renderedCase} is produced by a browser journey`);
-}
 for (const [state, cases] of Object.entries(ledger.stateEvidence)) {
   assert.equal(Array.isArray(cases) && cases.length > 0, true, `${state} has rendered evidence`);
   for (const renderedCase of cases) assert.equal(renderedCases.has(renderedCase), true, `${state} references known rendered case ${renderedCase}`);
 }
-for (const proof of ledger.accessibilityProofs) {
-  assert.equal(typeof proof === "string" && proof.length > 0, true);
-}
+assert.equal(new Set(ledger.accessibilityProofs).size, 9);
 assert.match(workflow, /branch-parity-browser:/);
 assert.match(workflow, /playwright install --with-deps chromium/);
 assert.match(workflow, /npm run test:browser/);
 assert.match(workflow, /if: failure\(\)/);
 assert.match(workflow, /web\/\.lifecycle-browser-artifacts\//);
+const packageJson = JSON.parse(readFileSync(join(WEB_ROOT, "package.json"), "utf8"));
+assert.match(packageJson.scripts["test:browser"], /test-branch-parity-evidence\.mjs$/);
 
 const css = readFileSync(join(WEB_ROOT, "src", "app", "globals.css"), "utf8");
 const cssBlock = (pattern) => css.match(pattern)?.[1] ?? "";

@@ -1106,6 +1106,7 @@ try {
 
     await reviewPage.goto(`${baseUrl}/pipeline/114`);
     await reviewPage.getByRole('heading', { name: 'Review Flow Co', exact: true }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} Opportunity detail has no horizontal overflow`);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `opportunity-detail-${review.name}.png`), fullPage: true });
     await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
     const guidedReviewDialog = reviewPage.getByRole('dialog', { name: 'Guided approach preparation' });
@@ -1126,10 +1127,12 @@ try {
 
     await reviewPage.goto(`${baseUrl}/pipeline/116`);
     await reviewPage.getByRole('status', { name: 'PDF needs review' }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} PDF review has no horizontal overflow`);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `pdf-overflow-review-${review.name}.png`), fullPage: true });
 
     await reviewPage.goto(`${baseUrl}/jobs`);
     await reviewPage.getByRole('heading', { name: 'Workers', exact: true }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} worker recovery has no horizontal overflow`);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `worker-recovery-${review.name}.png`), fullPage: true });
     await reviewContext.close();
   }

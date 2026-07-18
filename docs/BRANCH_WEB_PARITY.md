@@ -3,7 +3,7 @@
 Issue #55 closes the feature specified in #35 through the machine-checked ledger at
 [`web/branch-parity-ledger.json`](../web/branch-parity-ledger.json). The ledger is
 the canonical inventory. It records each implementation slice from #43 through
-#54, its settled web treatment or no-UI rationale, automated checks, rendered
+`#54`, its settled web treatment or no-UI rationale, automated checks, rendered
 cases, and passing evidence names.
 
 `npm test` in `web/` validates the ledger shape and every referenced check. The
