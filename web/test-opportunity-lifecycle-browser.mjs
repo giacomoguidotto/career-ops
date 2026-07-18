@@ -247,6 +247,8 @@ try {
 
   const firstRow = page.locator('[data-opportunity-id="1"]:visible');
   const secondRow = page.locator('[data-opportunity-id="2"]:visible');
+  assert.equal(await firstRow.evaluate((element) => element.tagName), 'A');
+  assert.equal(await firstRow.getAttribute('href'), '/pipeline/1');
   await secondRow.hover();
   await page.getByTestId('pipeline-preview').getByText('Northstar Fictional', { exact: true }).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');

@@ -573,10 +573,6 @@ function LedgerRow({
   const OwnerIcon = ownerIcon(opportunity.stage.owner);
   return (
     <tr
-      tabIndex={0}
-      data-opportunity-id={opportunity.opportunity}
-      data-selected={selected ? "true" : "false"}
-      aria-label={`Open ${opportunity.company}, ${opportunity.role}${selected ? ", selected" : ""}`}
       onMouseEnter={() => onPreview(opportunity.opportunity)}
       onMouseLeave={() => onPreview(null)}
       onFocus={() => onPreview(opportunity.opportunity)}
@@ -585,26 +581,26 @@ function LedgerRow({
         if ((event.target as HTMLElement).closest("a, button, input, textarea, select")) return;
         onOpen(opportunity.opportunity);
       }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" || event.target !== event.currentTarget) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onOpen(opportunity.opportunity);
-      }}
       className={cn(
-        "cursor-pointer align-top transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/50 motion-reduce:transition-none",
+        "cursor-pointer align-top transition motion-reduce:transition-none",
         previewed ? "bg-brand-soft/55 shadow-[inset_3px_0_0_var(--color-brand)]" : "hover:bg-surface-hover/70",
         selected && "ring-1 ring-inset ring-brand/35",
       )}
     >
       <td className="px-4 py-3">
-        <div className="flex min-w-0 items-start gap-2.5">
+        <Link
+          href={`/pipeline/${opportunity.opportunity}`}
+          data-opportunity-id={opportunity.opportunity}
+          data-selected={selected ? "true" : "false"}
+          aria-label={`Open ${opportunity.company}, ${opportunity.role}${selected ? ", selected" : ""}`}
+          className="flex min-w-0 items-start gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        >
           <CompanyLogo name={opportunity.company} size={28} />
           <div className="min-w-0 [overflow-wrap:anywhere]">
             <p className="font-semibold">{opportunity.company}</p>
             <p className="text-xs leading-relaxed text-muted">#{String(opportunity.opportunity).padStart(3, "0")} · {opportunity.role}</p>
           </div>
-        </div>
+        </Link>
       </td>
       <td className="px-3 py-3"><Badge tone={stageTone(opportunity.stage)}>{opportunity.stage.label}</Badge></td>
       <td className="px-3 py-3 text-muted"><span className="inline-flex items-center gap-1.5"><OwnerIcon className="size-3.5 shrink-0" /> {ownerLabel(opportunity.stage.owner)}</span></td>
