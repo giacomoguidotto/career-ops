@@ -1,6 +1,7 @@
 import { careerOpsRoot } from "@/lib/career-ops";
 import { lifecycleErrorResponse } from "@/lib/core/opportunity-lifecycle-api";
 import { allowPdfOverflow } from "@/lib/core/opportunity-lifecycle";
+import { acquireTrackerWrite, acquireWorker, releaseTrackerWrite, releaseWorker } from "@/lib/core/run-registry";
 import { recoverPdfWork } from "@/lib/core/work-recovery";
 import { readDurableWorker, settleDurableWorker } from "@/lib/core/worker-store";
 
@@ -30,23 +31,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     || typeof input.pages !== "number"
     || (input.workerId !== undefined && (typeof input.workerId !== "string" || !/^job-[a-z0-9-]{1,96}$/i.test(input.workerId)))
   ) return Response.json({ error: { code: "invalid-request", message: "The PDF allowance command is invalid." } }, { status: 400 });
+  const root = careerOpsRoot();
+  const worker = typeof input.workerId === "string" ? readDurableWorker(root, input.workerId) : null;
+  if (typeof input.workerId === "string" && (
+    !worker
+    || worker.status !== "terminal"
+    || worker.workOrder.workflow !== "pdf"
+    || worker.workOrder.opportunity !== opportunity
+  )) return Response.json({ error: { code: "worker-conflict", message: "This PDF worker cannot accept the allowance." } }, { status: 409 });
+  if (worker && !acquireWorker(worker.id)) {
+    return Response.json({ error: { code: "worker-active", message: "This PDF worker is already active." } }, { status: 409 });
+  }
+  const writeToken = acquireTrackerWrite();
   try {
-    const outcome = await allowPdfOverflow(careerOpsRoot(), {
+    const outcome = await allowPdfOverflow(root, {
       opportunity,
       expectedRevision: input.expectedRevision,
       pages: input.pages,
     });
     const effect = String(outcome.effect ?? "unavailable");
     let recovery = null;
-    if (["changed", "unchanged"].includes(effect) && typeof input.workerId === "string") {
-      const worker = readDurableWorker(careerOpsRoot(), input.workerId);
-      if (worker?.workOrder.workflow === "pdf" && worker.workOrder.opportunity === opportunity) {
-        recovery = await recoverPdfWork(careerOpsRoot(), worker.workOrder, { trigger: "reload" });
-        settleDurableWorker(careerOpsRoot(), worker.id, recovery);
-      }
+    if (["changed", "unchanged"].includes(effect) && worker) {
+      recovery = await recoverPdfWork(root, worker.workOrder, { trigger: "reload" });
+      settleDurableWorker(root, worker.id, recovery);
     }
     return Response.json({ ...outcome, ...(recovery ? { recovery } : {}) }, { status: effect === "conflict" ? 409 : effect === "unavailable" ? 503 : effect === "blocked" ? 422 : 200 });
   } catch (error) {
     return lifecycleErrorResponse(error);
+  } finally {
+    releaseTrackerWrite(writeToken);
+    if (worker) releaseWorker(worker.id);
   }
 }

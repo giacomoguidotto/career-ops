@@ -11,7 +11,7 @@ import {
   releaseWorker,
 } from "@/lib/core/run-registry";
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
-import { recoverLifecycleWork, recoverPdfWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import { recoverLifecycleWork, recoverPdfWork, recoverWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
 import { owningGroupForChild, ownsGroupChild, settleQueuedGroupChildConflict } from "@/lib/core/work-group-store";
 import { isWorkGroupId } from "@/lib/core/work-group";
 import {
@@ -534,7 +534,7 @@ export async function POST(req: Request) {
           try {
             const trigger = terminationTrigger ?? (cleanExit && !sawError ? "completed" : "non-zero-exit");
             appendWorkerPhase(careerOpsRoot(), durableWorkerId, "reconciling", "Inspecting canonical artifact and lifecycle state");
-            const recovery = await (kind === "pdf" ? recoverPdfWork : recoverLifecycleWork)(careerOpsRoot(), lifecycleWorkOrder, {
+            const recovery = await recoverWork(careerOpsRoot(), lifecycleWorkOrder, {
               trigger,
               exitCode: code,
               signal: signal ? String(signal) : null,

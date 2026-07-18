@@ -12,7 +12,7 @@ import {
   reconcilePdfArtifact,
 } from "../pdf-artifact.mjs";
 import { readOpportunityLifecycle } from "./src/lib/core/opportunity-lifecycle.ts";
-import { recoverPdfWork } from "./src/lib/core/work-recovery.ts";
+import { recoverPdfWork, recoverWork } from "./src/lib/core/work-recovery.ts";
 
 function pdfFixture() {
   return createFictionalOpportunityWorkspace({
@@ -34,7 +34,7 @@ function pdfFixture() {
   });
 }
 
-function record(fixture, { pages, budget = 1, allowOverflow = false } = {}) {
+async function record(fixture, { pages, budget = 1, allowOverflow = false } = {}) {
   return recordPdfArtifact({
     root: fixture.root,
     report: "001",
@@ -63,7 +63,7 @@ test("an accepted PDF becomes ready once and reconciles idempotently", async () 
   const fixture = pdfFixture();
   try {
     const before = await readOpportunityLifecycle(fixture.root, 1);
-    const rendered = record(fixture, { pages: 1 });
+    const rendered = await record(fixture, { pages: 1 });
     assert.equal(rendered.artifact.acceptance.status, "accepted");
     const first = await reconcilePdfArtifact({
       root: fixture.root,
@@ -93,7 +93,7 @@ test("a written overflow stays inspectable, unaccepted, and retryable after trim
   const fixture = pdfFixture();
   try {
     const before = await readOpportunityLifecycle(fixture.root, 1);
-    const rendered = record(fixture, { pages: 2 });
+    const rendered = await record(fixture, { pages: 2 });
     const detail = await readOpportunityLifecycle(fixture.root, 1);
     const artifact = detail.opportunity.artifacts.find((candidate) => candidate.kind === "pdf");
     assert.equal(rendered.artifact.state, "available");
@@ -115,9 +115,9 @@ test("a written overflow stays inspectable, unaccepted, and retryable after trim
 test("regeneration replaces overflow evidence with one accepted canonical success", async () => {
   const fixture = pdfFixture();
   try {
-    record(fixture, { pages: 2 });
+    await record(fixture, { pages: 2 });
     writeFileSync(path.join(fixture.root, "output", "cv-fictional.pdf"), "fictional pdf bytes v2");
-    const regenerated = record(fixture, { pages: 1 });
+    const regenerated = await record(fixture, { pages: 1 });
     const outcome = await reconcilePdfArtifact({
       root: fixture.root,
       opportunity: 1,
@@ -137,7 +137,7 @@ test("regeneration replaces overflow evidence with one accepted canonical succes
 test("an exact page-count allowance is separate, guarded, and idempotent", async () => {
   const fixture = pdfFixture();
   try {
-    const overflow = record(fixture, { pages: 2 });
+    const overflow = await record(fixture, { pages: 2 });
     const allowed = await reconcilePdfArtifact({
       root: fixture.root,
       opportunity: 1,
@@ -164,9 +164,9 @@ test("an exact page-count allowance is separate, guarded, and idempotent", async
 test("a stale overflow revision cannot accept a newer render", async () => {
   const fixture = pdfFixture();
   try {
-    const stale = record(fixture, { pages: 2 });
+    const stale = await record(fixture, { pages: 2 });
     writeFileSync(path.join(fixture.root, "output", "cv-fictional.pdf"), "fictional pdf bytes v3");
-    record(fixture, { pages: 3 });
+    await record(fixture, { pages: 3 });
     const outcome = await reconcilePdfArtifact({
       root: fixture.root,
       opportunity: 1,
@@ -185,7 +185,7 @@ test("uncertain process exit recovers accepted PDF evidence without duplicate re
   const fixture = pdfFixture();
   try {
     const before = await readOpportunityLifecycle(fixture.root, 1);
-    record(fixture, { pages: 2, allowOverflow: true });
+    await record(fixture, { pages: 2, allowOverflow: true });
     const order = workOrder(before);
     const first = await recoverPdfWork(fixture.root, order, { trigger: "uncertain-close" });
     assert.equal(first.outcome, "recovered");
@@ -193,6 +193,34 @@ test("uncertain process exit recovers accepted PDF evidence without duplicate re
     const second = await recoverPdfWork(fixture.root, order, { trigger: "reload" });
     assert.equal(second.outcome, "recovered");
     assert.equal(readFileSync(path.join(fixture.root, "data", "applications.md"), "utf8"), trackerAfterFirst);
+
+    const dispatched = await recoverWork(fixture.root, order, { trigger: "reload" });
+    assert.equal(dispatched.outcome, "recovered");
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("render recording serializes with a stale allowance without clobbering the newer PDF", async () => {
+  const fixture = pdfFixture();
+  try {
+    const stale = await record(fixture, { pages: 2 });
+    writeFileSync(path.join(fixture.root, "output", "cv-fictional.pdf"), "fictional concurrent pdf bytes");
+    const [allowance, newer] = await Promise.all([
+      reconcilePdfArtifact({
+        root: fixture.root,
+        opportunity: 1,
+        expectedRevision: stale.record.revision,
+        allowPageCount: 2,
+      }),
+      record(fixture, { pages: 3 }),
+    ]);
+    assert.equal(allowance.effect, "changed");
+    assert.equal(newer.artifact.acceptance.status, "needs-review");
+    const current = inspectPdfArtifact({ root: fixture.root, row: { num: 1, report: "[001](x)" } });
+    assert.equal(current.record.revision, newer.record.revision);
+    assert.equal(current.artifact.acceptance.actualPages, 3);
+    assert.equal(current.artifact.acceptance.status, "needs-review");
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

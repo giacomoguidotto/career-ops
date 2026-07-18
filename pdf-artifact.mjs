@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
@@ -41,7 +41,7 @@ function checkoutRoot(root) {
   if (!existsSync(candidate) || !statSync(candidate).isDirectory()) {
     throw new Error(`career-ops checkout root not found: ${candidate}`);
   }
-  return candidate;
+  return realpathSync(candidate);
 }
 
 function trackerPath(root) {
@@ -67,7 +67,7 @@ function relativePath(root, candidate) {
 }
 
 function safeRepoPath(root, candidate) {
-  const absolute = resolve(candidate);
+  const absolute = realpathSync(resolve(candidate));
   const rel = relative(root, absolute);
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw new Error(`PDF artifact path must stay inside the checkout: ${candidate}`);
@@ -102,6 +102,8 @@ function parseRecord(value, expectedReport = null) {
     || !Number.isSafeInteger(record.maxPages) || record.maxPages < 0
     || !['accepted', 'needs-review'].includes(record.status)
     || !['within-budget', 'explicit-overflow', null].includes(record.acceptedBy)
+    || (record.status === 'needs-review' && record.acceptedBy !== null)
+    || (record.status === 'accepted' && record.acceptedBy === null)
     || typeof record.trimGuidance !== 'string'
     || typeof record.pdfRevision !== 'string' || !/^[a-f0-9]{64}$/.test(record.pdfRevision)
     || typeof record.generatedAt !== 'string'
@@ -171,41 +173,52 @@ function publicArtifact(root, record) {
 }
 
 /** Record one completed Chromium render before page-budget acceptance. */
-export function recordPdfArtifact(options) {
+export async function recordPdfArtifact(options) {
   const root = checkoutRoot(options.root);
   const report = normalizeReport(options.report);
   if (!report) return null;
-  const pdf = safeRepoPath(root, options.pdfPath);
-  let html = null;
-  if (options.htmlPath) {
-    try { html = safeRepoPath(root, options.htmlPath); } catch { html = null; }
+  const tracker = trackerPath(root);
+  const lock = tracker ? await acquireTrackerLock(trackerLockDirFor(tracker), {
+    timeoutMs: Number(options.lockTimeoutMs) || 60_000,
+    retryMs: Number(options.lockRetryMs) || 75,
+    staleMs: Number(options.lockStaleMs) || 10 * 60_000,
+    tracker,
+  }) : null;
+  try {
+    const pdf = safeRepoPath(root, options.pdfPath);
+    let html = null;
+    if (options.htmlPath) {
+      try { html = safeRepoPath(root, options.htmlPath); } catch { html = null; }
+    }
+    const pageCount = Number(options.pageCount);
+    const maxPages = Number(options.maxPages);
+    if (!Number.isSafeInteger(pageCount) || pageCount <= 0) throw new Error('pageCount must be a positive integer');
+    if (!Number.isSafeInteger(maxPages) || maxPages < 0) throw new Error('maxPages must be a non-negative integer');
+    const allowOverflow = options.allowOverflow === true;
+    const overflow = maxPages > 0 && pageCount > maxPages;
+    const status = overflow && !allowOverflow ? 'needs-review' : 'accepted';
+    const format = String(options.format ?? 'a4').toLowerCase();
+    if (!['a4', 'letter'].includes(format)) throw new Error('format must be a4 or letter');
+    const record = withRevision({
+      version: RECORD_VERSION,
+      report,
+      pdfPath: pdf.relative,
+      htmlPath: html?.relative ?? '',
+      format,
+      pageCount,
+      maxPages,
+      status,
+      acceptedBy: status === 'needs-review' ? null : overflow ? 'explicit-overflow' : 'within-budget',
+      trimGuidance: PDF_TRIM_GUIDANCE,
+      pdfRevision: digest(readFileSync(pdf.absolute)),
+      generatedAt: new Date().toISOString(),
+    });
+    mkdirSync(join(root, RECORD_DIR), { recursive: true });
+    writeFileAtomic(recordPath(root, report), `${JSON.stringify(record, null, 2)}\n`);
+    return { record, artifact: publicArtifact(root, record) };
+  } finally {
+    lock?.release();
   }
-  const pageCount = Number(options.pageCount);
-  const maxPages = Number(options.maxPages);
-  if (!Number.isSafeInteger(pageCount) || pageCount <= 0) throw new Error('pageCount must be a positive integer');
-  if (!Number.isSafeInteger(maxPages) || maxPages < 0) throw new Error('maxPages must be a non-negative integer');
-  const allowOverflow = options.allowOverflow === true;
-  const overflow = maxPages > 0 && pageCount > maxPages;
-  const status = overflow && !allowOverflow ? 'needs-review' : 'accepted';
-  const format = String(options.format ?? 'a4').toLowerCase();
-  if (!['a4', 'letter'].includes(format)) throw new Error('format must be a4 or letter');
-  const record = withRevision({
-    version: RECORD_VERSION,
-    report,
-    pdfPath: pdf.relative,
-    htmlPath: html?.relative ?? '',
-    format,
-    pageCount,
-    maxPages,
-    status,
-    acceptedBy: status === 'needs-review' ? null : overflow ? 'explicit-overflow' : 'within-budget',
-    trimGuidance: PDF_TRIM_GUIDANCE,
-    pdfRevision: digest(readFileSync(pdf.absolute)),
-    generatedAt: new Date().toISOString(),
-  });
-  mkdirSync(join(root, RECORD_DIR), { recursive: true });
-  writeFileAtomic(recordPath(root, report), `${JSON.stringify(record, null, 2)}\n`);
-  return { record, artifact: publicArtifact(root, record) };
 }
 
 /** Resolve a report number to one exact tracker Opportunity. */

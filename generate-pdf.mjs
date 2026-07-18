@@ -422,7 +422,7 @@ async function generatePDF() {
   // Persist the render decision before enforcing the budget. A written
   // overflow must survive the non-zero exit as an inspectable needs-review
   // artifact, while an accepted render can be reconciled idempotently.
-  const recorded = recordPdfArtifact({
+  const recorded = await recordPdfArtifact({
     root: __dirname,
     report: reportNum,
     pdfPath: result.outputPath,

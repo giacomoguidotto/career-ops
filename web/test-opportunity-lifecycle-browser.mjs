@@ -326,7 +326,7 @@ const fixture = createFictionalOpportunityWorkspace({
     ].join('\n'),
   },
 });
-const overflowRecord = recordPdfArtifact({
+const overflowRecord = await recordPdfArtifact({
   root: fixture.root,
   report: '116',
   pdfPath: join(fixture.root, 'output', '116-overflow-review.pdf'),

@@ -445,3 +445,14 @@ export async function recoverPdfWork(
     return result(workOrder, evidence, "unavailable", "The accepted PDF remains inspectable, but reconciliation is unavailable.", summary, contract, "pdf-reconciliation-unavailable", artifact);
   }
 }
+
+/** Dispatch durable recovery by the canonical workflow recorded on the worker. */
+export async function recoverWork(
+  root: string,
+  workOrder: LifecycleWorkOrder,
+  evidence: WorkProcessEvidence,
+): Promise<WorkRecovery> {
+  return workOrder.workflow === "pdf"
+    ? recoverPdfWork(root, workOrder, evidence)
+    : recoverLifecycleWork(root, workOrder, evidence);
+}
