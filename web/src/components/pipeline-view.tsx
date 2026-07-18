@@ -39,6 +39,8 @@ import { cn } from "@/lib/cn";
 
 type Stage = OpportunityListResult["contract"]["stages"][number];
 type DialogKind = "commands" | "help" | "prepare" | "report";
+const SORT_KEYS = ["company", "role", "score", "status", "date"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
 
 function humanize(value: string | null): string {
   if (!value) return "No next action";
@@ -73,6 +75,19 @@ function attentionLabel(opportunity: OpportunitySummary): string {
 
 function stageTone(stage: OpportunitySummary["stage"]): "warn" | "muted" {
   return stage.owner === "user" ? "warn" : "muted";
+}
+
+function compareOpportunities(left: OpportunitySummary, right: OpportunitySummary, key: SortKey, direction: 1 | -1): number {
+  if (key === "score") {
+    const leftScore = scoreNum(left.score);
+    const rightScore = scoreNum(right.score);
+    const leftValue = Number.isNaN(leftScore) ? Number.NEGATIVE_INFINITY : leftScore;
+    const rightValue = Number.isNaN(rightScore) ? Number.NEGATIVE_INFINITY : rightScore;
+    return (leftValue - rightValue) * direction;
+  }
+  const leftValue = key === "status" ? left.stage.label : left[key];
+  const rightValue = key === "status" ? right.stage.label : right[key];
+  return leftValue.localeCompare(rightValue) * direction;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -123,6 +138,9 @@ export function PipelineView({
   }) ?? null;
   const pMin = Number.parseFloat(params.get("min") ?? "");
   const minFilter = Number.isFinite(pMin) ? pMin : null;
+  const requestedSort = params.get("sort") ?? "";
+  const sortKey = (SORT_KEYS as readonly string[]).includes(requestedSort) ? requestedSort as SortKey : null;
+  const sortDirection: 1 | -1 = params.get("dir") === "1" ? 1 : -1;
 
   const [query, setQuery] = useState(params.get("q") ?? "");
   const lastUrlQuery = useRef(params.get("q") ?? "");
@@ -163,15 +181,15 @@ export function PipelineView({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return stageRows;
-    return stageRows.filter((opportunity) => [
+    const matching = needle ? stageRows.filter((opportunity) => [
       opportunity.company,
       opportunity.role,
       opportunity.stage.label,
       humanize(opportunity.stage.suggests),
       attentionLabel(opportunity),
-    ].join(" ").toLowerCase().includes(needle));
-  }, [query, stageRows]);
+    ].join(" ").toLowerCase().includes(needle)) : stageRows;
+    return sortKey ? [...matching].sort((left, right) => compareOpportunities(left, right, sortKey, sortDirection)) : matching;
+  }, [query, sortDirection, sortKey, stageRows]);
 
   const selectedParam = Number(params.get("selected"));
   const selectedId = Number.isSafeInteger(selectedParam) && selectedParam > 0 ? selectedParam : null;
@@ -406,7 +424,7 @@ export function PipelineView({
                           <LedgerRow
                             key={opportunity.opportunity}
                             opportunity={opportunity}
-                            selected={stageSelection?.opportunity === opportunity.opportunity}
+                            selected={selected?.opportunity === opportunity.opportunity}
                             previewed={previewed?.opportunity === opportunity.opportunity}
                             onPreview={setTemporaryPreview}
                             onOpen={(id) => router.push(`/pipeline/${id}`)}
@@ -419,7 +437,7 @@ export function PipelineView({
                         <MobileOpportunity
                           key={opportunity.opportunity}
                           opportunity={opportunity}
-                          selected={stageSelection?.opportunity === opportunity.opportunity}
+                          selected={selected?.opportunity === opportunity.opportunity}
                           onPreview={setTemporaryPreview}
                         />
                       ))}
@@ -434,7 +452,7 @@ export function PipelineView({
               Hover or focus previews · <kbd>J</kbd>/<kbd>K</kbd> selects · <kbd>Enter</kbd> opens · <kbd>/</kbd> searches · <kbd>?</kbd> shows help
             </p>
             <p className="sr-only" aria-live="polite">
-              {stageSelection ? `Selected Opportunity ${stageSelection.opportunity}, ${stageSelection.company}` : "No Opportunity selected"}
+              {selected ? `Selected Opportunity ${selected.opportunity}, ${selected.company}` : "No Opportunity selected"}
             </p>
           </>
         )}
@@ -442,9 +460,9 @@ export function PipelineView({
 
       {dialog === "commands" && (
         <CommandPalette
-          selected={stageSelection}
+          selected={selected}
           onClose={closeDialog}
-          onOpen={() => stageSelection && router.push(`/pipeline/${stageSelection.opportunity}`)}
+          onOpen={() => selected && router.push(`/pipeline/${selected.opportunity}`)}
           onShowAll={() => {
             closeDialog();
             setStage(null);
@@ -454,7 +472,7 @@ export function PipelineView({
       )}
       {dialog === "help" && <ShortcutHelp onClose={closeDialog} />}
       {(dialog === "prepare" || dialog === "report") && (
-        <GuardedReview kind={dialog} selected={stageSelection} onClose={closeDialog} />
+        <GuardedReview kind={dialog} selected={selected} onClose={closeDialog} />
       )}
     </>
   );

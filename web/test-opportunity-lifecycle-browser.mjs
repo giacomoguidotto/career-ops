@@ -113,6 +113,7 @@ const fixture = createFictionalOpportunityWorkspace({
     company: 'Fictional International Research Cooperative With A Deliberately Long Name',
     role: 'Principal Applied Artificial Intelligence Systems Researcher For Multilingual Public Interest Infrastructure',
     stage: 'Evaluated',
+    score: '4.9/5',
     notes: 'Long localized content must wrap without hiding any facts.',
   }],
   files: {
@@ -272,6 +273,13 @@ try {
   await pipelineSearch.fill('Fictional Company 2');
   await page.locator('[data-opportunity-id="2"]:visible').waitFor();
   assert.equal(await page.locator('[data-opportunity-id]:visible').count(), 1);
+  await page.getByRole('button', { name: /Commands/ }).click();
+  const filteredCommands = page.getByRole('dialog', { name: 'Pipeline commands' });
+  await filteredCommands.waitFor();
+  assert.equal(await filteredCommands.getByText(/Selected: #002/).isVisible(), true);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'pipeline-commands-trigger');
+  await pipelineSearch.focus();
   await page.keyboard.press('j');
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
   await pipelineSearch.fill('');
@@ -328,6 +336,9 @@ try {
 
   await page.getByRole('button', { name: /^All / }).click();
   await page.waitForURL((url) => !url.searchParams.has('stage'));
+  await page.goto(`${baseUrl}/pipeline?sort=score&dir=-1`);
+  await page.locator('[data-opportunity-id="900"]:visible').waitFor();
+  assert.equal(await page.locator('tbody [data-opportunity-id]').first().getAttribute('data-opportunity-id'), '900');
   await page.setViewportSize({ width: 320, height: 844 });
   await pipelineSearch.fill('Fictional International Research Cooperative');
   const longCard = page.locator('[data-opportunity-id="900"]:visible');
