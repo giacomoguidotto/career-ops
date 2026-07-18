@@ -15,8 +15,10 @@ import {
   listOpportunities,
   readOpportunityContract,
   readOpportunity,
+  reconcileOpportunityWork,
+  requestOpportunityWork,
 } from '../opportunity-lifecycle.mjs';
-import { loadStates } from '../tracker-utils.mjs';
+import { loadStates, trackerLockDirFor } from '../tracker-utils.mjs';
 import { detectColumns, inspectColumns } from '../tracker-parse.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -346,7 +348,7 @@ test('structured CLI transports contract, list, and focused reads without mutati
   }
 });
 
-test('passive core and web adapter contain no filesystem mutation or copied domain rules', () => {
+test('web adapter stays passive and the lifecycle seam reuses canonical mutation authorities', () => {
   const core = readFileSync(new URL('../opportunity-lifecycle.mjs', import.meta.url), 'utf8');
   const adapter = readFileSync(new URL('../web/src/lib/core/opportunity-lifecycle.ts', import.meta.url), 'utf8');
   const mutationApis = ['writeFile', 'appendFile', 'renameSync', 'unlinkSync', 'rmSync', 'mkdirSync'];
@@ -358,10 +360,14 @@ test('passive core and web adapter contain no filesystem mutation or copied doma
     'scan.mjs',
   ];
 
-  assert.deepEqual(mutationApis.filter((name) => core.includes(name)), []);
   assert.deepEqual(mutationApis.filter((name) => adapter.includes(name)), []);
   assert.deepEqual(copiedAuthorities.filter((name) => adapter.includes(name)), []);
   assert.equal(adapter.includes('execFileSync'), false);
+  assert.equal(core.includes('acquireTrackerLock'), true);
+  assert.equal(core.includes('trackerLockDirFor'), true);
+  assert.equal(core.includes('writeFileAtomic'), true);
+  assert.equal(core.includes('computeAdvance'), true);
+  assert.equal(core.includes('packArtifact'), true);
 });
 
 test('focused reads use one coherent Attempt snapshot', () => {
@@ -531,6 +537,222 @@ test('expected generated artifact kinds derive from every agent-owned Stage', ()
       });
     }
   } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('explicit work requests cover every Agent-owned Stage without changing lifecycle truth', async () => {
+  const stages = loadStates({ rootDir: REPO_ROOT, force: true }).records.filter((stage) => stage.owner === 'agent');
+  for (const [index, stage] of stages.entries()) {
+    const fixture = createFictionalOpportunityWorkspace({
+      materializeCore: true,
+      opportunities: [{
+        num: index + 1,
+        company: `Request ${stage.label} Co`,
+        role: 'Researcher',
+        stage: stage.label,
+      }],
+      missingOptionalFiles: true,
+    });
+    try {
+      const before = readOpportunity({ root: fixture.root, opportunity: index + 1 }).opportunity;
+      const request = () => requestOpportunityWork({
+          root: fixture.root,
+          opportunity: index + 1,
+          expectedStage: before.stage.id,
+          expectedRevision: before.revision,
+        });
+      const outcomes = await Promise.all([request(), request()]);
+      const requested = outcomes.find((outcome) => outcome.code === 'work-requested');
+      const repeated = outcomes.find((outcome) => outcome.code === 'already-running');
+      assert.ok(requested);
+      assert.ok(repeated);
+      assert.equal(requested.code, 'work-requested');
+      assert.equal(requested.effect, 'accepted');
+      assert.equal(requested.retryable, false);
+      assert.equal(requested.workOrder.action, stage.suggests);
+      assert.equal(requested.workOrder.artifact.kind, stage.suggests.replace(/^generate_/, '').replace(/_/g, '-'));
+      assert.equal(requested.workOrder.consequence.stage, stage.nextStates.find((id) => id.endsWith('_ready')));
+      assert.equal(requested.before.stage.id, stage.id);
+      assert.equal(requested.after.stage.id, stage.id);
+      assert.equal(readOpportunity({ root: fixture.root, opportunity: index + 1 }).opportunity.stage.id, stage.id);
+
+      assert.equal(repeated.code, 'already-running');
+      assert.equal(repeated.effect, 'unchanged');
+      assert.equal(repeated.message, 'Already running.');
+      assert.equal(repeated.workOrder.id, requested.workOrder.id);
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
+  }
+});
+
+test('stale requests conflict with a fresh authoritative summary and write nothing', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [{ num: 1, company: 'Conflict Co', role: 'Researcher', stage: 'Evaluated' }],
+    missingOptionalFiles: true,
+  });
+  try {
+    const before = fingerprintFictionalWorkspace(fixture.root);
+    const result = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 1,
+      expectedStage: 'evaluated',
+      expectedRevision: '0'.repeat(64),
+    });
+    assert.equal(result.code, 'opportunity-conflict');
+    assert.equal(result.effect, 'conflict');
+    assert.equal(result.before.revision, result.after.revision);
+    assert.equal(result.before.stage.id, 'evaluated');
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('reconciliation covers canonical and legacy artifacts for every Agent-owned Stage', async () => {
+  const stages = loadStates({ rootDir: REPO_ROOT, force: true }).records.filter((stage) => stage.owner === 'agent');
+  for (const [index, stage] of stages.entries()) {
+    for (const legacy of [false, true]) {
+      const num = index + 1;
+      const header = legacy ? 'Action' : 'Suggests';
+      const fixture = createFictionalOpportunityWorkspace({
+        materializeCore: true,
+        opportunities: [{ num, company: `${stage.label} Artifact Co`, role: 'Researcher', stage: stage.label }],
+        missingOptionalFiles: true,
+        approachPlans: {
+          [`${String(num).padStart(3, '0')}-${legacy ? 'legacy' : 'canonical'}.md`]: [
+            '# Generated artifact',
+            '',
+            `**Stage:** ${stage.id}`,
+            '**Owner:** agent',
+            `**${header}:** ${stage.suggests}`,
+            '',
+          ].join('\n'),
+        },
+      });
+      try {
+        const before = readOpportunity({ root: fixture.root, opportunity: num }).opportunity;
+        const result = await reconcileOpportunityWork({
+          root: fixture.root,
+          opportunity: num,
+          expectedStage: before.stage.id,
+          expectedRevision: before.revision,
+        });
+        const readyId = stage.nextStates.find((id) => id.endsWith('_ready'));
+        assert.equal(result.code, 'work-reconciled');
+        assert.equal(result.effect, 'changed');
+        assert.equal(result.before.stage.id, stage.id);
+        assert.equal(result.after.stage.id, readyId);
+        assert.equal(result.artifacts.some((artifact) => artifact.action === stage.suggests), true);
+
+        const current = readOpportunity({ root: fixture.root, opportunity: num }).opportunity;
+        const repeated = await reconcileOpportunityWork({
+          root: fixture.root,
+          opportunity: num,
+          expectedStage: current.stage.id,
+          expectedRevision: current.revision,
+        });
+        assert.equal(repeated.code, 'already-reconciled');
+        assert.equal(repeated.effect, 'unchanged');
+        assert.equal(repeated.before.stage.id, readyId);
+        assert.equal(repeated.after.stage.id, readyId);
+      } finally {
+        removeFictionalOpportunityWorkspace(fixture.root);
+      }
+    }
+  }
+});
+
+test('reconciliation blocks absent, partial, and stale artifacts without changing Stage', async () => {
+  const cases = [
+    ['absent', {}],
+    ['partial', { '001-partial.md': '# Partial artifact\n\nNo canonical action header.\n' }],
+    ['stale', { '001-stale.md': '# Stale artifact\n\n**Suggests:** generate_negotiation_prep\n' }],
+  ];
+  for (const [name, approachPlans] of cases) {
+    const fixture = createFictionalOpportunityWorkspace({
+      opportunities: [{ num: 1, company: `${name} Co`, role: 'Researcher', stage: 'Evaluated' }],
+      missingOptionalFiles: true,
+      approachPlans,
+    });
+    try {
+      const before = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+      const trackerBefore = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8');
+      const result = await reconcileOpportunityWork({
+        root: fixture.root,
+        opportunity: 1,
+        expectedStage: before.stage.id,
+        expectedRevision: before.revision,
+      });
+      assert.equal(result.code, 'artifact-incomplete');
+      assert.equal(result.effect, 'blocked');
+      assert.equal(result.retryable, true);
+      assert.equal(result.after.stage.id, 'evaluated');
+      assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
+  }
+});
+
+test('stale reconciliation conflicts before inspecting or writing artifacts', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [{ num: 1, company: 'Reconcile Conflict Co', role: 'Researcher', stage: 'Evaluated' }],
+    missingOptionalFiles: true,
+    approachPlans: {
+      '001-complete.md': '# Complete\n\n**Suggests:** generate_approach_plan\n',
+    },
+  });
+  try {
+    const before = fingerprintFictionalWorkspace(fixture.root);
+    const result = await reconcileOpportunityWork({
+      root: fixture.root,
+      opportunity: 1,
+      expectedStage: 'evaluated',
+      expectedRevision: 'f'.repeat(64),
+    });
+    assert.equal(result.code, 'opportunity-conflict');
+    assert.equal(result.effect, 'conflict');
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('work commands report retryable unavailability during shared tracker lock contention', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [{ num: 1, company: 'Busy Co', role: 'Researcher', stage: 'Evaluated' }],
+    missingOptionalFiles: true,
+  });
+  const tracker = join(fixture.root, 'data', 'applications.md');
+  const lockDir = trackerLockDirFor(tracker);
+  try {
+    mkdirSync(lockDir);
+    writeFileSync(join(lockDir, 'owner.json'), JSON.stringify({
+      pid: process.pid,
+      token: 'fictional-active-owner',
+      started_at: new Date().toISOString(),
+      tracker,
+    }));
+    const before = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    for (const command of [requestOpportunityWork, reconcileOpportunityWork]) {
+      const result = await command({
+        root: fixture.root,
+        opportunity: 1,
+        expectedStage: before.stage.id,
+        expectedRevision: before.revision,
+        lockTimeoutMs: 25,
+        lockRetryMs: 5,
+      });
+      assert.equal(result.code, 'tracker-busy');
+      assert.equal(result.effect, 'unavailable');
+      assert.equal(result.retryable, true);
+      assert.equal(result.before, null);
+      assert.equal(result.after, null);
+    }
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
     removeFictionalOpportunityWorkspace(fixture.root);
   }
 });

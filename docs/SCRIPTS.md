@@ -33,7 +33,9 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run approach:record` | `record-approach.mjs` | Append one confirmed Approach Attempt |
 | `npm run approach:migrate` | `migrate-approaches.mjs` | Preview/apply legacy state and attempt migration |
 | `npm run approach:evidence` | `approach-evidence.mjs` | Audit whether channel outcomes support a conclusion |
-| `npm run lifecycle -- list` | `opportunity-lifecycle.mjs` | Read the passive canonical Opportunity lifecycle contract |
+| `npm run lifecycle -- list` | `opportunity-lifecycle.mjs` | Read the canonical Opportunity lifecycle contract |
+| `npm run lifecycle -- request` | `opportunity-lifecycle.mjs` | Reserve one revision-guarded Agent-owned work order without changing Stage |
+| `npm run lifecycle -- reconcile` | `opportunity-lifecycle.mjs` | Reconcile a complete canonical artifact to its paired Ready Stage |
 | `npm run paste-reply` | `paste-reply.mjs` | Manual/no-Gmail input into the `reply-watch.mjs` classification pipeline |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
 

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Passive Opportunity lifecycle contract.
+ * Canonical Opportunity lifecycle contract and guarded command seam.
  *
  * This module is the single deep read seam for lifecycle consumers. It derives
  * Stage behavior from templates/states.yml and tracker parsing from the shared
- * canonical readers. Passive functions in this module never write files or
- * start generation.
+ * canonical readers. Passive functions never write files or start generation;
+ * explicit commands recheck revisions under the shared tracker lock.
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -30,9 +30,22 @@ import {
   parseClusterRegistry,
   selectCandidacyCandidates,
 } from './candidacy-select.mjs';
-import { findPack, packArtifact } from './advance-stage.mjs';
-import { inspectColumns, loadTrackerHeaderAliases, parseTrackerRow } from './tracker-parse.mjs';
-import { loadStates, resolveState } from './tracker-utils.mjs';
+import {
+  applyStatusToLine,
+  computeAdvance,
+  findPack,
+  packArtifact,
+  syncPackHeader,
+} from './advance-stage.mjs';
+import { inspectColumns, loadTrackerHeaderAliases, parseTrackerRow, resolveColumns } from './tracker-parse.mjs';
+import {
+  acquireTrackerLock,
+  loadStates,
+  pairedReadyStage,
+  resolveState,
+  trackerLockDirFor,
+  writeFileAtomic,
+} from './tracker-utils.mjs';
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
 export const OPPORTUNITY_LIFECYCLE_CONTRACT_ID = 'career-ops.opportunity-lifecycle';
@@ -748,31 +761,318 @@ export function readOpportunity(options = {}) {
   return { ...focused, revision: digest(focused) };
 }
 
+const COMMAND_EFFECTS = new Set(['accepted', 'changed', 'unchanged', 'blocked', 'conflict', 'unavailable']);
+
+function commandOutcome({ code, effect, retryable, message, before = null, after = before, artifacts = [], workOrder = null }) {
+  if (!COMMAND_EFFECTS.has(effect)) throw new Error(`invalid lifecycle command effect: ${effect}`);
+  return { code, effect, retryable, message, before, after, artifacts, workOrder };
+}
+
+function parseCommandExpectation(options) {
+  const rawOpportunity = options.opportunity;
+  const opportunity = typeof rawOpportunity === 'string' && !/^\d+$/.test(rawOpportunity)
+    ? Number.NaN
+    : Number(rawOpportunity);
+  if (!Number.isSafeInteger(opportunity) || opportunity <= 0) {
+    throw new Error('opportunity must be a positive tracker number');
+  }
+  if (typeof options.expectedStage !== 'string' || !/^[a-z][a-z0-9_]*$/.test(options.expectedStage)) {
+    throw new Error('expectedStage must be a canonical Stage id');
+  }
+  if (typeof options.expectedRevision !== 'string' || !/^[a-f0-9]{64}$/.test(options.expectedRevision)) {
+    throw new Error('expectedRevision must be a lifecycle summary revision');
+  }
+  return { opportunity, expectedStage: options.expectedStage, expectedRevision: options.expectedRevision };
+}
+
+function expectationConflict(summary, expected) {
+  return summary.stage.id !== expected.expectedStage || summary.revision !== expected.expectedRevision;
+}
+
+function commandArtifacts(summary) {
+  return summary?.artifacts?.map(({ kind, action, expectedAction, state, format, path, revision }) => ({
+    kind, action, expectedAction, state, format, path, revision,
+  })) ?? [];
+}
+
+function workOrderFor(summary, states) {
+  const stage = resolveState(summary.rawStage, states);
+  const ready = stage ? pairedReadyStage(stage, states, stage.suggests) : null;
+  if (!stage || stage.owner !== 'agent' || !stage.suggests || !ready) return null;
+  const kind = actionArtifactKind(stage.suggests);
+  const id = digest({ opportunity: summary.opportunity, stage: stage.id, action: stage.suggests });
+  return {
+    id,
+    opportunity: summary.opportunity,
+    action: stage.suggests,
+    source: { stage: stage.id, revision: summary.revision },
+    artifact: { kind, directory: 'output/next-packs' },
+    consequence: { stage: ready.id, label: ready.label },
+  };
+}
+
+function workStatePath(root, workOrder) {
+  return join(root, '.career-ops-web', 'lifecycle-work', `${workOrder.id}.json`);
+}
+
+function readWorkState(path) {
+  if (!existsSync(path)) return null;
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    if (
+      !value
+      || value.status !== 'active'
+      || typeof value.workOrder?.id !== 'string'
+      || value.workOrder.id !== value.id
+    ) return { invalid: true };
+    return value;
+  } catch {
+    return { invalid: true };
+  }
+}
+
+function writeWorkState(root, workOrder) {
+  const path = workStatePath(root, workOrder);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileAtomic(path, `${JSON.stringify({
+    id: workOrder.id,
+    status: 'active',
+    workOrder,
+  }, null, 2)}\n`);
+}
+
+async function withLifecycleLock(root, options, command) {
+  const tracker = trackerPath(root);
+  if (!tracker) {
+    return commandOutcome({
+      code: 'tracker-unavailable', effect: 'unavailable', retryable: false,
+      message: 'The Opportunity tracker is unavailable.',
+    });
+  }
+  let lock;
+  try {
+    lock = await acquireTrackerLock(trackerLockDirFor(tracker), {
+      timeoutMs: options.lockTimeoutMs ?? (Number(process.env.CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS) || 60_000),
+      retryMs: options.lockRetryMs ?? (Number(process.env.CAREER_OPS_TRACKER_LOCK_RETRY_MS) || 75),
+      staleMs: options.lockStaleMs ?? (Number(process.env.CAREER_OPS_TRACKER_LOCK_STALE_MS) || 10 * 60_000),
+      tracker,
+    });
+  } catch (error) {
+    if (error?.code === 'LOCK_TIMEOUT') {
+      return commandOutcome({
+        code: 'tracker-busy', effect: 'unavailable', retryable: true,
+        message: 'The Opportunity tracker is busy. Retry after the active write finishes.',
+      });
+    }
+    return commandOutcome({
+      code: 'tracker-lock-failed', effect: 'unavailable', retryable: false,
+      message: 'The Opportunity tracker lock could not be acquired.',
+    });
+  }
+  try {
+    return await command(tracker);
+  } finally {
+    lock.release();
+  }
+}
+
+function conflictOutcome(summary) {
+  return commandOutcome({
+    code: 'opportunity-conflict', effect: 'conflict', retryable: false,
+    message: 'The Opportunity changed. Review the fresh summary before retrying.',
+    before: summary, after: summary, artifacts: commandArtifacts(summary),
+  });
+}
+
+/**
+ * Reserve one explicit Agent-owned generation request without changing Stage.
+ * The shared tracker lock makes the revision recheck and active-work claim one
+ * critical section, so simultaneous requests cannot fork duplicate workers.
+ */
+export async function requestOpportunityWork(options = {}) {
+  const expected = parseCommandExpectation(options);
+  const root = checkoutRoot(options.root);
+  return withLifecycleLock(root, options, async () => {
+    const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+    if (!focused) {
+      return commandOutcome({
+        code: 'opportunity-not-found', effect: 'unavailable', retryable: false,
+        message: 'The Opportunity was not found.',
+      });
+    }
+    const before = focused.opportunity;
+    if (expectationConflict(before, expected)) return conflictOutcome(before);
+    if (before.stage.owner !== 'agent' || !before.capabilities.generate) {
+      return commandOutcome({
+        code: 'generation-blocked', effect: 'blocked', retryable: false,
+        message: 'Generation is not available for the current Opportunity state.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    const states = loadStates({ rootDir: root, force: true });
+    const workOrder = workOrderFor(before, states);
+    if (!workOrder) {
+      return commandOutcome({
+        code: 'generation-unavailable', effect: 'unavailable', retryable: false,
+        message: 'A canonical work order could not be derived.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    const workState = readWorkState(workStatePath(root, workOrder));
+    if (workState?.invalid) {
+      return commandOutcome({
+        code: 'work-state-invalid', effect: 'unavailable', retryable: false,
+        message: 'The active work record is incompatible.',
+        before, artifacts: commandArtifacts(before), workOrder,
+      });
+    }
+    if (workState) {
+      return commandOutcome({
+        code: 'already-running', effect: 'unchanged', retryable: false,
+        message: 'Already running.',
+        before, artifacts: commandArtifacts(before), workOrder: workState.workOrder,
+      });
+    }
+    writeWorkState(root, workOrder);
+    return commandOutcome({
+      code: 'work-requested', effect: 'accepted', retryable: false,
+      message: 'Work request accepted.',
+      before, artifacts: commandArtifacts(before), workOrder,
+    });
+  });
+}
+
+function expectedGeneratedArtifact(summary, action) {
+  return summary.artifacts.find((artifact) => (
+    artifact.action === action
+    && artifact.expectedAction === action
+    && artifact.state === 'available'
+    && ['canonical', 'legacy'].includes(artifact.format)
+  )) ?? null;
+}
+
+function prepareTrackerStageReplacement(tracker, opportunity, toLabel) {
+  const content = readFileSync(tracker, 'utf8');
+  const lines = content.split('\n');
+  const columns = resolveColumns(lines);
+  const matches = [];
+  lines.forEach((line, index) => {
+    const row = parseTrackerRow(line, columns);
+    if (row?.num === opportunity) matches.push(index);
+  });
+  if (matches.length !== 1) return { ok: false, reason: matches.length ? 'duplicate-opportunity' : 'opportunity-not-found' };
+  lines[matches[0]] = applyStatusToLine(lines[matches[0]], columns, toLabel);
+  return { ok: true, content: lines.join('\n') };
+}
+
+/**
+ * Reconcile a completed canonical artifact to its paired Ready Stage. The
+ * artifact reader, revision check, and mutation all run under the shared lock.
+ */
+export async function reconcileOpportunityWork(options = {}) {
+  const expected = parseCommandExpectation(options);
+  const root = checkoutRoot(options.root);
+  return withLifecycleLock(root, options, async (tracker) => {
+    const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+    if (!focused) {
+      return commandOutcome({
+        code: 'opportunity-not-found', effect: 'unavailable', retryable: false,
+        message: 'The Opportunity was not found.',
+      });
+    }
+    const before = focused.opportunity;
+    if (expectationConflict(before, expected)) return conflictOutcome(before);
+
+    const states = loadStates({ rootDir: root, force: true });
+    const stage = resolveState(before.rawStage, states);
+    const action = predecessorAction(stage, states);
+    const artifact = expectedGeneratedArtifact(before, action);
+    if (!stage || !action || !artifact) {
+      return commandOutcome({
+        code: 'artifact-incomplete', effect: 'blocked', retryable: true,
+        message: 'The expected canonical artifact is not complete.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    if (stage.owner === 'user') {
+      return commandOutcome({
+        code: 'already-reconciled', effect: 'unchanged', retryable: false,
+        message: 'The canonical artifact is already reconciled.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    if (stage.owner !== 'agent' || !before.capabilities.generate) {
+      return commandOutcome({
+        code: 'reconciliation-blocked', effect: 'blocked', retryable: false,
+        message: 'Reconciliation is not available for the current Opportunity state.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    const advance = computeAdvance(before.rawStage, states, action);
+    if (!advance.ok || !advance.readyRecord) {
+      return commandOutcome({
+        code: 'ready-stage-unavailable', effect: 'unavailable', retryable: false,
+        message: 'The canonical Ready Stage could not be derived.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    const replacement = prepareTrackerStageReplacement(tracker, before.opportunity, advance.toLabel);
+    if (!replacement.ok) {
+      return commandOutcome({
+        code: replacement.reason, effect: 'unavailable', retryable: false,
+        message: 'The Opportunity tracker row could not be updated safely.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    const artifactPath = resolve(root, artifact.path);
+    const synced = syncPackHeader(readFileSync(artifactPath, 'utf8'), advance.readyRecord);
+    if (synced.changed) writeFileAtomic(artifactPath, synced.content);
+    writeFileAtomic(tracker, replacement.content);
+    const after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now }).opportunity;
+    return commandOutcome({
+      code: 'work-reconciled', effect: 'changed', retryable: false,
+      message: 'The canonical artifact was reconciled to its Ready Stage.',
+      before, after, artifacts: commandArtifacts(after),
+    });
+  });
+}
+
 function parseCliArgs(argv) {
   const [action, ...rest] = argv;
-  if (!['contract', 'list', 'read'].includes(action)) {
-    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read> [--root PATH] [--opportunity NUM] [--now YYYY-MM-DD]');
+  if (!['contract', 'list', 'read', 'request', 'reconcile'].includes(action)) {
+    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read|request|reconcile> [--root PATH] [--opportunity NUM] [--expected-stage ID] [--expected-revision SHA256] [--now YYYY-MM-DD]');
   }
-  const options = { action, root: MODULE_ROOT, opportunity: null, now: null };
+  const options = { action, root: MODULE_ROOT, opportunity: null, expectedStage: null, expectedRevision: null, now: null };
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
     if (argument === '--root') options.root = rest[++index];
     else if (argument === '--opportunity') options.opportunity = rest[++index];
+    else if (argument === '--expected-stage') options.expectedStage = rest[++index];
+    else if (argument === '--expected-revision') options.expectedRevision = rest[++index];
     else if (argument === '--now') options.now = rest[++index];
     else throw new Error(`unknown argument: ${argument}`);
   }
   if (!options.root) throw new Error('--root requires a path');
-  if (action === 'read' && options.opportunity == null) throw new Error('read requires --opportunity NUM');
+  if (['read', 'request', 'reconcile'].includes(action) && options.opportunity == null) {
+    throw new Error(`${action} requires --opportunity NUM`);
+  }
+  if (['request', 'reconcile'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
+    throw new Error(`${action} requires --expected-stage ID and --expected-revision SHA256`);
+  }
   return options;
 }
 
-function runCli() {
+async function runCli() {
   try {
     const options = parseCliArgs(process.argv.slice(2));
     let result;
     if (options.action === 'contract') result = readOpportunityContract({ root: options.root });
     else if (options.action === 'list') result = listOpportunities({ root: options.root, now: options.now });
-    else {
+    else if (options.action === 'read') {
       result = readOpportunity({
         root: options.root,
         opportunity: options.opportunity,
@@ -786,7 +1086,8 @@ function runCli() {
           },
         };
       }
-    }
+    } else if (options.action === 'request') result = await requestOpportunityWork(options);
+    else result = await reconcileOpportunityWork(options);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     process.stderr.write(`${JSON.stringify({
