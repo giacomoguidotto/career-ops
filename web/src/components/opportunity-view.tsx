@@ -23,6 +23,8 @@ import { Badge } from "@/components/ui/badge";
 import { CompanyLogo } from "@/components/company-logo";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
+import { GuidedApproach } from "@/components/guided-approach";
+import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -114,7 +116,7 @@ function LifecyclePosition({ eyebrow, label, title, muted = false }: { eyebrow: 
   );
 }
 
-function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
+function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean, canGuideApproach: boolean): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
   const action = words(opportunity.primaryAction.id);
   switch (opportunity.primaryAction.kind) {
     case "generate":
@@ -126,12 +128,39 @@ function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title:
         cta: "Open Today",
       };
     case "act-outside":
+      if (opportunity.primaryAction.id !== "execute_approach") {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "Review the prepared material, act outside career-ops, then report exactly what happened. Viewing the artifact records nothing.",
+          href: "#materials",
+          cta: "Review prepared materials",
+        };
+      }
+      if (!hasApproachPlan) {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "The canonical Approach Plan is not readable. Review its artifact status before preparing any external action.",
+          href: "#approach-plan",
+          cta: "Review Approach Plan",
+        };
+      }
+      if (!canGuideApproach) {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "Review the readable Approach Plan. Its format has no compatible ranked route that guided preparation can safely interpret.",
+          href: "#approach-plan",
+          cta: "Review Approach Plan",
+        };
+      }
       return {
         eyebrow: "Your next step",
         title: action || "Act outside career-ops",
         detail: "Review the prepared material, act outside career-ops, then report exactly what happened. Viewing or copying records nothing.",
-        href: "#approach-plan",
-        cta: "Review preparation",
+        href: "#guided-approach",
+        cta: "Start guided approach",
       };
     case "wait":
       return {
@@ -268,11 +297,17 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
   const reportMeta = report ? parseReport(report.content) : null;
   const reportUrl = reportMeta?.fields.find((field) => field.label === "URL")?.value;
   const score = scoreNum(opportunity.score);
-  const primary = primaryCopy(opportunity);
   const warnings = [...opportunity.warnings, ...detail.warnings]
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
+  const hasGuideableRoutes = approachArtifact?.format === "canonical" && approachPlan
+    ? (parseApproachPlan(approachPlan.content) as unknown[]).length > 0
+    : false;
+  const canGuideApproach = opportunity.primaryAction.kind === "act-outside"
+    && opportunity.primaryAction.id === "execute_approach"
+    && hasGuideableRoutes;
+  const primary = primaryCopy(opportunity, Boolean(approachPlan), canGuideApproach);
   const provenance = sourcePaths([...contract.provenance, ...opportunity.provenance]);
   const primaryBlocked = opportunity.primaryAction.kind === "generate" && !opportunity.primaryAction.enabled;
 
@@ -392,6 +427,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             {approachPlan ? (
               <>
                 <p className="mt-3 text-sm text-muted">Reviewing this plan is passive. Acting outside career-ops and reporting the result are separate steps.</p>
+                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity.opportunity} />}
                 <article className="report-prose mt-5 rounded-2xl border border-border bg-surface/35 p-5" aria-label="Approach Plan artifact">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{approachPlan.content}</ReactMarkdown>
                 </article>
