@@ -19,6 +19,7 @@ try {
   if (help.status === 0
       && help.stdout.includes('Usage:')
       && help.stdout.includes('--json')
+      && help.stdout.includes('--include-blacklisted')
       && !help.stdout.includes('Portal Scan')
       && readdirSync(temp).length === 0) {
     pass('scan.mjs --help exits without running a scan');
@@ -42,8 +43,8 @@ try {
   }
 
   const portals = join(temp, 'portals.yml');
-  writeFileSync(portals, 'tracked_companies:\n  - name: Manual Source\n    scan_method: websearch\njob_boards: []\ntitle_filter:\n  positive: [engineer]\n');
-  const structured = spawnSync(NODE, [CLI, '--dry-run', '--max-new=30', '--max-per-company=3', '--json'], {
+  writeFileSync(portals, 'tracked_companies:\n  - name: Manual Source\n    scan_method: websearch\n  - careers_url: https://jobs.example.test/malformed\njob_boards: []\ntitle_filter:\n  positive: [engineer]\n');
+  const structured = spawnSync(NODE, [CLI, '--dry-run', '--include-blacklisted', '--max-new=30', '--max-per-company=3', '--json'], {
     cwd: temp,
     env: { ...process.env, CAREER_OPS_PORTALS: portals },
     encoding: 'utf8',
@@ -55,9 +56,10 @@ try {
       && result?.ordering?.kind === 'configured-priority'
       && result?.runCap?.limit === 30
       && result?.companyCap?.limit === 3
-      && result?.companiesAvailable === 1
+      && result?.companiesAvailable === 2
       && result?.companiesScanned === 0
       && result?.unhandledSources === 1
+      && result?.malformedSources === 1
       && Array.isArray(result?.offers)
       && !existsSync(join(temp, 'data', 'scan-history.tsv'))
       && !existsSync(join(temp, 'data', 'pipeline.md'))) {

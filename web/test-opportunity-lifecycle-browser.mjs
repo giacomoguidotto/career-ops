@@ -128,7 +128,7 @@ const fixture = createFictionalOpportunityWorkspace({
       "  ordering: { kind: 'configured-priority', configuredSources: 1 },",
       "  companiesAvailable: 4, companiesScanned: 4, jobBoardsAvailable: 0, jobBoardsScanned: 0,",
       "  runCap: { limit: 30, deferred: 2 }, companyCap: { limit: 3, deferred: 1 },",
-      "  unreachableTargets: 0, networkErrors: 0, otherErrors: 0, unhandledSources: 0,",
+      "  unreachableTargets: 0, networkErrors: 0, otherErrors: 0, unhandledSources: 0, malformedSources: 0,",
       "  offers: [{ company: 'Priority Fictional', title: 'Research Engineer', url: 'https://jobs.example.test/company', location: 'Remote', postedAt: '2026-07-18', source: 'ashby-api' }]",
       "}) + '\\n');",
       '',
@@ -137,10 +137,10 @@ const fixture = createFictionalOpportunityWorkspace({
       "const args = process.argv.slice(2);",
       "if (args.includes('--help')) { process.stdout.write('  --json structured output\\n'); process.exit(0); }",
       "process.stdout.write(JSON.stringify({",
-      "  contract: { id: 'career-ops.scanner.reverse-ats', version: 1 }, sampling: 'alphabetical', companyLimit: 150,",
+      "  contract: { id: 'career-ops.scanner.reverse-ats', version: 1 }, sources: ['greenhouse', 'lever', 'ashby', 'workday'], sampling: 'alphabetical', companyLimit: 150,",
       "  companiesAvailable: 12, companiesScanned: 8, capHit: true,",
       "  datasetStatus: { greenhouse: 'ok', lever: 'stale', ashby: 'ok', workday: 'empty' },",
-      "  postingsDroppedNoDate: 3, unreachableBoards: 2,",
+      "  postingsDroppedNoDate: 3, unreachableBoards: 2, sourceRecordsDropped: 0,",
       "  offers: [{ company: 'Reverse Fictional', title: 'ML Researcher', url: 'https://jobs.example.test/reverse', location: 'Remote', postedAt: '2026-07-18', source: 'lever-full' }]",
       "}) + '\\n');",
       '',
@@ -325,6 +325,8 @@ try {
   await page.getByText(/alphabetical sampling/).waitFor();
   await page.getByText(/run cap 30, 2 deferred/).waitFor();
   await page.getByText(/3 records dropped for missing dates/).waitFor();
+  await page.getByRole('button', { name: 'Adjust scan caps' }).click();
+  await page.getByLabel('Tracked-company run cap').waitFor();
   for (const { width, height, theme } of [
     { width: 390, height: 844, theme: 'dark' },
     { width: 390, height: 844, theme: 'light' },

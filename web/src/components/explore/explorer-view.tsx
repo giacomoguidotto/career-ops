@@ -164,14 +164,14 @@ export function ExplorerView({
               </button>
               {refineOpen && (
                 <div className="space-y-4 border-t border-border p-4">
-                  <FilterBuilder filters={filters} onChange={setFilters} seededFrom={seed.seededFrom} />
+                  <FilterBuilder filters={filters} onChange={setFilters} seededFrom={seed.seededFrom} forceAdvanced={refineOpen} />
                   <DiscoverBar canDiscover={canDiscover} onDiscover={discover} label="Re-cast (free)" />
                 </div>
               )}
             </div>
           ) : (
             <div className="mb-6 rounded-2xl border border-border bg-surface/30 p-5">
-              <FilterBuilder filters={filters} onChange={setFilters} seededFrom={seed.seededFrom} />
+              <FilterBuilder filters={filters} onChange={setFilters} seededFrom={seed.seededFrom} forceAdvanced={refineOpen} />
               <div className="mt-5">
                 <DiscoverBar canDiscover={canDiscover} onDiscover={discover} label="Discover (free)" />
               </div>
@@ -321,10 +321,10 @@ function completenessLine(summary: ScannerPathSummary): string {
     const priority = `${summary.configuredPrioritySources ?? 0} configured priority source${summary.configuredPrioritySources === 1 ? "" : "s"}`;
     const run = summary.runCap ? `run cap ${summary.runCap.limit ?? "off"}, ${summary.runCap.deferred} deferred` : "run cap unavailable";
     const company = summary.companyCap ? `company cap ${summary.companyCap.limit ?? "off"}, ${summary.companyCap.deferred} deferred` : "company cap unavailable";
-    return `${label}: configured-priority order (${priority}); ${scope}; ${run}; ${company}${summary.unhandled ? `; ${summary.unhandled} unhandled configured sources` : ""}${summary.unreachable ? `; ${summary.unreachable} unreachable or failed` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}.`;
+    return `${label}: configured-priority order (${priority}); ${scope}; ${run}; ${company}${summary.unhandled ? `; ${summary.unhandled} unhandled configured sources` : ""}${summary.malformedSources ? `; ${summary.malformedSources} malformed configured sources` : ""}${summary.unreachable ? `; ${summary.unreachable} unreachable or failed` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}.`;
   }
   const degraded = summary.datasetStatus ? Object.entries(summary.datasetStatus).filter(([, status]) => status !== "ok").map(([source, status]) => `${source} ${status}`).join(", ") : "";
-  return `${label}: ${summary.sampling ?? "unknown"} sampling; ${scope}${summary.capHit ? "; capped slice" : "; cap not reached"}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}${degraded ? `; degraded datasets: ${degraded}` : ""}.`;
+  return `${label}: ${summary.sampling ?? "unknown"} sampling; ${scope}${summary.capHit ? "; capped slice" : "; cap not reached"}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}${summary.malformedSources ? `; ${summary.malformedSources} malformed source records dropped` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}${degraded ? `; degraded datasets: ${degraded}` : ""}.`;
 }
 
 function FailedCard({ msg, onRetry }: { msg: string; onRetry: () => void }) {

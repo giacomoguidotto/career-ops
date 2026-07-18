@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { DEFAULT_FILTERS } from "./src/lib/explore.ts";
+import { cleanupTempPortals, writeTempCompanyPortals, writeTempPortals } from "./src/lib/core/portals.ts";
 import { runDiscovery } from "./src/lib/core/scan.ts";
 
 const ORIGINAL_ROOT = process.env.CAREER_OPS_ROOT;
 
-function script({ help = "--json", result = {}, legacy = "", requireArgs = [] } = {}) {
+function script({ help = "--json", result = {}, legacy = "", requireArgs = [], helpMarker = "" } = {}) {
   return [
+    `import { appendFileSync } from "node:fs";`,
     `const args = process.argv.slice(2);`,
-    `if (args.includes("--help")) { process.stdout.write(${JSON.stringify(`${help}\n`)}); process.exit(0); }`,
+    `if (args.includes("--help")) { ${helpMarker ? `appendFileSync(${JSON.stringify(helpMarker)}, "probe\\n");` : ""} process.stdout.write(${JSON.stringify(`${help}\n`)}); process.exit(0); }`,
     `const required = ${JSON.stringify(requireArgs)};`,
     `if (required.some((arg) => !args.includes(arg))) process.exit(9);`,
     help.includes("--json")
@@ -62,6 +64,7 @@ function companyResult(overrides = {}) {
     networkErrors: 0,
     otherErrors: 0,
     unhandledSources: 0,
+    malformedSources: 0,
     offers: [],
     ...overrides,
   };
@@ -70,6 +73,7 @@ function companyResult(overrides = {}) {
 function reverseResult(overrides = {}) {
   return {
     contract: { id: "career-ops.scanner.reverse-ats", version: 1 },
+    sources: ["greenhouse", "lever", "ashby", "workday"],
     sampling: "alphabetical",
     companyLimit: 150,
     companiesAvailable: 8,
@@ -78,6 +82,7 @@ function reverseResult(overrides = {}) {
     datasetStatus: { greenhouse: "ok", lever: "ok", ashby: "ok", workday: "ok" },
     postingsDroppedNoDate: 0,
     unreachableBoards: 0,
+    sourceRecordsDropped: 0,
     offers: [],
     ...overrides,
   };
@@ -86,6 +91,37 @@ function reverseResult(overrides = {}) {
 test.afterEach(() => {
   if (ORIGINAL_ROOT === undefined) delete process.env.CAREER_OPS_ROOT;
   else process.env.CAREER_OPS_ROOT = ORIGINAL_ROOT;
+});
+
+test("ephemeral scanner configs are owner-readable only", () => {
+  const root = workspace();
+  process.env.CAREER_OPS_ROOT = root;
+  const files = [writeTempPortals(DEFAULT_FILTERS), writeTempCompanyPortals(DEFAULT_FILTERS)];
+  try {
+    for (const file of files) {
+      assert.ok(file);
+      assert.equal(statSync(file).mode & 0o777, 0o600);
+    }
+  } finally {
+    for (const file of files) if (file) cleanupTempPortals(file);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("successful structured capability probes are cached per scanner", async () => {
+  const root = workspace();
+  const companyMarker = path.join(root, "company-help.log");
+  const reverseMarker = path.join(root, "reverse-help.log");
+  writeFileSync(path.join(root, "scan.mjs"), script({ result: companyResult(), helpMarker: companyMarker }));
+  writeFileSync(path.join(root, "scan-ats-full.mjs"), script({ result: reverseResult(), helpMarker: reverseMarker }));
+  try {
+    await discover(root);
+    await discover(root);
+    assert.equal(readFileSync(companyMarker, "utf8"), "probe\n");
+    assert.equal(readFileSync(reverseMarker, "utf8"), "probe\n");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("reports company priority and caps plus reverse sampling and degradation", async () => {
@@ -179,6 +215,22 @@ test("unhandled sources and malformed offers degrade only their affected path", 
   }
 });
 
+test("malformed configured source records prevent complete coverage claims", async () => {
+  const root = workspace({
+    "scan.mjs": script({ result: companyResult({ companiesAvailable: 5, companiesScanned: 4, malformedSources: 1 }) }),
+    "scan-ats-full.mjs": script({ result: reverseResult({ companiesAvailable: 9, companiesScanned: 8, sourceRecordsDropped: 1 }) }),
+  });
+  try {
+    const result = await discover(root);
+    assert.equal(result.summaries["company-first"].malformedSources, 1);
+    assert.equal(result.summaries["company-first"].complete, false);
+    assert.equal(result.summaries["reverse-ats"].malformedSources, 1);
+    assert.equal(result.summaries["reverse-ats"].complete, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("legacy output renders without claiming completeness", async () => {
   const root = workspace({
     "scan.mjs": script({ help: "Usage: scan", legacy: "Companies scanned: 4\nNew offers added: 0\n" }),
@@ -223,6 +275,24 @@ test("missing, malformed, and unsupported paths degrade independently", async ()
       },
       unavailable: "company-first",
       available: "reverse-ats",
+    },
+    {
+      name: "inconsistent company counts",
+      files: {
+        "scan.mjs": script({ result: companyResult({ companiesAvailable: 3, companiesScanned: 4 }) }),
+        "scan-ats-full.mjs": script({ result: reverseResult() }),
+      },
+      unavailable: "company-first",
+      available: "reverse-ats",
+    },
+    {
+      name: "reverse source mismatch",
+      files: {
+        "scan.mjs": script({ result: companyResult() }),
+        "scan-ats-full.mjs": script({ result: reverseResult({ sources: ["greenhouse", "lever"] }) }),
+      },
+      unavailable: "reverse-ats",
+      available: "company-first",
     },
   ];
   for (const item of cases) {

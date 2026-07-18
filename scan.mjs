@@ -1348,7 +1348,7 @@ async function main() {
   const args = process.argv.slice(2);
   const knownOptions = new Set([
     '--help', '--dry-run', '--company', '--verify', '--headed-fallback',
-    '--throttle', '--rediscover-404', '--max-new', '--max-per-company', '--json',
+    '--throttle', '--rediscover-404', '--include-blacklisted', '--max-new', '--max-per-company', '--json',
   ]);
   const unknownOption = args.find((arg) => arg.startsWith('-')
     && !knownOptions.has(arg)
@@ -1369,6 +1369,7 @@ Options:
   --headed-fallback         Retry anti-bot challenges in a headed browser
   --throttle[=<ms>]         Delay between browser verification checks
   --rediscover-404          Search for moved postings during verification
+  --include-blacklisted     Include postings from companies on the blacklist
   --max-new=<count>         Limit new offers added in this run
   --max-per-company=<count> Limit new offers added per company
   --json                    Emit one machine-readable result on stdout
@@ -1455,6 +1456,7 @@ Options:
   let boardCount = 0;
   let configuredCompanyCount = 0;
   let configuredBoardCount = 0;
+  let malformedSourceCount = 0;
   const resolveErrors = [];
   const agentHandoff = [];
 
@@ -1466,9 +1468,20 @@ Options:
    */
   function resolveEntries(entries, { isBoard = false } = {}) {
     for (const entry of entries) {
-      if (!entry || typeof entry !== 'object') continue;
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        if (filterCompany) continue;
+        if (isBoard) configuredBoardCount++;
+        else configuredCompanyCount++;
+        malformedSourceCount++;
+        console.error(`⚠️  Skipping malformed configured source: ${JSON.stringify(entry)}`);
+        continue;
+      }
       if (entry.enabled === false) continue;
       if (typeof entry.name !== 'string' || !entry.name.trim()) {
+        if (filterCompany) continue;
+        if (isBoard) configuredBoardCount++;
+        else configuredCompanyCount++;
+        malformedSourceCount++;
         console.error(`⚠️  Skipping entry — missing or non-string 'name' field: ${JSON.stringify(entry)}`);
         continue;
       }
@@ -1913,6 +1926,7 @@ Options:
       networkErrors: networkTargets.length,
       otherErrors: otherErrors.length,
       unhandledSources: skippedCount,
+      malformedSources: malformedSourceCount,
       saved: !dryRun && verifiedOffers.length > 0,
       offers: verifiedOffers.map(o => ({
         company: o.company,

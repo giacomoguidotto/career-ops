@@ -50,7 +50,7 @@ export function serializePortals(f: FilterLists): string {
 /** Write the ephemeral filter file to a temp path; caller cleans it up. */
 export function writeTempPortals(f: FilterLists): string {
   const file = path.join(os.tmpdir(), `career-ops-explore-${randomUUID()}.yml`);
-  fs.writeFileSync(file, serializePortals(f), "utf8");
+  fs.writeFileSync(file, serializePortals(f), { encoding: "utf8", mode: 0o600 });
   return file;
 }
 
@@ -72,7 +72,7 @@ export function writeTempCompanyPortals(f: FilterLists): string | null {
   location.block = [...f.block];
   location.always_allow = [...f.alwaysAllow];
   const file = path.join(os.tmpdir(), `career-ops-explore-company-${randomUUID()}.yml`);
-  fs.writeFileSync(file, yaml.dump({ ...config, title_filter: title, location_filter: location }, { noRefs: true }), "utf8");
+  fs.writeFileSync(file, yaml.dump({ ...config, title_filter: title, location_filter: location }, { noRefs: true }), { encoding: "utf8", mode: 0o600 });
   return file;
 }
 

@@ -436,6 +436,7 @@ async function main() {
   let totalCompaniesAvailable = 0;
   let totalErrors = 0;
   let droppedNoDate = 0;
+  let sourceRecordsDropped = 0;
   let capHit = false;
   // Aggregated from providers/workday.mjs's jobs.workdayNoDateSkip tag — see
   // there for why this is a counter instead of a per-company console.error
@@ -451,7 +452,10 @@ async function main() {
     datasetStatus[name] = status;
     totalCompaniesAvailable += list.length;
     if (opts.limit < list.length) capHit = true;
-    const entries = sampleCompanies(list, opts.limit, opts.shuffle).map(source.toEntry).filter(Boolean);
+    const sampled = sampleCompanies(list, opts.limit, opts.shuffle);
+    const mapped = sampled.map(source.toEntry);
+    const entries = mapped.filter(Boolean);
+    sourceRecordsDropped += mapped.length - entries.length;
     totalCompaniesScanned += entries.length;
     log(`\n⚙  ${name} — ${entries.length} companies${status !== 'ok' ? ` (dataset: ${status})` : ''}`);
 
@@ -584,6 +588,7 @@ async function main() {
       postingsKept: offers.length,
       postingsDroppedNoDate: droppedNoDate,
       unreachableBoards: totalErrors,
+      sourceRecordsDropped,
       saved,
       offers: offers.map(o => ({
         company: o.company,

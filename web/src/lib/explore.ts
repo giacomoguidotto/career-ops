@@ -93,6 +93,7 @@ export type ScannerPathSummary = {
   datasetStatus?: Record<string, "ok" | "stale" | "empty">;
   droppedRecords?: number;
   malformedRecords?: number;
+  malformedSources?: number;
   unhandled?: number;
   diagnostic?: string;
 };

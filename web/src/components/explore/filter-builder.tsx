@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Ban, Clock, MapPin, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ATS_LABEL, ATS_SOURCES, cleanChips, type AtsSource, type ExploreFilters } from "@/lib/explore";
@@ -102,12 +102,17 @@ export function FilterBuilder({
   filters,
   onChange,
   seededFrom = [],
+  forceAdvanced = false,
 }: {
   filters: ExploreFilters;
   onChange: (f: ExploreFilters) => void;
   seededFrom?: string[];
+  forceAdvanced?: boolean;
 }) {
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState(forceAdvanced);
+  useEffect(() => {
+    if (forceAdvanced) setAdvanced(true);
+  }, [forceAdvanced]);
   const set = (patch: Partial<ExploreFilters>) => onChange({ ...filters, ...patch });
   const toggleAts = (a: AtsSource) => {
     const has = filters.ats.includes(a);

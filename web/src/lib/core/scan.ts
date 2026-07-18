@@ -20,6 +20,8 @@ const PROGRESS_RE = /(\d+)\/(\d+)\s+scanned,\s+(\d+)\s+total matches/;
 const ATS_DONE_RE = /done \((\d+) unreachable boards skipped\)/;
 const COMPANIES_RE = /Companies scanned:\s+(\d+)/;
 const UNREACHABLE_RE = /Unreachable boards:\s+(\d+)/;
+const JSON_HELP_TIMEOUT_MS = 5_000;
+const jsonSupportProbes = new Map<string, Promise<boolean>>();
 
 type CommandResult = {
   stdout: string;
@@ -52,11 +54,13 @@ type CompanyJson = {
   networkErrors?: unknown;
   otherErrors?: unknown;
   unhandledSources?: unknown;
+  malformedSources?: unknown;
   offers?: unknown;
 };
 
 type ReverseJson = {
   contract?: { id?: unknown; version?: unknown };
+  sources?: unknown;
   sampling?: unknown;
   companyLimit?: unknown;
   companiesAvailable?: unknown;
@@ -65,6 +69,7 @@ type ReverseJson = {
   datasetStatus?: unknown;
   postingsDroppedNoDate?: unknown;
   unreachableBoards?: unknown;
+  sourceRecordsDropped?: unknown;
   offers?: unknown;
 };
 
@@ -143,7 +148,7 @@ function legacy(path: DiscoveryPath, offers: DiscoveredOffer[], searched: number
   };
 }
 
-function runCommand(script: string, args: string[], env: NodeJS.ProcessEnv, onLine?: (line: string) => void): Promise<CommandResult> {
+function runCommand(script: string, args: string[], env: NodeJS.ProcessEnv, onLine?: (line: string) => void, timeoutMs = 230_000): Promise<CommandResult> {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
@@ -197,13 +202,20 @@ function runCommand(script: string, args: string[], env: NodeJS.ProcessEnv, onLi
     killer = setTimeout(() => {
       failed = true;
       child.kill("SIGTERM");
-    }, 230_000);
+    }, timeoutMs);
   });
 }
 
 async function supportsJson(script: string): Promise<boolean> {
-  const probe = await runCommand(script, ["--help"], { ...process.env });
-  return !probe.failed && probe.code === 0 && /(?:^|\s)--json(?:\s|$)/m.test(`${probe.stdout}\n${probe.stderr}`);
+  const cached = jsonSupportProbes.get(script);
+  if (cached) return cached;
+  const pending = runCommand(script, ["--help"], { ...process.env }, undefined, JSON_HELP_TIMEOUT_MS).then((probe) => {
+    const supported = !probe.failed && probe.code === 0 && /(?:^|\s)--json(?:\s|$)/m.test(`${probe.stdout}\n${probe.stderr}`);
+    if (!supported) jsonSupportProbes.delete(script);
+    return supported;
+  });
+  jsonSupportProbes.set(script, pending);
+  return pending;
 }
 
 /** Compatibility probe retained for structural diagnostics. It executes the
@@ -290,6 +302,7 @@ function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult
   const network = safeInt(raw.networkErrors);
   const other = safeInt(raw.otherErrors);
   const unhandled = safeInt(raw.unhandledSources);
+  const malformedSources = safeInt(raw.malformedSources);
   const configured = safeInt(raw.ordering?.configuredSources);
   const structured = raw.contract?.id === "career-ops.scanner.company-first"
     && raw.contract.version === 1
@@ -298,23 +311,27 @@ function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult
     && availableCompanies !== null && availableBoards !== null
     && runLimit !== undefined && companyLimit !== undefined
     && runDeferred !== null && companyDeferred !== null
-    && unreachable !== null && network !== null && other !== null && unhandled !== null && configured !== null;
+    && unreachable !== null && network !== null && other !== null && unhandled !== null && malformedSources !== null && configured !== null;
   if (!structured) {
     return raw.contract === undefined
       ? legacy("company-first", normalized.offers, searchedCompanies ?? 0, unreachable ?? 0)
       : null;
   }
   const failures = unreachable + network + other;
+  const searched = searchedCompanies + searchedBoards;
+  const available = availableCompanies + availableBoards;
+  if (searched > available || configured > searched || unhandled + malformedSources > available - searched) return null;
   return {
     offers: normalized.offers,
     summary: {
       path: "company-first",
       contract: "structured",
-      complete: runDeferred === 0 && companyDeferred === 0 && failures === 0 && unhandled === 0 && normalized.dropped === 0,
-      searched: searchedCompanies + searchedBoards,
-      available: availableCompanies + availableBoards,
+      complete: searched === available && runDeferred === 0 && companyDeferred === 0 && failures === 0 && unhandled === 0 && malformedSources === 0 && normalized.dropped === 0,
+      searched,
+      available,
       unreachable: failures,
       unhandled,
+      malformedSources,
       malformedRecords: normalized.dropped,
       ordering: "configured-priority",
       configuredPrioritySources: configured,
@@ -331,7 +348,10 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
   const available = safeInt(raw.companiesAvailable);
   const unreachable = safeInt(raw.unreachableBoards);
   const dropped = safeInt(raw.postingsDroppedNoDate);
+  const malformedSources = safeInt(raw.sourceRecordsDropped);
   const datasetStatus = safeDatasetStatus(raw.datasetStatus);
+  const expectedSources = filters.ats.length ? filters.ats : [...ATS_SOURCES];
+  const sources = Array.isArray(raw.sources) && raw.sources.every((source) => typeof source === "string") ? raw.sources : null;
   const companyLimit = nullablePositiveInt(raw.companyLimit);
   const sampling = raw.sampling === "alphabetical" || raw.sampling === "shuffled" ? raw.sampling : null;
   const capHit = typeof raw.capHit === "boolean" ? raw.capHit : null;
@@ -339,20 +359,27 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
     && raw.contract.version === 1
     && sampling !== null
     && capHit !== null
-    && searched !== null && available !== null && unreachable !== null && dropped !== null
+    && searched !== null && available !== null && unreachable !== null && dropped !== null && malformedSources !== null
     && datasetStatus !== null && companyLimit !== undefined;
   if (!structured) {
     return raw.contract === undefined
       ? legacy("reverse-ats", normalized.offers, searched ?? 0, unreachable ?? 0)
       : null;
   }
+  if (sources === null
+    || sources.length !== expectedSources.length
+    || sources.some((source, index) => source !== expectedSources[index])
+    || Object.keys(datasetStatus).length !== expectedSources.length
+    || expectedSources.some((source) => !(source in datasetStatus))
+    || searched > available
+    || malformedSources > available - searched) return null;
   const datasetIssue = Object.values(datasetStatus).some((status) => status !== "ok");
   return {
     offers: normalized.offers,
     summary: {
       path: "reverse-ats",
       contract: "structured",
-      complete: !capHit && !datasetIssue && unreachable === 0 && dropped === 0 && normalized.dropped === 0,
+      complete: searched === available && !capHit && !datasetIssue && unreachable === 0 && dropped === 0 && malformedSources === 0 && normalized.dropped === 0,
       searched,
       available,
       unreachable,
@@ -360,6 +387,7 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
       capHit,
       datasetStatus,
       droppedRecords: dropped,
+      malformedSources,
       malformedRecords: normalized.dropped,
       companyCap: { limit: companyLimit, deferred: Math.max(0, available - searched) },
     },
