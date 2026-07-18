@@ -27,7 +27,7 @@ function commandCopy(command: Command, opportunity: OpportunitySummary) {
   };
   return {
     title: `Generate once for Opportunity #${opportunity.opportunity}?`,
-    detail: "This authorizes one interactive generation request for this Opportunity. It does not change the standing Primary, create a reusable override, or change any factual Stage.",
+    detail: `This authorizes one interactive generation request for this Opportunity. It does not change the standing Primary or create a reusable override. If generation succeeds, reconciliation advances the Stage from ${opportunity.stage.label} to its paired Ready Stage.`,
     confirm: "Generate once",
   };
 }
@@ -181,6 +181,11 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
     if (member.owner !== "agent") return member.selection;
     return member.opportunity === nextLead ? "eligible" : "suppressed";
   };
+  const predictedStage = (member: OpportunitySummary["candidacy"]["members"][number]) => (
+    command === "generate-once" && member.opportunity === opportunity.opportunity
+      ? `Stage advances from ${member.stageLabel} to its paired Ready Stage after successful generation and reconciliation`
+      : `Stage stays ${member.stageLabel}`
+  );
   return (
     <>
       <section ref={coordinationRef} tabIndex={-1} aria-labelledby="candidacy-heading" className="mt-4 rounded-2xl border border-border bg-surface/55 p-4 outline-none">
@@ -246,12 +251,14 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
                 <ul className="mt-2 space-y-1.5">
                   {candidacy.members.map((member) => (
                     <li key={member.opportunity}>
-                      #{member.opportunity} {words(member.selection)} → {words(predictedSelection(member))}; Stage stays {member.stageLabel}
+                      #{member.opportunity} {words(member.selection)} → {words(predictedSelection(member))}; {predictedStage(member)}
                     </li>
                   ))}
                 </ul>
               </div>
-              <p className="mt-2"><strong>Stage effect:</strong> no factual Stage changes</p>
+              <p className="mt-2"><strong>Stage effect:</strong> {command === "generate-once"
+                ? `Opportunity #${opportunity.opportunity} advances from ${opportunity.stage.label} to its paired Ready Stage after successful generation and reconciliation; sibling Stages stay unchanged.`
+                : "No factual Stage changes."}</p>
             </div>
             {error && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-300">{error}</p>}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

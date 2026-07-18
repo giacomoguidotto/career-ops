@@ -799,7 +799,7 @@ try {
   await generateOnce.click();
   const generationReview = page.getByRole('dialog', { name: 'Generate once for Opportunity #101?' });
   await generationReview.waitFor();
-  assert.equal(await generationReview.getByText('no factual Stage changes', { exact: false }).isVisible(), true);
+  assert.equal(await generationReview.locator('p').filter({ hasText: /Stage effect: Opportunity #101 advances from Evaluated to its paired Ready Stage after successful generation and reconciliation/ }).isVisible(), true);
   assert.equal(await generationReview.getByRole('button', { name: 'Generate once' }).evaluate((node) => node === document.activeElement), true);
   await page.keyboard.press('Tab');
   assert.equal(await page.getByRole('button', { name: 'Close candidacy review' }).evaluate((node) => node === document.activeElement), true);
