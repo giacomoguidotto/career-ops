@@ -312,15 +312,20 @@ export async function POST(req: Request) {
     if (!/^job-[a-z0-9-]{1,96}$/i.test(durableWorkerId) || (continuation && !workerId)) {
       return Response.json({ error: "valid workerId required" }, { status: 400 });
     }
-    const opportunity = Number(input || readDurableWorker(careerOpsRoot(), durableWorkerId)?.workOrder.opportunity);
-    if (!Number.isSafeInteger(opportunity) || opportunity <= 0) {
+    const existingPdfWorker = continuation ? readDurableWorker(careerOpsRoot(), durableWorkerId) : null;
+    const requestedOpportunity = input ? Number(input) : null;
+    if (continuation && input && requestedOpportunity !== existingPdfWorker?.workOrder.opportunity) {
+      return Response.json({ error: "PDF worker opportunity mismatch.", code: "opportunity-conflict" }, { status: 409 });
+    }
+    const opportunity = continuation ? existingPdfWorker?.workOrder.opportunity : requestedOpportunity;
+    if (typeof opportunity !== "number" || !Number.isSafeInteger(opportunity) || opportunity <= 0) {
       return Response.json({ error: "valid PDF opportunity required" }, { status: 400 });
     }
     try {
       const current = (await readOpportunityLifecycle(careerOpsRoot(), opportunity)).opportunity;
       if (!current.stage.id) return Response.json({ error: "The Opportunity Stage is not canonical." }, { status: 409 });
       if (continuation) {
-        const existing = readDurableWorker(careerOpsRoot(), durableWorkerId);
+        const existing = existingPdfWorker;
         const prior = existing?.recoveryHistory.at(-1);
         if (
           continuation !== "retry"
@@ -349,6 +354,12 @@ export async function POST(req: Request) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "PDF work could not be reserved.";
       return Response.json({ error: message }, { status: 503 });
+    }
+    if (!lifecycleWorkOrder) {
+      return Response.json({ error: "Durable PDF work could not be prepared.", code: "worker-state-unavailable" }, { status: 503 });
+    }
+    if (!continuation && readDurableWorker(careerOpsRoot(), durableWorkerId)) {
+      return Response.json({ error: "This durable worker already has canonical history.", code: "worker-history-exists" }, { status: 409 });
     }
     if (!acquireWorker(durableWorkerId)) return Response.json({ error: "Already running.", code: "already-running" }, { status: 409 });
     try {

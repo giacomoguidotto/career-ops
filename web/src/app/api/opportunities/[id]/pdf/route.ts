@@ -33,11 +33,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   ) return Response.json({ error: { code: "invalid-request", message: "The PDF allowance command is invalid." } }, { status: 400 });
   const root = careerOpsRoot();
   const worker = typeof input.workerId === "string" ? readDurableWorker(root, input.workerId) : null;
+  const workerReview = worker?.recoveryHistory.at(-1)?.pdfReview;
   if (typeof input.workerId === "string" && (
     !worker
     || worker.status !== "terminal"
     || worker.workOrder.workflow !== "pdf"
     || worker.workOrder.opportunity !== opportunity
+    || workerReview?.reviewRevision !== input.expectedRevision
+    || workerReview?.actualPages !== input.pages
   )) return Response.json({ error: { code: "worker-conflict", message: "This PDF worker cannot accept the allowance." } }, { status: 409 });
   if (worker && !acquireWorker(worker.id)) {
     return Response.json({ error: { code: "worker-active", message: "This PDF worker is already active." } }, { status: 409 });

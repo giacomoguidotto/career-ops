@@ -103,6 +103,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const [announcement, setAnnouncement] = useState("");
   const seq = useRef(0);
   const loaded = useRef(false);
+  const pdfAllowancesInFlight = useRef(new Set<string>());
 
   const patch = useCallback((id: string, fn: (j: Job) => Job) => {
     setJobs((js) => js.map((j) => (j.id === id ? fn(j) : j)));
@@ -423,7 +424,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const job = jobs.find((candidate) => candidate.id === id);
     const review = job?.recovery?.pdfReview;
     const opportunity = job?.workOrder?.opportunity;
-    if (!job || job.kind !== "pdf" || !review || !opportunity || job.status === "running") return;
+    if (!job || job.kind !== "pdf" || !review || !opportunity || job.status === "running" || pdfAllowancesInFlight.current.has(id)) return;
+    pdfAllowancesInFlight.current.add(id);
     patch(id, (current) => ({
       ...current,
       status: "running",
@@ -447,7 +449,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         steps: [...current.steps, { kind: "status", label: error instanceof Error ? error.message : "The page allowance failed.", ts: Date.now() }],
       }));
       setAnnouncement(error instanceof Error ? error.message : "The page allowance failed.");
-    });
+    }).finally(() => { pdfAllowancesInFlight.current.delete(id); });
   }, [applyRecovery, jobs, patch, recoverJob]);
   const removeJob = acknowledgeJob;
   const clearFinished = useCallback(() => {

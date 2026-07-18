@@ -439,7 +439,8 @@ async function generatePDF() {
   enforcePageBudget(result.pageCount, { maxPages, allowOverflow });
 
   if (recorded) {
-    const opportunity = opportunityForReport({ root: __dirname, report: reportNum });
+    let opportunity = null;
+    try { opportunity = opportunityForReport({ root: __dirname, report: reportNum }); } catch { opportunity = null; }
     if (opportunity) {
       const reconciled = await reconcilePdfArtifact({
         root: __dirname,

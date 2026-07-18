@@ -318,6 +318,22 @@ function isAttemptAggregate(value: unknown): value is OpportunitySummary["attemp
     && typeof value.formalSubmitted === "boolean";
 }
 
+function isArtifactAcceptance(value: unknown): boolean {
+  if (
+    !isRecord(value)
+    || !isOneOf(value.status, ["accepted", "needs-review"] as const)
+    || !isNonNegativeSafeInteger(value.actualPages) || value.actualPages <= 0
+    || !isNonNegativeSafeInteger(value.budget)
+    || typeof value.trimGuidance !== "string"
+    || (value.acceptedBy !== null && !isOneOf(value.acceptedBy, ["within-budget", "explicit-overflow"] as const))
+    || typeof value.reviewRevision !== "string" || !/^[a-f0-9]{64}$/.test(value.reviewRevision)
+  ) return false;
+  const overflow = value.budget > 0 && value.actualPages > value.budget;
+  return (value.status === "needs-review" && value.acceptedBy === null && overflow)
+    || (value.status === "accepted" && value.acceptedBy === "within-budget" && !overflow)
+    || (value.status === "accepted" && value.acceptedBy === "explicit-overflow" && overflow);
+}
+
 function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][number] {
   const acceptance = isRecord(value) ? value.acceptance : undefined;
   return isRecord(value)
@@ -329,15 +345,7 @@ function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][nu
     && isOneOf(value.format, ARTIFACT_FORMATS)
     && isNullableString(value.path)
     && isNullableString(value.revision)
-    && (acceptance === undefined || (
-      isRecord(acceptance)
-      && isOneOf(acceptance.status, ["accepted", "needs-review"] as const)
-      && isNonNegativeSafeInteger(acceptance.actualPages) && acceptance.actualPages > 0
-      && isNonNegativeSafeInteger(acceptance.budget)
-      && typeof acceptance.trimGuidance === "string"
-      && (acceptance.acceptedBy === null || isOneOf(acceptance.acceptedBy, ["within-budget", "explicit-overflow"] as const))
-      && typeof acceptance.reviewRevision === "string" && /^[a-f0-9]{64}$/.test(acceptance.reviewRevision)
-    ));
+    && (acceptance === undefined || isArtifactAcceptance(acceptance));
 }
 
 function isLifecycleWorkOrder(value: unknown): value is LifecycleWorkOrder {

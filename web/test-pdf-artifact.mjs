@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +9,7 @@ import {
 } from "../tests/fixtures/fictional-opportunity-workspace.mjs";
 import {
   inspectPdfArtifact,
+  opportunityForReport,
   recordPdfArtifact,
   reconcilePdfArtifact,
 } from "../pdf-artifact.mjs";
@@ -134,6 +136,25 @@ test("regeneration replaces overflow evidence with one accepted canonical succes
   }
 });
 
+test("a later overflow invalidates an existing ready tracker link", async () => {
+  const fixture = pdfFixture();
+  try {
+    const accepted = await record(fixture, { pages: 1 });
+    await reconcilePdfArtifact({
+      root: fixture.root,
+      opportunity: 1,
+      expectedRevision: accepted.record.revision,
+    });
+    assert.match(readFileSync(path.join(fixture.root, "data", "applications.md"), "utf8"), /\[pdf\]/);
+
+    writeFileSync(path.join(fixture.root, "output", "cv-fictional.pdf"), "fictional overflow replacement bytes");
+    await record(fixture, { pages: 2 });
+    assert.doesNotMatch(readFileSync(path.join(fixture.root, "data", "applications.md"), "utf8"), /\[pdf\]/);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test("an exact page-count allowance is separate, guarded, and idempotent", async () => {
   const fixture = pdfFixture();
   try {
@@ -204,6 +225,73 @@ test("a stale overflow revision cannot accept a newer render", async () => {
   }
 });
 
+test("changed PDF bytes cannot be accepted from an otherwise current record", async () => {
+  const fixture = pdfFixture();
+  try {
+    const rendered = await record(fixture, { pages: 2 });
+    writeFileSync(path.join(fixture.root, "output", "cv-fictional.pdf"), "replaced after review");
+    const outcome = await reconcilePdfArtifact({
+      root: fixture.root,
+      opportunity: 1,
+      expectedRevision: rendered.record.revision,
+      allowPageCount: 2,
+    });
+    assert.equal(outcome.effect, "unavailable");
+    assert.equal(outcome.code, "pdf-artifact-unavailable");
+    assert.doesNotMatch(readFileSync(path.join(fixture.root, "data", "applications.md"), "utf8"), /\[pdf\]/);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("a missing tracker leaves the completed render inspectable", async () => {
+  const fixture = pdfFixture();
+  try {
+    renameSync(
+      path.join(fixture.root, "data", "applications.md"),
+      path.join(fixture.root, "data", "applications.missing"),
+    );
+    const rendered = await record(fixture, { pages: 1 });
+    assert.equal(rendered.artifact.state, "available");
+    assert.equal(opportunityForReport({ root: fixture.root, report: "001" }), null);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("an invalid canonical record cannot fall back to legacy tracker readiness", async () => {
+  const fixture = pdfFixture();
+  try {
+    const accepted = await record(fixture, { pages: 1 });
+    await reconcilePdfArtifact({
+      root: fixture.root,
+      opportunity: 1,
+      expectedRevision: accepted.record.revision,
+    });
+    const contradictory = {
+      ...accepted.record,
+      pageCount: 2,
+      maxPages: 1,
+      status: "accepted",
+      acceptedBy: "within-budget",
+    };
+    delete contradictory.revision;
+    contradictory.revision = createHash("sha256").update(JSON.stringify(contradictory)).digest("hex");
+    writeFileSync(
+      path.join(fixture.root, ".career-ops-web", "pdf-artifacts", "1.json"),
+      `${JSON.stringify(contradictory, null, 2)}\n`,
+    );
+    const detail = await readOpportunityLifecycle(fixture.root, 1);
+    const pdfArtifacts = detail.opportunity.artifacts.filter((artifact) => artifact.kind === "pdf");
+    assert.equal(pdfArtifacts.length, 1);
+    assert.equal(pdfArtifacts[0].format, "canonical");
+    assert.equal(pdfArtifacts[0].state, "unavailable");
+    assert.equal(pdfArtifacts[0].acceptance, undefined);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test("uncertain process exit recovers accepted PDF evidence without duplicate readiness writes", async () => {
   const fixture = pdfFixture();
   try {
@@ -238,12 +326,13 @@ test("render recording serializes with a stale allowance without clobbering the 
       }),
       record(fixture, { pages: 3 }),
     ]);
-    assert.equal(allowance.effect, "changed");
+    assert.equal(allowance.effect, "unavailable");
     assert.equal(newer.artifact.acceptance.status, "needs-review");
     const current = inspectPdfArtifact({ root: fixture.root, row: { num: 1, report: "[001](x)" } });
     assert.equal(current.record.revision, newer.record.revision);
     assert.equal(current.artifact.acceptance.actualPages, 3);
     assert.equal(current.artifact.acceptance.status, "needs-review");
+    assert.doesNotMatch(readFileSync(path.join(fixture.root, "data", "applications.md"), "utf8"), /\[pdf\]/);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

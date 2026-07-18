@@ -91,6 +91,10 @@ function parseRecord(value, expectedReport = null) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value;
   const report = normalizeReport(record.report);
+  const overflow = Number.isSafeInteger(record.pageCount)
+    && Number.isSafeInteger(record.maxPages)
+    && record.maxPages > 0
+    && record.pageCount > record.maxPages;
   if (
     record.version !== RECORD_VERSION
     || !report
@@ -102,7 +106,9 @@ function parseRecord(value, expectedReport = null) {
     || !Number.isSafeInteger(record.maxPages) || record.maxPages < 0
     || !['accepted', 'needs-review'].includes(record.status)
     || !['within-budget', 'explicit-overflow', null].includes(record.acceptedBy)
-    || (record.status === 'needs-review' && record.acceptedBy !== null)
+    || (record.status === 'needs-review' && (record.acceptedBy !== null || !overflow))
+    || (record.status === 'accepted' && record.acceptedBy === 'within-budget' && overflow)
+    || (record.status === 'accepted' && record.acceptedBy === 'explicit-overflow' && !overflow)
     || (record.status === 'accepted' && record.acceptedBy === null)
     || typeof record.trimGuidance !== 'string'
     || typeof record.pdfRevision !== 'string' || !/^[a-f0-9]{64}$/.test(record.pdfRevision)
@@ -214,6 +220,21 @@ export async function recordPdfArtifact(options) {
       generatedAt: new Date().toISOString(),
     });
     mkdirSync(join(root, RECORD_DIR), { recursive: true });
+    if (status === 'needs-review' && tracker) {
+      const snapshot = readTracker(root);
+      if (snapshot.columns.pdf != null) {
+        let trackerChanged = false;
+        for (const row of snapshot.rows.filter((candidate) => reportFromRow(candidate) === report)) {
+          const parts = snapshot.lines[row.lineIndex].split('|').map((cell) => cell.trim());
+          while (parts.length <= snapshot.columns.pdf) parts.push('');
+          if (!/\]\([^)]+\)/.test(parts[snapshot.columns.pdf])) continue;
+          parts[snapshot.columns.pdf] = '';
+          snapshot.lines[row.lineIndex] = rebuildRow(parts);
+          trackerChanged = true;
+        }
+        if (trackerChanged) writeFileAtomic(snapshot.path, snapshot.lines.join('\n'));
+      }
+    }
     writeFileAtomic(recordPath(root, report), `${JSON.stringify(record, null, 2)}\n`);
     return { record, artifact: publicArtifact(root, record) };
   } finally {
@@ -226,7 +247,8 @@ export function opportunityForReport(options) {
   const root = checkoutRoot(options.root);
   const report = normalizeReport(options.report);
   if (!report) return null;
-  const snapshot = readTracker(root);
+  let snapshot;
+  try { snapshot = readTracker(root); } catch { return null; }
   const matches = snapshot.rows.filter((row) => reportFromRow(row) === report);
   return matches.length === 1 ? matches[0].num : null;
 }
@@ -237,8 +259,19 @@ export function inspectPdfArtifact(options) {
   const row = options.row;
   const report = reportFromRow(row);
   if (!report) return null;
+  const target = recordPath(root, report);
+  if (!existsSync(target)) return null;
   const record = readRecord(root, report);
-  if (!record) return null;
+  if (!record) {
+    return {
+      report,
+      record: null,
+      artifact: {
+        kind: 'pdf', action: 'generate_pdf', expectedAction: 'generate_pdf',
+        state: 'unavailable', format: 'canonical', path: null, revision: null,
+      },
+    };
+  }
   return { report, record, artifact: publicArtifact(root, record) };
 }
 
@@ -269,6 +302,13 @@ export async function reconcilePdfArtifact(options) {
       return {
         code: 'pdf-revision-conflict', effect: 'conflict', retryable: false,
         message: 'The PDF changed after this action was prepared.', artifact: publicArtifact(root, record),
+      };
+    }
+    const currentArtifact = publicArtifact(root, record);
+    if (currentArtifact.state !== 'available') {
+      return {
+        code: 'pdf-artifact-unavailable', effect: 'unavailable', retryable: true,
+        message: 'The canonical PDF bytes are missing or no longer match the reviewed render.', artifact: currentArtifact,
       };
     }
 

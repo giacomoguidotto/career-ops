@@ -293,11 +293,11 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
-  const pdfArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "pdf");
+  const pdfArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "pdf" && artifact.format === "canonical");
   const pdfReady = Boolean(
     pdfArtifact
     && pdfArtifact.state === "available"
-    && (!pdfArtifact.acceptance || pdfArtifact.acceptance.status === "accepted"),
+    && pdfArtifact.acceptance?.status === "accepted",
   );
   const hasGuideableRoutes = approachArtifact?.format === "canonical" && approachPlan
     ? (parseApproachPlan(approachPlan.content) as unknown[]).length > 0

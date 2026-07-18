@@ -357,14 +357,26 @@ export async function recoverLifecycleWork(
 async function reconcilePdf(root: string, opportunity: number, expectedRevision: string): Promise<Record<string, unknown>> {
   const script = path.join(root, "pdf-artifact.mjs");
   if (!fs.existsSync(script)) throw new LifecycleAdapterError("pdf-contract-unavailable", "The PDF acceptance contract is unavailable.", 503);
-  const stdout = await new Promise<string>((resolve, reject) => {
-    execFile(
-      process.execPath,
-      [script, "reconcile", `--opportunity=${opportunity}`, `--expected-revision=${expectedRevision}`, `--root=${root}`],
-      { cwd: root, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024, env: { ...process.env, CAREER_OPS_PDF_ARTIFACT_CLI: "1" } },
-      (error, output) => error ? reject(Object.assign(error, { output })) : resolve(output),
-    );
-  });
+  let stdout: string;
+  try {
+    stdout = await new Promise<string>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [script, "reconcile", `--opportunity=${opportunity}`, `--expected-revision=${expectedRevision}`, `--root=${root}`],
+        { cwd: root, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024, env: { ...process.env, CAREER_OPS_PDF_ARTIFACT_CLI: "1" } },
+        (error, output) => error ? reject(Object.assign(error, { output })) : resolve(output),
+      );
+    });
+  } catch (error) {
+    const output = typeof (error as { output?: unknown })?.output === "string" ? (error as { output: string }).output : "";
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(output); } catch { /* fall through */ }
+    if (
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && ["conflict", "blocked", "unavailable"].includes(String((parsed as Record<string, unknown>).effect ?? ""))
+    ) return parsed as Record<string, unknown>;
+    throw error;
+  }
   const parsed = JSON.parse(stdout) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid PDF reconciliation output");
   return parsed as Record<string, unknown>;

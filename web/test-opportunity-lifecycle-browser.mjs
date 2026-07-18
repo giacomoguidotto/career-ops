@@ -232,9 +232,6 @@ const fixture = createFictionalOpportunityWorkspace({
       'Fictional canonical work waiting for reconciliation.',
     ].join('\n'),
   },
-  reports: {
-    '116-overflow-review.md': '# Overflow Review Co\n\n**URL:** https://example.invalid/jobs/overflow-review\n\n## Machine Summary\n\nfinal_decision: apply\n',
-  },
   clusters: [
     '# Candidacy clusters',
     '',
@@ -250,6 +247,7 @@ const fixture = createFictionalOpportunityWorkspace({
     '',
   ].join('\n'),
   reports: {
+    '116-overflow-review.md': '# Overflow Review Co\n\n**URL:** https://example.invalid/jobs/overflow-review\n\n## Machine Summary\n\nfinal_decision: apply\n',
     '002-northstar-fictional.md': [
       '# Evaluation: Northstar Fictional',
       '',
