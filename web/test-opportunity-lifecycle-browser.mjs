@@ -296,9 +296,14 @@ try {
   const commandButton = page.getByRole('button', { name: /Commands/ });
   await commandButton.focus();
   await page.keyboard.press('Enter');
-  await page.getByRole('dialog', { name: 'Pipeline commands' }).waitFor();
+  const commandDialog = page.getByRole('dialog', { name: 'Pipeline commands' });
+  await commandDialog.waitFor();
+  const commandSearch = commandDialog.getByRole('textbox', { name: 'Search commands' });
+  assert.equal(await commandSearch.evaluate((element) => document.activeElement === element), true);
+  await commandSearch.fill('prepare');
+  assert.equal(await commandDialog.getByRole('button', { name: /Prepare suggested artifact/ }).isVisible(), true);
   assert.equal(new URL(page.url()).pathname, '/pipeline');
-  await page.getByRole('button', { name: /Prepare suggested artifact/ }).click();
+  await commandDialog.getByRole('button', { name: /Prepare suggested artifact/ }).click();
   await page.getByRole('dialog', { name: 'Review preparation' }).waitFor();
   assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
@@ -309,6 +314,11 @@ try {
   await page.getByRole('button', { name: /in inbox/ }).click();
   await page.getByRole('heading', { name: 'Inbox' }).waitFor();
   assert.equal(await page.getByText('Upstream triage, outside lifecycle Stages').isVisible(), true);
+  const inboxUrl = page.url();
+  await page.keyboard.press('j');
+  await page.keyboard.press('k');
+  await page.keyboard.press('Enter');
+  assert.equal(page.url(), inboxUrl);
   await page.getByRole('button', { name: /Return to Stage ledger/ }).click();
 
   const stage = fixture.stages[1];
@@ -343,7 +353,15 @@ try {
   }
 
   await page.getByRole('button', { name: /^All / }).click();
-  await page.waitForURL((url) => !url.searchParams.has('stage'));
+  await page.waitForURL((url) => !url.searchParams.has('stage') && !url.searchParams.has('tab') && url.searchParams.has('selected'));
+  const sortControl = page.getByRole('combobox', { name: 'Sort Opportunities' });
+  assert.deepEqual(await sortControl.locator('option').allTextContents(), ['Tracker order', 'Company', 'Role', 'Fit', 'Stage', 'Date']);
+  await sortControl.selectOption('score');
+  await page.waitForURL((url) => url.searchParams.get('sort') === 'score' && url.searchParams.get('dir') === '-1');
+  await page.waitForFunction(() => document.querySelector('tbody [data-opportunity-id]')?.getAttribute('data-opportunity-id') === '900');
+  assert.equal(await page.locator('tbody [data-opportunity-id]').first().getAttribute('data-opportunity-id'), '900');
+  await page.getByRole('button', { name: 'Sort descending' }).click();
+  await page.waitForURL((url) => url.searchParams.get('dir') === '1');
   await page.goto(`${baseUrl}/pipeline?sort=score&dir=-1`);
   await page.locator('[data-opportunity-id="900"]:visible').waitFor();
   await page.waitForURL((url) => url.searchParams.get('selected') === '900');

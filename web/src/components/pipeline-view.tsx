@@ -254,13 +254,13 @@ export function PipelineView({
       } else if (event.key === "/") {
         event.preventDefault();
         searchRef.current?.focus();
-      } else if (event.key.toLowerCase() === "j") {
+      } else if (!inboxOpen && event.key.toLowerCase() === "j") {
         event.preventDefault();
         moveSelection(1);
-      } else if (event.key.toLowerCase() === "k") {
+      } else if (!inboxOpen && event.key.toLowerCase() === "k") {
         event.preventDefault();
         moveSelection(-1);
-      } else if (event.key === "Enter" && selected && !isInteractiveTarget(event.target)) {
+      } else if (!inboxOpen && event.key === "Enter" && selected && !isInteractiveTarget(event.target)) {
         event.preventDefault();
         router.push(`/pipeline/${selected.opportunity}`);
       } else if (event.key === "?") {
@@ -270,7 +270,7 @@ export function PipelineView({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeDialog, dialog, moveSelection, openDialog, router, selected]);
+  }, [closeDialog, dialog, inboxOpen, moveSelection, openDialog, router, selected]);
 
   const setStage = useCallback((stage: Stage | null) => {
     setTemporaryPreview(null);
@@ -402,12 +402,37 @@ export function PipelineView({
               </div>
             )}
 
-            <div className="mt-3 hidden justify-end xl:flex">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+              <label className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 text-xs text-muted">
+                <span>Sort by</span>
+                <select
+                  aria-label="Sort Opportunities"
+                  value={sortKey ?? ""}
+                  onChange={(event) => setParams({ sort: event.target.value || null, dir: event.target.value ? sortDirection : null })}
+                  className="bg-transparent font-medium text-foreground outline-none"
+                >
+                  <option value="">Tracker order</option>
+                  <option value="company">Company</option>
+                  <option value="role">Role</option>
+                  <option value="score">Fit</option>
+                  <option value="status">Stage</option>
+                  <option value="date">Date</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={!sortKey}
+                aria-label={sortDirection === 1 ? "Sort ascending" : "Sort descending"}
+                onClick={() => setParams({ dir: sortDirection === 1 ? -1 : 1 })}
+                className="inline-flex min-h-11 items-center rounded-lg border border-border bg-surface/70 px-3 text-xs font-medium text-muted transition hover:border-brand/35 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:transition-none"
+              >
+                {sortDirection === 1 ? "Ascending" : "Descending"}
+              </button>
               <button
                 type="button"
                 aria-expanded={previewOpen}
                 onClick={() => setPreviewOpen((value) => !value)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted transition hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 motion-reduce:transition-none"
+                className="hidden min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted transition hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 motion-reduce:transition-none xl:inline-flex"
               >
                 {previewOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
                 {previewOpen ? "Hide preview" : "Show preview"}
@@ -691,7 +716,8 @@ function InboxEmpty() {
 function DialogFrame({ title, description, onClose, children }: { title: string; description: string; onClose: () => void; children: ReactNode }) {
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const initial = panelRef.current?.querySelector<HTMLElement>("[data-dialog-initial], button, a, input");
+    const initial = panelRef.current?.querySelector<HTMLElement>("[data-dialog-initial]")
+      ?? panelRef.current?.querySelector<HTMLElement>("button, a, input");
     initial?.focus();
   }, []);
 
@@ -727,7 +753,7 @@ function DialogFrame({ title, description, onClose, children }: { title: string;
             <h2 id="pipeline-dialog-title" className="font-display text-2xl text-landing">{title}</h2>
             <p id="pipeline-dialog-description" className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
           </div>
-          <button data-dialog-initial type="button" onClick={onClose} aria-label="Close dialog" className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-foreground">
+          <button type="button" onClick={onClose} aria-label="Close dialog" className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-foreground">
             <X className="size-4" />
           </button>
         </header>
@@ -763,7 +789,7 @@ function CommandPalette({
         <label className="relative block">
           <span className="sr-only">Search commands</span>
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Type a command" className="min-h-11 w-full rounded-lg border border-border bg-surface/65 pl-9 pr-3 text-sm outline-none focus:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/35" />
+          <input data-dialog-initial value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Type a command" className="min-h-11 w-full rounded-lg border border-border bg-surface/65 pl-9 pr-3 text-sm outline-none focus:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/35" />
         </label>
         <div className="mt-2 space-y-1">
           {commands.map((item) => (
