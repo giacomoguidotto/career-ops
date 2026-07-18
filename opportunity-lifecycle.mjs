@@ -25,6 +25,7 @@ import {
 } from './followup-cadence.mjs';
 import { readApproachAttempts } from './approach-attempts.mjs';
 import {
+  candidacyStageIsReleased,
   decisionFromReport,
   decisionFromTrackerNotes,
   parseClusterRegistry,
@@ -481,6 +482,12 @@ function candidacyForRow(row, candidacy) {
       reason: suppressed?.reason ?? null,
     };
   });
+  const entryAgentStage = candidacy.states.records.find((stage) => stage.owner === 'agent') ?? null;
+  const hasReservedMember = members.some((member) => (
+    member.stage
+    && !candidacyStageIsReleased(member.stage)
+    && member.stage !== entryAgentStage?.id
+  ));
   const details = {
     shared: Boolean(registryCluster && registryCluster.members.length > 1),
     surface: registryCluster?.surface ?? null,
@@ -517,7 +524,7 @@ function candidacyForRow(row, candidacy) {
       primary: suppressed.primary,
       outreachAnchor: cluster?.outreachAnchor ?? null,
       ...details,
-      canSelectPrimary: details.shared && suppressed.reason !== 'accepted-primary',
+      canSelectPrimary: details.shared && !hasReservedMember,
       canReleasePrimary: details.shared && cluster?.storedPrimary === row.num,
     };
   }
@@ -530,7 +537,7 @@ function candidacyForRow(row, candidacy) {
       primary: eligible.primary,
       outreachAnchor: cluster?.outreachAnchor ?? null,
       ...details,
-      canSelectPrimary: details.shared && cluster?.storedPrimary !== row.num,
+      canSelectPrimary: details.shared && !hasReservedMember && cluster?.storedPrimary !== row.num,
       canReleasePrimary: details.shared && cluster?.storedPrimary === row.num,
     };
   }
@@ -545,7 +552,7 @@ function candidacyForRow(row, candidacy) {
       primary,
       outreachAnchor: cluster.outreachAnchor ?? null,
       ...details,
-      canSelectPrimary: details.shared && maySelectPrimary && cluster.storedPrimary !== row.num,
+      canSelectPrimary: details.shared && !hasReservedMember && maySelectPrimary && cluster.storedPrimary !== row.num,
       canReleasePrimary: details.shared && cluster.storedPrimary === row.num,
     };
   }

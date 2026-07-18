@@ -757,6 +757,45 @@ test('released terminal cluster members cannot become Primary', async () => {
   }
 });
 
+test('a progressed sibling reserves the Hiring surface from durable Primary changes', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Reserved Co', role: 'Progressed Lead', stage: 'Approach Ready' },
+      { num: 2, company: 'Reserved Co', role: 'Evaluated Alternate', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| reserved-surface | Reserved Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.reason, 'reserved-primary');
+    assert.equal(before.candidacy.canSelectPrimary, false);
+    assert.equal(before.candidacy.canGenerateOnce, true);
+
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'primary-selection-blocked');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test('Primary changes are blocked while any cluster member has active lifecycle work', async () => {
   const fixture = createFictionalOpportunityWorkspace({
     materializeCore: true,

@@ -150,6 +150,10 @@ function activeForCoordination(item) {
   return item.state && (!RELEASED_STAGE_IDS.has(item.state.id));
 }
 
+export function candidacyStageIsReleased(stageId) {
+  return RELEASED_STAGE_IDS.has(stageId);
+}
+
 function validReviewedDate(value) {
   const raw = String(value ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
