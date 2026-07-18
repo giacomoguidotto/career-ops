@@ -1,7 +1,5 @@
 import { NextRequest } from "next/server";
-import fs from "node:fs";
 import { runDiscovery } from "@/lib/core/scan";
-import { rootScript } from "@/lib/career-ops";
 import { parseExplorePatch, DEFAULT_FILTERS, type DiscoveredOffer, type ScanEvent } from "@/lib/explore";
 
 // Discovery is HTTP-bound across many ATS boards; give it room. It is FREE —
@@ -20,14 +18,6 @@ export async function POST(req: NextRequest) {
 
   const filters = parseExplorePatch(body, DEFAULT_FILTERS);
 
-  // Guard: a data-only checkout (or pre-onboarding) has no scanner. Fail soft.
-  if (!fs.existsSync(rootScript("scan-ats-full"))) {
-    return Response.json(
-      { error: "The discovery scanner isn't available in this checkout yet." },
-      { status: 400 },
-    );
-  }
-
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -38,7 +28,7 @@ export async function POST(req: NextRequest) {
           /* stream closed */
         }
       };
-      send({ kind: "start", ats: filters.ats, sinceDays: filters.sinceDays, limit: filters.limitPerAts, free: true } satisfies ScanEvent);
+      send({ kind: "start", paths: ["company-first", "reverse-ats"], ats: filters.ats, sinceDays: filters.sinceDays, limit: filters.limitPerAts, free: true } satisfies ScanEvent);
       let offers: DiscoveredOffer[] = [];
       try {
         offers = await runDiscovery(filters, (e: ScanEvent) => send(e));

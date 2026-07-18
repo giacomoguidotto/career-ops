@@ -57,7 +57,7 @@ export async function GET() {
       followupsFile: fs.existsSync(path.join(careerOpsRoot(), "data", "follow-ups.md")),
     },
     capabilities: {
-      scanJson: scannerSupportsJson(),
+      scanJson: await scannerSupportsJson(),
       trackerDelete: trackerCanDelete(),
     },
   });

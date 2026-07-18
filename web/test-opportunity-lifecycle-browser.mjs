@@ -120,6 +120,31 @@ const fixture = createFictionalOpportunityWorkspace({
       "process.stdout.write(JSON.stringify({ onboardingNeeded: false, missing: [], warnings: [], autoCopied: [] }) + '\\n');",
       '',
     ].join('\n'),
+    'scan.mjs': [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--help')) { process.stdout.write('  --json structured output\\n'); process.exit(0); }",
+      "process.stdout.write(JSON.stringify({",
+      "  contract: { id: 'career-ops.scanner.company-first', version: 1 },",
+      "  ordering: { kind: 'configured-priority', configuredSources: 1 },",
+      "  companiesAvailable: 4, companiesScanned: 4, jobBoardsAvailable: 0, jobBoardsScanned: 0,",
+      "  runCap: { limit: 30, deferred: 2 }, companyCap: { limit: 3, deferred: 1 },",
+      "  unreachableTargets: 0, networkErrors: 0, otherErrors: 0, unhandledSources: 0, malformedSources: 0,",
+      "  offers: [{ company: 'Priority Fictional', title: 'Research Engineer', url: 'https://jobs.example.test/company', location: 'Remote', postedAt: '2026-07-18', source: 'ashby-api' }]",
+      "}) + '\\n');",
+      '',
+    ].join('\n'),
+    'scan-ats-full.mjs': [
+      "const args = process.argv.slice(2);",
+      "if (args.includes('--help')) { process.stdout.write('  --json structured output\\n'); process.exit(0); }",
+      "process.stdout.write(JSON.stringify({",
+      "  contract: { id: 'career-ops.scanner.reverse-ats', version: 1 }, sources: ['greenhouse', 'lever', 'ashby', 'workday'], sampling: 'alphabetical', companyLimit: 150,",
+      "  companiesAvailable: 12, companiesScanned: 8, capHit: true,",
+      "  datasetStatus: { greenhouse: 'ok', lever: 'stale', ashby: 'ok', workday: 'empty' },",
+      "  postingsDroppedNoDate: 3, unreachableBoards: 2, sourceRecordsDropped: 0,",
+      "  offers: [{ company: 'Reverse Fictional', title: 'ML Researcher', url: 'https://jobs.example.test/reverse', location: 'Remote', postedAt: '2026-07-18', source: 'lever-full' }]",
+      "}) + '\\n');",
+      '',
+    ].join('\n'),
   },
 });
 const before = fingerprintFictionalWorkspace(fixture.root);
@@ -291,6 +316,30 @@ try {
 
   assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), false);
+  assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
+
+  await page.goto(`${baseUrl}/explore`);
+  await page.getByRole('button', { name: 'Discover (free)' }).click();
+  await page.getByLabel('Scanner completeness').waitFor();
+  await page.getByText(/configured-priority order/).waitFor();
+  await page.getByText(/alphabetical sampling/).waitFor();
+  await page.getByText(/run cap 30, 2 deferred/).waitFor();
+  await page.getByText(/3 records dropped for missing dates/).waitFor();
+  await page.getByRole('button', { name: 'Adjust scan caps' }).click();
+  await page.getByLabel('Tracked-company run cap').waitFor();
+  for (const { width, height, theme } of [
+    { width: 390, height: 844, theme: 'dark' },
+    { width: 390, height: 844, theme: 'light' },
+    { width: 1440, height: 960, theme: 'dark' },
+    { width: 1440, height: 960, theme: 'light' },
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate((nextTheme) => localStorage.setItem('career-ops:theme', nextTheme), theme);
+    await page.reload();
+    await page.getByLabel('Scanner completeness').waitFor();
+    assert.equal(await page.locator('html').evaluate((html) => html.classList.contains('dark')), theme === 'dark');
+    assert.equal(await page.locator('body').evaluate((body) => body.scrollWidth <= document.documentElement.clientWidth), true);
+  }
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
   await context.tracing.stop();
   traceStopped = true;

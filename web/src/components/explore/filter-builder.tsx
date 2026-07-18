@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Ban, Clock, MapPin, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { ATS_LABEL, ATS_SOURCES, cleanChips, type AtsSource, type ExploreFilters } from "@/lib/explore";
@@ -102,12 +102,17 @@ export function FilterBuilder({
   filters,
   onChange,
   seededFrom = [],
+  forceAdvanced = false,
 }: {
   filters: ExploreFilters;
   onChange: (f: ExploreFilters) => void;
   seededFrom?: string[];
+  forceAdvanced?: boolean;
 }) {
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState(forceAdvanced);
+  useEffect(() => {
+    if (forceAdvanced) setAdvanced(true);
+  }, [forceAdvanced]);
   const set = (patch: Partial<ExploreFilters>) => onChange({ ...filters, ...patch });
   const toggleAts = (a: AtsSource) => {
     const has = filters.ats.includes(a);
@@ -219,6 +224,34 @@ export function FilterBuilder({
               onChange={(e) => set({ limitPerAts: Number(e.target.value) })}
               className="w-full accent-brand"
             />
+            <label className="mt-2 flex min-h-[44px] items-center gap-2 text-[12px] text-muted">
+              <input type="checkbox" checked={filters.shuffleAts} onChange={(e) => set({ shuffleAts: e.target.checked })} className="size-4 accent-brand" />
+              Shuffle capped reverse-ATS samples instead of taking the alphabetical prefix
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-[12px] text-muted">
+              <span className="mb-1 block font-medium text-foreground">Tracked-company run cap</span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={filters.companyRunLimit}
+                onChange={(e) => set({ companyRunLimit: Math.min(500, Math.max(1, Number(e.target.value) || 1)) })}
+                className="min-h-[44px] w-full rounded-lg border border-border bg-surface/40 px-3 text-foreground"
+              />
+            </label>
+            <label className="text-[12px] text-muted">
+              <span className="mb-1 block font-medium text-foreground">Offers per company</span>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={filters.companyOfferLimit}
+                onChange={(e) => set({ companyOfferLimit: Math.min(50, Math.max(1, Number(e.target.value) || 1)) })}
+                className="min-h-[44px] w-full rounded-lg border border-border bg-surface/40 px-3 text-foreground"
+              />
+            </label>
           </div>
         </div>
       )}

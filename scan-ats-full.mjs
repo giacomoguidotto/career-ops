@@ -134,6 +134,7 @@ const USAGE = `Usage:
   node scan-ats-full.mjs --liveness           # Playwright-verify matches before writing
   node scan-ats-full.mjs --verbose            # log per-board fetch failures
   node scan-ats-full.mjs --md-out <dir>       # also write a dated markdown digest to <dir>
+  node scan-ats-full.mjs --json               # emit one machine-readable result on stdout
   node scan-ats-full.mjs --help               # print this usage block and exit`;
 
 function parseArgs(argv) {
@@ -435,6 +436,7 @@ async function main() {
   let totalCompaniesAvailable = 0;
   let totalErrors = 0;
   let droppedNoDate = 0;
+  let sourceRecordsDropped = 0;
   let capHit = false;
   // Aggregated from providers/workday.mjs's jobs.workdayNoDateSkip tag — see
   // there for why this is a counter instead of a per-company console.error
@@ -450,7 +452,10 @@ async function main() {
     datasetStatus[name] = status;
     totalCompaniesAvailable += list.length;
     if (opts.limit < list.length) capHit = true;
-    const entries = sampleCompanies(list, opts.limit, opts.shuffle).map(source.toEntry).filter(Boolean);
+    const sampled = sampleCompanies(list, opts.limit, opts.shuffle);
+    const mapped = sampled.map(source.toEntry);
+    const entries = mapped.filter(Boolean);
+    sourceRecordsDropped += mapped.length - entries.length;
     totalCompaniesScanned += entries.length;
     log(`\n⚙  ${name} — ${entries.length} companies${status !== 'ok' ? ` (dataset: ${status})` : ''}`);
 
@@ -570,9 +575,12 @@ async function main() {
   // from a genuinely *empty* one. In --json mode stdout carries ONLY this.
   if (opts.json) {
     process.stdout.write(JSON.stringify({
+      contract: { id: 'career-ops.scanner.reverse-ats', version: 1 },
       date,
       sources: opts.ats,
       sinceDays: opts.sinceDays,
+      sampling: opts.shuffle ? 'shuffled' : 'alphabetical',
+      companyLimit: Number.isFinite(opts.limit) ? opts.limit : null,
       companiesAvailable: totalCompaniesAvailable,
       companiesScanned: totalCompaniesScanned,
       capHit,
@@ -580,6 +588,7 @@ async function main() {
       postingsKept: offers.length,
       postingsDroppedNoDate: droppedNoDate,
       unreachableBoards: totalErrors,
+      sourceRecordsDropped,
       saved,
       offers: offers.map(o => ({
         company: o.company,

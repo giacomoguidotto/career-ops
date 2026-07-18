@@ -39,7 +39,7 @@ export function ResultsList({ offers }: { offers: EnrichedOffer[] }) {
           <p className="text-[12px] text-faint">
             {isAi
               ? "found by AI on the open web · unverified until you evaluate"
-              : `${companiesScanned > 0 ? `${companiesScanned.toLocaleString()} companies scanned · ` : ""}0 tokens spent${partial ? " · some boards were unreachable (normal for public directories)" : ""}`}
+              : `${companiesScanned > 0 ? `${companiesScanned.toLocaleString()} targets searched · ` : ""}0 tokens spent${partial ? " · coverage was incomplete; see details above" : ""}`}
           </p>
         </div>
 
