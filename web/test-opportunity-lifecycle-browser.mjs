@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { chromium } from 'playwright';
 import {
   createFictionalOpportunityWorkspace,
@@ -234,6 +234,7 @@ const fixture = createFictionalOpportunityWorkspace({
     'cv.md': '# Fictional CV\n',
     'output/002-northstar-fictional.pdf': 'fictional pdf bytes',
     'modes/_profile.md': '# Fictional profile\n',
+    'modes/next.md': '# Fictional next mode\n',
     'portals.yml': 'title_filter:\n  positive:\n    - researcher\n',
     'data/pipeline.md': '- [ ] https://fictional.example/jobs/1 | Inbox Research | Research Engineer | Remote\n',
     'doctor.mjs': [
@@ -270,6 +271,11 @@ const fixture = createFictionalOpportunityWorkspace({
     ].join('\n'),
   },
 });
+const binDir = join(fixture.root, 'fixture-bin');
+mkdirSync(binDir, { recursive: true });
+const codex = join(binDir, 'codex');
+writeFileSync(codex, "#!/bin/sh\nprintf 'VERDICT: 5/5 | fictional authorized generation completed\\n'\n");
+chmodSync(codex, 0o755);
 const before = fingerprintFictionalWorkspace(fixture.root);
 const beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
 const logoPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
@@ -300,6 +306,7 @@ const child = spawn(
       BUILD_DIST: DIST_DIR,
       CAREER_OPS_ROOT: fixture.root,
       CAREER_OPS_LOGO_SOURCE_URL: logoSourceUrl,
+      PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
@@ -316,6 +323,7 @@ try {
   await waitUntilReady(`${baseUrl}/api/opportunities`, child, output);
   browser = await chromium.launch({ headless: true });
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
+  await context.addInitScript(() => localStorage.setItem('career-ops:config', JSON.stringify({ cliId: 'codex' })));
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   page = await context.newPage();
   await page.addInitScript(() => {
@@ -749,13 +757,22 @@ try {
   const generationReview = page.getByRole('dialog', { name: 'Generate once for Opportunity #101?' });
   await generationReview.waitFor();
   assert.equal(await generationReview.getByText('no factual Stage changes', { exact: false }).isVisible(), true);
-  const generationResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  const generationRequest = page.waitForRequest((request) => request.url().endsWith('/api/run') && request.method() === 'POST');
+  const generationResponse = page.waitForResponse((response) => response.url().endsWith('/api/run') && response.request().method() === 'POST');
   await generationReview.getByRole('button', { name: 'Generate once' }).click();
-  const generation = await (await generationResponse).json();
-  assert.equal(generation.code, 'work-requested');
-  assert.equal(generation.workOrder.authorization.kind, 'single-generation-exception');
-  assert.equal(generation.before.candidacy.persistedPrimary, 100);
-  assert.equal(generation.after.stage.id, generation.before.stage.id);
+  const generation = await generationRequest;
+  const generationRun = await generationResponse;
+  assert.equal(generationRun.status(), 200, await generationRun.text());
+  const generationBody = generation.postDataJSON();
+  assert.equal(generationBody.kind, 'lifecycle');
+  assert.equal(generationBody.cliId, 'codex');
+  assert.deepEqual(JSON.parse(generationBody.input), {
+    opportunity: 101,
+    expectedStage: beforeCoordination.opportunity.stage.id,
+    expectedRevision: beforeCoordination.opportunity.revision,
+    candidacyOverride: true,
+  });
+  await page.getByText('Starting one authorized generation for Opportunity #101.').waitFor();
 
   await page.getByRole('button', { name: 'Make this Primary' }).click();
   const primaryReview = page.getByRole('dialog', { name: 'Make Opportunity #101 Primary?' });
@@ -831,11 +848,12 @@ try {
 
   const writes = requests.filter((request) => request.method !== 'GET' && request.method !== 'HEAD');
   assert.deepEqual(writes.map((request) => [request.method, new URL(request.url).pathname]), [
-    ['POST', '/api/opportunities/101'],
+    ['POST', '/api/run'],
+    ['POST', '/api/runs/save'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/101'],
   ]);
-  assert.equal(requests.some((request) => request.url.includes('/api/run')), false);
+  assert.equal(requests.some((request) => request.url.includes('/api/run')), true);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
 
   await page.goto(`${baseUrl}/explore`);

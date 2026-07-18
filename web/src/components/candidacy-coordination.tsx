@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Search, Sparkles, UsersRound, X } from "lucide-react";
+import { useJobs } from "@/components/jobs/job-store";
 import type { OpportunitySummary } from "@/lib/core/opportunity-lifecycle";
 import { cn } from "@/lib/cn";
 
@@ -34,6 +35,7 @@ function commandCopy(command: Command, opportunity: OpportunitySummary) {
 export function CandidacyCoordination({ opportunity }: { opportunity: OpportunitySummary }) {
   const candidacy = opportunity.candidacy;
   const router = useRouter();
+  const { startJob } = useJobs();
   const [command, setCommand] = useState<Command | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,6 +71,24 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
     setBusy(true);
     setError(null);
     try {
+      if (command === "generate-once") {
+        const job = startJob({
+          title: `Prepare Opportunity #${opportunity.opportunity}`,
+          subtitle: `${opportunity.company} · ${opportunity.role}`,
+          kind: "lifecycle",
+          input: JSON.stringify({
+            opportunity: opportunity.opportunity,
+            expectedStage: opportunity.stage.id,
+            expectedRevision: opportunity.revision,
+            candidacyOverride: true,
+          }),
+          page: `/pipeline/${opportunity.opportunity}`,
+        });
+        if (!job) throw new Error("The one-generation worker could not be started.");
+        setNotice(`Starting one authorized generation for Opportunity #${opportunity.opportunity}.`);
+        setCommand(null);
+        return;
+      }
       const response = await fetch(`/api/opportunities/${opportunity.opportunity}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

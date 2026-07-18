@@ -11,7 +11,6 @@ import {
   listOpportunityLifecycle,
   readOpportunityLifecycle,
   requestOpportunityWork,
-  requestOneGenerationLifecycle,
   setOpportunityPrimaryLifecycle,
   tryListOpportunityLifecycle,
 } from "./src/lib/core/opportunity-lifecycle.ts";
@@ -106,9 +105,12 @@ test("adapter transports guarded candidacy commands through the canonical seam",
     assert.equal(selected.after.stage.id, target.stage.id);
 
     const alternate = (await readOpportunityLifecycle(overrideFixture.root, 2)).opportunity;
-    const generated = await requestOneGenerationLifecycle(
-      overrideFixture.root, 2, alternate.stage.id, alternate.revision,
-    );
+    const generated = await requestOpportunityWork(overrideFixture.root, {
+      opportunity: 2,
+      expectedStage: alternate.stage.id,
+      expectedRevision: alternate.revision,
+      candidacyOverride: true,
+    });
     assert.equal(generated.code, "work-requested");
     assert.equal(generated.workOrder.authorization.kind, "single-generation-exception");
     assert.equal(generated.before.stage.id, generated.after.stage.id);

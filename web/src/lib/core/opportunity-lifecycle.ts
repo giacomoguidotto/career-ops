@@ -542,20 +542,6 @@ export async function setOpportunityPrimaryLifecycle(
   return result;
 }
 
-export async function requestOneGenerationLifecycle(
-  root: string,
-  opportunity: number,
-  expectedStage: string,
-  expectedRevision: string,
-): Promise<LifecycleCommandOutcome> {
-  const result = await run(root, "request", [
-    ...commandArguments(opportunity, expectedStage, expectedRevision),
-    "--candidacy-override",
-  ]);
-  validateCommandOutcome(result);
-  return result;
-}
-
 export async function readLifecycleContract(root: string): Promise<LifecycleContract> {
   const result = await run(root, "contract");
   validateContract(result);
@@ -611,7 +597,12 @@ export async function readOpportunityLifecycle(root: string, opportunity: number
 
 export async function requestOpportunityWork(
   root: string,
-  expectation: { opportunity: number; expectedStage: string; expectedRevision: string },
+  expectation: {
+    opportunity: number;
+    expectedStage: string;
+    expectedRevision: string;
+    candidacyOverride?: true;
+  },
 ): Promise<LifecycleCommandOutcome> {
   if (!Number.isSafeInteger(expectation.opportunity) || expectation.opportunity <= 0) {
     throw new LifecycleAdapterError("invalid-opportunity", "Opportunity must be a positive tracker number.", 400);
@@ -622,10 +613,14 @@ export async function requestOpportunityWork(
   if (!/^[a-f0-9]{64}$/.test(expectation.expectedRevision)) {
     throw new LifecycleAdapterError("invalid-expected-revision", "Expected revision must be a lifecycle summary revision.", 400);
   }
+  if (expectation.candidacyOverride !== undefined && expectation.candidacyOverride !== true) {
+    throw new LifecycleAdapterError("invalid-candidacy-override", "Candidacy override must be the explicit one-generation authorization.", 400);
+  }
   const result = await run(root, "request", [
     "--opportunity", String(expectation.opportunity),
     "--expected-stage", expectation.expectedStage,
     "--expected-revision", expectation.expectedRevision,
+    ...(expectation.candidacyOverride ? ["--candidacy-override"] : []),
   ]);
   if (
     !isRecord(result)

@@ -2,7 +2,6 @@ import { careerOpsRoot } from "@/lib/career-ops";
 import { lifecycleErrorResponse } from "@/lib/core/opportunity-lifecycle-api";
 import {
   readOpportunityLifecycle,
-  requestOneGenerationLifecycle,
   setOpportunityPrimaryLifecycle,
 } from "@/lib/core/opportunity-lifecycle";
 
@@ -47,24 +46,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const keys = Object.keys(body).sort();
   if (
     keys.join("\0") !== ["action", "expectedRevision", "expectedStage"].join("\0")
-    || !["set-primary", "release-primary", "generate-once"].includes(String(body.action))
+    || !["set-primary", "release-primary"].includes(String(body.action))
     || typeof body.expectedStage !== "string"
     || typeof body.expectedRevision !== "string"
   ) {
     return Response.json({ error: { code: "invalid-request", message: "The lifecycle command is invalid." } }, { status: 400 });
   }
   try {
-    const outcome = body.action === "generate-once"
-      ? await requestOneGenerationLifecycle(
-          careerOpsRoot(), opportunity, body.expectedStage, body.expectedRevision,
-        )
-      : await setOpportunityPrimaryLifecycle(
-          careerOpsRoot(),
-          opportunity,
-          body.expectedStage,
-          body.expectedRevision,
-          body.action === "release-primary" ? null : opportunity,
-        );
+    const outcome = await setOpportunityPrimaryLifecycle(
+      careerOpsRoot(),
+      opportunity,
+      body.expectedStage,
+      body.expectedRevision,
+      body.action === "release-primary" ? null : opportunity,
+    );
     const status = outcome.effect === "conflict" ? 409 : outcome.effect === "unavailable" ? 503 : 200;
     return Response.json(outcome, { status });
   } catch (error) {
