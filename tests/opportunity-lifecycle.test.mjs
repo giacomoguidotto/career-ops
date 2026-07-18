@@ -610,6 +610,47 @@ test('stale requests conflict with a fresh authoritative summary and write nothi
   }
 });
 
+test('active work records are fully validated and expired leases can be reclaimed', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [{ num: 1, company: 'Lease Co', role: 'Researcher', stage: 'Evaluated' }],
+    missingOptionalFiles: true,
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    const request = (overrides = {}) => requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 1,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      nowMs: 1_000,
+      workLeaseMs: 100,
+      ...overrides,
+    });
+    const first = await request();
+    const statePath = join(fixture.root, '.career-ops-web', 'lifecycle-work', `${first.workOrder.id}.json`);
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    state.workOrder.artifact.kind = 'incompatible-kind';
+    writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    assert.equal((await request()).code, 'work-state-invalid');
+
+    state.workOrder = first.workOrder;
+    writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+    assert.equal((await request()).code, 'already-running');
+    const reclaimed = await request({ nowMs: 1_101 });
+    assert.equal(reclaimed.code, 'work-requested');
+    assert.equal(reclaimed.effect, 'accepted');
+    assert.equal(JSON.parse(readFileSync(statePath, 'utf8')).lease.acquiredAt, new Date(1_101).toISOString());
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('lifecycle work state is ignored as transient local runtime data', () => {
+  const ignore = readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8');
+  assert.match(ignore, /^\.career-ops-web\/lifecycle-work\/$/m);
+});
+
 test('reconciliation covers canonical and legacy artifacts for every Agent-owned Stage', async () => {
   const stages = loadStates({ rootDir: REPO_ROOT, force: true }).records.filter((stage) => stage.owner === 'agent');
   for (const [index, stage] of stages.entries()) {
@@ -633,6 +674,19 @@ test('reconciliation covers canonical and legacy artifacts for every Agent-owned
       });
       try {
         const before = readOpportunity({ root: fixture.root, opportunity: num }).opportunity;
+        const reservation = await requestOpportunityWork({
+          root: fixture.root,
+          opportunity: num,
+          expectedStage: before.stage.id,
+          expectedRevision: before.revision,
+        });
+        const statePath = join(
+          fixture.root,
+          '.career-ops-web',
+          'lifecycle-work',
+          `${reservation.workOrder.id}.json`,
+        );
+        assert.equal(existsSync(statePath), true);
         const result = await reconcileOpportunityWork({
           root: fixture.root,
           opportunity: num,
@@ -645,6 +699,7 @@ test('reconciliation covers canonical and legacy artifacts for every Agent-owned
         assert.equal(result.before.stage.id, stage.id);
         assert.equal(result.after.stage.id, readyId);
         assert.equal(result.artifacts.some((artifact) => artifact.action === stage.suggests), true);
+        assert.equal(existsSync(statePath), false);
 
         const current = readOpportunity({ root: fixture.root, opportunity: num }).opportunity;
         const repeated = await reconcileOpportunityWork({
@@ -660,6 +715,65 @@ test('reconciliation covers canonical and legacy artifacts for every Agent-owned
       } finally {
         removeFictionalOpportunityWorkspace(fixture.root);
       }
+    }
+  }
+});
+
+test('reconciliation restores artifact, tracker, and reservation when any later step fails', async () => {
+  for (const failedStep of ['artifact-written', 'tracker-written', 'work-state-retired']) {
+    const fixture = createFictionalOpportunityWorkspace({
+      materializeCore: true,
+      opportunities: [{ num: 1, company: `${failedStep} Co`, role: 'Researcher', stage: 'Evaluated' }],
+      missingOptionalFiles: true,
+    });
+    try {
+      const initial = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+      const reservation = await requestOpportunityWork({
+        root: fixture.root,
+        opportunity: 1,
+        expectedStage: initial.stage.id,
+        expectedRevision: initial.revision,
+      });
+      const artifactPath = join(fixture.root, 'output', 'next-packs', '001-complete.md');
+      writeFileSync(artifactPath, [
+        '# Complete artifact',
+        '',
+        '**Stage:** evaluated',
+        '**Owner:** agent',
+        '**Suggests:** generate_approach_plan',
+        '',
+      ].join('\n'));
+      const current = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+      const trackerPath = join(fixture.root, 'data', 'applications.md');
+      const statePath = join(
+        fixture.root,
+        '.career-ops-web',
+        'lifecycle-work',
+        `${reservation.workOrder.id}.json`,
+      );
+      const before = {
+        artifact: readFileSync(artifactPath, 'utf8'),
+        tracker: readFileSync(trackerPath, 'utf8'),
+        workState: readFileSync(statePath, 'utf8'),
+      };
+      const result = await reconcileOpportunityWork({
+        root: fixture.root,
+        opportunity: 1,
+        expectedStage: current.stage.id,
+        expectedRevision: current.revision,
+        onTransitionStep(step) {
+          if (step === failedStep) throw new Error(`fictional failure after ${step}`);
+        },
+      });
+      assert.equal(result.code, 'reconciliation-write-failed');
+      assert.equal(result.effect, 'unavailable');
+      assert.equal(result.retryable, true);
+      assert.equal(readFileSync(artifactPath, 'utf8'), before.artifact);
+      assert.equal(readFileSync(trackerPath, 'utf8'), before.tracker);
+      assert.equal(readFileSync(statePath, 'utf8'), before.workState);
+      assert.equal(readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity.stage.id, 'evaluated');
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
     }
   }
 });

@@ -10,7 +10,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -50,6 +50,8 @@ import {
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
 export const OPPORTUNITY_LIFECYCLE_CONTRACT_ID = 'career-ops.opportunity-lifecycle';
 export const OPPORTUNITY_LIFECYCLE_CONTRACT_VERSION = 1;
+const WORK_STATE_VERSION = 1;
+const DEFAULT_WORK_LEASE_MS = 30 * 60_000;
 
 function digest(value) {
   const input = typeof value === 'string' || value instanceof Uint8Array
@@ -815,30 +817,81 @@ function workStatePath(root, workOrder) {
   return join(root, '.career-ops-web', 'lifecycle-work', `${workOrder.id}.json`);
 }
 
-function readWorkState(path) {
+function hasExactKeys(value, keys) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
+}
+
+function validWorkOrder(value) {
+  return hasExactKeys(value, ['id', 'opportunity', 'action', 'source', 'artifact', 'consequence'])
+    && typeof value.id === 'string'
+    && /^[a-f0-9]{64}$/.test(value.id)
+    && Number.isSafeInteger(value.opportunity)
+    && value.opportunity > 0
+    && typeof value.action === 'string'
+    && hasExactKeys(value.source, ['stage', 'revision'])
+    && typeof value.source.stage === 'string'
+    && /^[a-f0-9]{64}$/.test(value.source.revision)
+    && hasExactKeys(value.artifact, ['kind', 'directory'])
+    && typeof value.artifact.kind === 'string'
+    && value.artifact.directory === 'output/next-packs'
+    && hasExactKeys(value.consequence, ['stage', 'label'])
+    && typeof value.consequence.stage === 'string'
+    && typeof value.consequence.label === 'string';
+}
+
+function validWorkState(value) {
+  return hasExactKeys(value, ['version', 'id', 'status', 'lease', 'workOrder'])
+    && value.version === WORK_STATE_VERSION
+    && value.status === 'active'
+    && typeof value.id === 'string'
+    && hasExactKeys(value.lease, ['owner', 'acquiredAt', 'expiresAt'])
+    && typeof value.lease.owner === 'string'
+    && value.lease.owner.length > 0
+    && typeof value.lease.acquiredAt === 'string'
+    && Number.isFinite(Date.parse(value.lease.acquiredAt))
+    && typeof value.lease.expiresAt === 'string'
+    && Number.isFinite(Date.parse(value.lease.expiresAt))
+    && Date.parse(value.lease.expiresAt) > Date.parse(value.lease.acquiredAt)
+    && validWorkOrder(value.workOrder)
+    && value.workOrder.id === value.id;
+}
+
+function readWorkState(path, canonicalWorkOrder = null, nowMs = Date.now()) {
   if (!existsSync(path)) return null;
   try {
     const value = JSON.parse(readFileSync(path, 'utf8'));
-    if (
-      !value
-      || value.status !== 'active'
-      || typeof value.workOrder?.id !== 'string'
-      || value.workOrder.id !== value.id
-    ) return { invalid: true };
+    if (!validWorkState(value)) return { invalid: true };
+    if (canonicalWorkOrder && digest(value.workOrder) !== digest(canonicalWorkOrder)) return { invalid: true };
+    if (Date.parse(value.lease.expiresAt) <= nowMs) return { stale: true };
     return value;
   } catch {
     return { invalid: true };
   }
 }
 
-function writeWorkState(root, workOrder) {
+function writeWorkState(root, workOrder, nowMs, leaseMs) {
   const path = workStatePath(root, workOrder);
   mkdirSync(dirname(path), { recursive: true });
   writeFileAtomic(path, `${JSON.stringify({
+    version: WORK_STATE_VERSION,
     id: workOrder.id,
     status: 'active',
+    lease: {
+      owner: `pid:${process.pid}`,
+      acquiredAt: new Date(nowMs).toISOString(),
+      expiresAt: new Date(nowMs + leaseMs).toISOString(),
+    },
     workOrder,
   }, null, 2)}\n`);
+}
+
+function workClock(options) {
+  const nowMs = options.nowMs ?? Date.now();
+  const leaseMs = options.workLeaseMs ?? DEFAULT_WORK_LEASE_MS;
+  if (!Number.isFinite(nowMs) || nowMs < 0) throw new Error('nowMs must be a non-negative timestamp');
+  if (!Number.isFinite(leaseMs) || leaseMs <= 0) throw new Error('workLeaseMs must be positive');
+  return { nowMs, leaseMs };
 }
 
 async function withLifecycleLock(root, options, command) {
@@ -892,6 +945,7 @@ function conflictOutcome(summary) {
 export async function requestOpportunityWork(options = {}) {
   const expected = parseCommandExpectation(options);
   const root = checkoutRoot(options.root);
+  const clock = workClock(options);
   return withLifecycleLock(root, options, async () => {
     const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
     if (!focused) {
@@ -919,7 +973,7 @@ export async function requestOpportunityWork(options = {}) {
         before, artifacts: commandArtifacts(before),
       });
     }
-    const workState = readWorkState(workStatePath(root, workOrder));
+    const workState = readWorkState(workStatePath(root, workOrder), workOrder, clock.nowMs);
     if (workState?.invalid) {
       return commandOutcome({
         code: 'work-state-invalid', effect: 'unavailable', retryable: false,
@@ -927,14 +981,14 @@ export async function requestOpportunityWork(options = {}) {
         before, artifacts: commandArtifacts(before), workOrder,
       });
     }
-    if (workState) {
+    if (workState && !workState.stale) {
       return commandOutcome({
         code: 'already-running', effect: 'unchanged', retryable: false,
         message: 'Already running.',
         before, artifacts: commandArtifacts(before), workOrder: workState.workOrder,
       });
     }
-    writeWorkState(root, workOrder);
+    writeWorkState(root, workOrder, clock.nowMs, clock.leaseMs);
     return commandOutcome({
       code: 'work-requested', effect: 'accepted', retryable: false,
       message: 'Work request accepted.',
@@ -964,6 +1018,20 @@ function prepareTrackerStageReplacement(tracker, opportunity, toLabel) {
   if (matches.length !== 1) return { ok: false, reason: matches.length ? 'duplicate-opportunity' : 'opportunity-not-found' };
   lines[matches[0]] = applyStatusToLine(lines[matches[0]], columns, toLabel);
   return { ok: true, content: lines.join('\n') };
+}
+
+function rollbackReconciliation({ tracker, trackerContent, artifactPath, artifactContent, workStatePath: statePath, workStateContent }) {
+  const failures = [];
+  const restore = (label, action) => {
+    try { action(); } catch { failures.push(label); }
+  };
+  restore('work-state', () => {
+    if (workStateContent == null) rmSync(statePath, { force: true });
+    else writeFileAtomic(statePath, workStateContent);
+  });
+  restore('tracker', () => writeFileAtomic(tracker, trackerContent));
+  restore('artifact', () => writeFileAtomic(artifactPath, artifactContent));
+  return failures;
 }
 
 /**
@@ -1020,6 +1088,7 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
 
+    const workOrder = workOrderFor(before, states);
     const replacement = prepareTrackerStageReplacement(tracker, before.opportunity, advance.toLabel);
     if (!replacement.ok) {
       return commandOutcome({
@@ -1029,10 +1098,41 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
     const artifactPath = resolve(root, artifact.path);
-    const synced = syncPackHeader(readFileSync(artifactPath, 'utf8'), advance.readyRecord);
-    if (synced.changed) writeFileAtomic(artifactPath, synced.content);
-    writeFileAtomic(tracker, replacement.content);
-    const after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now }).opportunity;
+    const artifactContent = readFileSync(artifactPath, 'utf8');
+    const trackerContent = readFileSync(tracker, 'utf8');
+    const statePath = workStatePath(root, workOrder);
+    const workStateContent = existsSync(statePath) ? readFileSync(statePath, 'utf8') : null;
+    const synced = syncPackHeader(artifactContent, advance.readyRecord);
+    let after;
+    try {
+      if (synced.changed) writeFileAtomic(artifactPath, synced.content);
+      options.onTransitionStep?.('artifact-written');
+      writeFileAtomic(tracker, replacement.content);
+      options.onTransitionStep?.('tracker-written');
+      rmSync(statePath, { force: true });
+      options.onTransitionStep?.('work-state-retired');
+      after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now }).opportunity;
+    } catch {
+      const rollbackFailures = rollbackReconciliation({
+        tracker,
+        trackerContent,
+        artifactPath,
+        artifactContent,
+        workStatePath: statePath,
+        workStateContent,
+      });
+      return commandOutcome({
+        code: rollbackFailures.length ? 'reconciliation-recovery-required' : 'reconciliation-write-failed',
+        effect: 'unavailable',
+        retryable: rollbackFailures.length === 0,
+        message: rollbackFailures.length
+          ? 'Reconciliation could not be completed or fully restored. Manual recovery is required.'
+          : 'Reconciliation was not completed. Prior canonical state was restored.',
+        before,
+        after: before,
+        artifacts: commandArtifacts(before),
+      });
+    }
     return commandOutcome({
       code: 'work-reconciled', effect: 'changed', retryable: false,
       message: 'The canonical artifact was reconciled to its Ready Stage.',
