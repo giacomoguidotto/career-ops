@@ -553,6 +553,9 @@ try {
   await message.fill('x'.repeat(301));
   assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
   assert.equal(await page.getByText(/trim before copying/).isVisible(), true);
+  await message.fill('   ');
+  assert.equal(await page.getByRole('button', { name: 'Copy draft' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
   await message.fill('Reviewed note for Maya.');
   await page.getByRole('button', { name: 'Protect edit' }).click();
   assert.equal(await page.locator('[data-answer-state="protected"]').isVisible(), true);
@@ -634,7 +637,7 @@ try {
     const preparedMaterialsLink = page.getByRole('link', { name: /Review prepared materials/ }).first();
     await preparedMaterialsLink.waitFor();
     assert.equal(await preparedMaterialsLink.getAttribute('href'), '#materials');
-    assert.equal(await page.getByRole('link', { name: /Start guided approach/ }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
   }
 
   await page.goto(`${baseUrl}/pipeline/3`);

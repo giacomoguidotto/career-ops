@@ -283,6 +283,8 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
+  const canGuideApproach = opportunity.primaryAction.kind === "act-outside"
+    && opportunity.primaryAction.id === "execute_approach";
   const provenance = sourcePaths([...contract.provenance, ...opportunity.provenance]);
   const primaryBlocked = opportunity.primaryAction.kind === "generate" && !opportunity.primaryAction.enabled;
 
@@ -402,7 +404,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             {approachPlan ? (
               <>
                 <p className="mt-3 text-sm text-muted">Reviewing this plan is passive. Acting outside career-ops and reporting the result are separate steps.</p>
-                <GuidedApproach plan={approachPlan.content} opportunity={opportunity.opportunity} />
+                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity.opportunity} />}
                 <article className="report-prose mt-5 rounded-2xl border border-border bg-surface/35 p-5" aria-label="Approach Plan artifact">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{approachPlan.content}</ReactMarkdown>
                 </article>

@@ -165,8 +165,9 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
 
   if (!selected) return null;
   const overLimit = selected.limit != null && draft.length > selected.limit;
+  const emptyDraft = selected.type !== "application" && !draft.trim();
   const invalidAnswers = selected.type === "application" && answers.some((answer) => answerBlocked(answer));
-  const blocked = Boolean(selected.blockedReason) || overLimit || invalidAnswers;
+  const blocked = Boolean(selected.blockedReason) || overLimit || emptyDraft || invalidAnswers;
   const steps: Array<{ id: Phase; label: string }> = [
     { id: "choose", label: "Choose" },
     { id: "prepare", label: "Prepare" },
@@ -392,7 +393,7 @@ function Prepare(props: PrepareProps) {
 }
 
 function MessageEditor(props: PrepareProps) {
-  const visibleState: AnswerState = props.overLimit || props.route.blockedReason ? "blocked" : props.draftState;
+  const visibleState: AnswerState = props.blocked ? "blocked" : props.draftState;
   return (
     <div className="mt-5 rounded-2xl border border-border bg-background/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -410,7 +411,7 @@ function MessageEditor(props: PrepareProps) {
         </p>
         <div className="flex flex-wrap gap-2">
           {props.draftState === "user-edited" && <SecondaryButton onClick={props.onProtectDraft}><LockKeyhole className="size-3.5" aria-hidden="true" /> Protect edit</SecondaryButton>}
-          <PrimaryButton disabled={props.overLimit || Boolean(props.route.blockedReason)} onClick={props.onCopy}>
+          <PrimaryButton disabled={props.blocked} onClick={props.onCopy}>
             {props.copyState === "copied" ? <Check className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
             {props.copyState === "copied" ? "Copied, not sent" : "Copy draft"}
           </PrimaryButton>
