@@ -129,7 +129,7 @@ const fixture = createFictionalOpportunityWorkspace({
       '|---|---|---|',
       '| Why this role? | Northstar builds the operator-facing AI systems I care about. | Source: fictional CV. Regeneration: I care about Northstar because it builds operator-facing AI systems. |',
       '| Example of a production workflow | A supervised workflow with explicit human review. | Source: fictional CV. Regeneration: An explicit human-review step anchored my supervised production workflow. |',
-      '| Desired salary | TBD | Missing personal fact blocker |',
+      '| Desired salary | [your answer] | Explicit JD instruction: maximum 50 characters. |',
       '| What would you teach the team? | How to expose uncertainty before it becomes an operational surprise. | Explicit JD instruction: answer in one concrete sentence, maximum 100 characters. Regeneration: I would teach the team to expose uncertainty before it becomes operational risk. |',
       '',
       '### Send the Gating Question',

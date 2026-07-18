@@ -42,7 +42,7 @@ const plan = [
   "| Question | Answer | Notes |",
   "|---|---|---|",
   "| Why this role? | Traceable systems matter to me. | Explicit JD instruction: maximum 80 characters. Regeneration: I care about building traceable systems. |",
-  "| Desired salary | TBD | Missing personal fact blocker |",
+  "| Desired salary | [your answer] | Explicit JD instruction: maximum 50 characters. |",
   "",
   "### Send the Gating Question",
   "- **To:** Recipient not found",

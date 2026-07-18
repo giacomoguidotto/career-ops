@@ -113,6 +113,7 @@ function tableAnswers(lines) {
     const value = columns[answerIndex] ?? "";
     const notes = notesIndex >= 0 ? columns[notesIndex] ?? "" : "";
     const blocked = !value || /^(?:-|—|tbd|unknown|missing)$/i.test(value)
+      || /\[\s*your answer[^\]]*\]/i.test(value)
       || /\b(?:blocker|missing personal fact|user must provide|unsupported fact)\b/i.test(notes);
     const instruction = notes.match(/(?:explicit\s+)?jd\s+instruction\s*:\s*(.+?)(?=\s+(?:regeneration|alternative)(?:\s+answers?)?\s*:|$)/i)?.[1]?.trim() ?? null;
     return {
