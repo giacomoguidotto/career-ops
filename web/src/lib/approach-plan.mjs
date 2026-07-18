@@ -84,7 +84,24 @@ function messageBody(lines) {
 function tableAnswers(lines) {
   const table = lines.filter((line) => /^\s*\|.*\|\s*$/.test(line));
   if (table.length < 3) return [];
-  const split = (line) => line.trim().replace(/^\||\|$/g, "").split("|").map(clean);
+  const split = (line) => {
+    const text = line.trim().replace(/^\||\|$/g, "");
+    const cells = [];
+    let cell = "";
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] === "\\" && text[index + 1] === "|") {
+        cell += "|";
+        index += 1;
+      } else if (text[index] === "|") {
+        cells.push(clean(cell));
+        cell = "";
+      } else {
+        cell += text[index];
+      }
+    }
+    cells.push(clean(cell));
+    return cells;
+  };
   const headers = split(table[0]).map((header) => header.toLowerCase());
   const questionIndex = headers.indexOf("question");
   const answerIndex = headers.indexOf("answer");
@@ -122,7 +139,7 @@ export function parseApproachPlan(markdown) {
   const ranked = allSections.filter((section) => /^\d+\.\s+/.test(section.title));
   const materials = allSections
     .map((section, index) => ({ section, index, type: materialType(section.title), fields: metadata(section.lines) }))
-    .filter((material) => material.type);
+    .filter((material) => material.type && !/^\d+\.\s+/.test(material.section.title));
   const usedMaterials = new Set();
 
   function matchingMaterial(type, fields) {
@@ -130,10 +147,12 @@ export function parseApproachPlan(markdown) {
     if (candidates.length === 0) return null;
     const rankedCandidates = candidates.map((material) => {
       let score = 0;
-      if (clean(fields.to) && clean(fields.to) === clean(material.fields.to)) score += 4;
+      const destinationMatches = clean(fields.to) && clean(fields.to) === clean(material.fields.to);
+      if (destinationMatches) score += 4;
       if (clean(fields.channel) && clean(fields.channel) === clean(material.fields.channel)) score += 2;
-      return { material, score };
+      return { material, score, destinationMatches };
     }).sort((left, right) => right.score - left.score || left.material.index - right.material.index);
+    if (!rankedCandidates[0].destinationMatches) return null;
     const selected = rankedCandidates[0].material;
     usedMaterials.add(selected.index);
     return selected;

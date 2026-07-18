@@ -84,3 +84,48 @@ test("matches repeated route material by its canonical destination", () => {
   assert.equal(backup.channel, "Email");
   assert.equal(backup.body, "Hello Luca.");
 });
+
+test("does not consume later route material for an unmatched route", () => {
+  const unmatched = [
+    "### 1. First outreach",
+    "- **Route:** peer outreach",
+    "- **To:** Nora Smith | https://example.invalid/nora",
+    "- **Channel:** Email",
+    "",
+    "### 2. Second outreach",
+    "- **Route:** peer outreach",
+    "- **To:** Luca Bianchi | https://example.invalid/luca",
+    "- **Channel:** Email",
+    "",
+    "### Send the Outreach Message",
+    "- **To:** Luca Bianchi | https://example.invalid/luca",
+    "- **Channel:** Email",
+    "",
+    "Hello Luca.",
+  ].join("\n");
+  const routes = parseApproachPlan(unmatched);
+  assert.match(routes[0].blockedReason, /does not contain sendable text/);
+  assert.equal(routes[1].destination, "Luca Bianchi | https://example.invalid/luca");
+  assert.equal(routes[1].body, "Hello Luca.");
+});
+
+test("preserves escaped pipes inside application table cells", () => {
+  const escaped = [
+    "### 1. Official form",
+    "- **Route:** formal application",
+    "- **To:** Northstar careers | https://example.invalid/apply",
+    "- **Channel:** ATS",
+    "",
+    "### Fill the Application Form",
+    "- **To:** Northstar careers | https://example.invalid/apply",
+    "- **Channel:** ATS",
+    "",
+    "| Question | Answer | Notes |",
+    "|---|---|---|",
+    "| JavaScript \\| TypeScript? | Both are source-backed. | Regeneration: TypeScript and JavaScript are both source-backed. |",
+  ].join("\n");
+  const answer = parseApproachPlan(escaped)[0].answers[0];
+  assert.equal(answer.label, "JavaScript | TypeScript?");
+  assert.equal(answer.value, "Both are source-backed.");
+  assert.deepEqual(answer.regenerationCandidates, ["TypeScript and JavaScript are both source-backed."]);
+});
