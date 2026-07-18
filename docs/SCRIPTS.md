@@ -33,7 +33,9 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run approach:record` | `record-approach.mjs` | Append one confirmed Approach Attempt |
 | `npm run approach:migrate` | `migrate-approaches.mjs` | Preview/apply legacy state and attempt migration |
 | `npm run approach:evidence` | `approach-evidence.mjs` | Audit whether channel outcomes support a conclusion |
-| `npm run lifecycle -- list` | `opportunity-lifecycle.mjs` | Read the passive canonical Opportunity lifecycle contract |
+| `npm run lifecycle -- list` | `opportunity-lifecycle.mjs` | Read the canonical Opportunity lifecycle contract |
+| `npm run lifecycle -- request --opportunity NUM --expected-stage STAGE --expected-revision SHA256` | `opportunity-lifecycle.mjs` | Reserve one revision-guarded Agent-owned work order without changing Stage |
+| `npm run lifecycle -- reconcile --opportunity NUM --expected-stage STAGE --expected-revision SHA256` | `opportunity-lifecycle.mjs` | Reconcile a complete canonical artifact to its paired Ready Stage |
 | `npm run paste-reply` | `paste-reply.mjs` | Manual/no-Gmail input into the `reply-watch.mjs` classification pipeline |
 | `npm run openai:tailor` | `openai-tailor.mjs` | Tailor a CV via any OpenAI-compatible endpoint (headless companion to `openai-eval.mjs`) |
 
@@ -148,14 +150,19 @@ npm run approach:evidence
 
 ## lifecycle
 
-Returns passive structured reads from the canonical Opportunity lifecycle seam.
-The command composes the live Stage contract, cadence, confirmed Attempts,
-artifacts, and candidacy coordination without writing files or starting work.
+The canonical Opportunity lifecycle seam provides passive structured reads plus
+explicit, guarded work-order reservation and artifact reconciliation. Passive
+reads compose the live Stage contract, cadence, confirmed Attempts, artifacts,
+and candidacy coordination without writing files or starting work. `request`
+and `reconcile` require the focused read's Opportunity, Stage id, and revision,
+then recheck them under the shared tracker lock.
 
 ```bash
 npm run lifecycle -- contract
 npm run lifecycle -- list
 npm run lifecycle -- read --opportunity 247
+npm run lifecycle -- request --opportunity 247 --expected-stage evaluated --expected-revision SHA256
+npm run lifecycle -- reconcile --opportunity 247 --expected-stage evaluated --expected-revision SHA256
 ```
 
 Use `--root PATH` to read an alternate complete checkout. Known aliases and
