@@ -40,6 +40,7 @@ export function MobileNav() {
   const panelRef = useRef<HTMLElement>(null);
   const { jobs } = useJobs();
   const running = jobs.filter((j) => j.status === "running").length;
+  const attention = jobs.filter((j) => j.status !== "running" && j.recovery && !j.acknowledgedAt).length;
 
   // Close on route change.
   useEffect(() => {
@@ -114,12 +115,12 @@ export function MobileNav() {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            aria-label="Open menu"
+            aria-label={`Open menu${running ? `, ${running} running` : ""}${attention ? `, ${attention} worker outcomes need attention` : ""}`}
             aria-expanded={open}
             className="relative inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
           >
             <Menu className="size-5" />
-            {running > 0 && <span aria-hidden className="co-pulse absolute right-1.5 top-1.5 size-2 rounded-full bg-brand ring-2 ring-surface" />}
+            {(running > 0 || attention > 0) && <span aria-hidden className={cn("absolute right-1.5 top-1.5 size-2 rounded-full ring-2 ring-surface", running ? "co-pulse bg-brand" : "bg-amber-500")} />}
           </button>
         </div>
       </header>

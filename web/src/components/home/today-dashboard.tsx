@@ -107,6 +107,13 @@ export function TodayDashboard({
       .map((job) => jobOpportunity(job.input))
       .filter((value): value is number => value !== null),
   );
+  const leadingWorker = runway.leading
+    ? jobs.find((job) => (
+      job.kind === "lifecycle"
+      && job.status === "running"
+      && jobOpportunity(job.input) === runway.leading?.opportunity.opportunity
+    ))
+    : undefined;
 
   const generateOne = () => {
     if (!runway.leading) return;
@@ -156,6 +163,7 @@ export function TodayDashboard({
             <LeadingAction
               item={runway.leading}
               running={running.has(runway.leading.opportunity.opportunity)}
+              currentPhase={leadingWorker?.steps.at(-1)?.label}
               canGenerate={canGenerate}
               setupIncomplete={inBetween}
               onGenerate={generateOne}
@@ -220,7 +228,7 @@ export function TodayDashboard({
   );
 }
 
-function LeadingAction({ item, running, canGenerate, setupIncomplete, onGenerate }: { item: TodayQueueItem; running: boolean; canGenerate: boolean; setupIncomplete: boolean; onGenerate: () => void }) {
+function LeadingAction({ item, running, currentPhase, canGenerate, setupIncomplete, onGenerate }: { item: TodayQueueItem; running: boolean; currentPhase?: string; canGenerate: boolean; setupIncomplete: boolean; onGenerate: () => void }) {
   const opportunity = item.opportunity;
   return (
     <section className="dot-bg overflow-hidden rounded-2xl border border-brand/35 bg-gradient-to-br from-brand/10 via-surface/70 to-surface/30 p-5 sm:p-6" aria-labelledby="leading-action-title">
@@ -251,6 +259,7 @@ function LeadingAction({ item, running, canGenerate, setupIncomplete, onGenerate
             {running ? <LockKeyhole className="size-4" /> : <Sparkles className="size-4" />}
             {running ? "Already running" : `Generate one: ${item.artifactLabel}`}
           </button>
+          {running && <p className="mt-2 text-center text-xs text-muted" aria-label="Current worker phase">{currentPhase ?? "Working"}</p>}
           {!canGenerate && <Link href="/config" className="mt-3 block text-center text-xs text-brand-text hover:underline">{setupIncomplete ? "Finish setup first" : "Configure a CLI first"}</Link>}
         </div>
       </div>

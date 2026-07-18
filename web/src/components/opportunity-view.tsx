@@ -28,6 +28,7 @@ import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { CandidacyCoordination } from "@/components/candidacy-coordination";
 import { ReportedEventLauncher } from "@/components/reported-event";
+import { ResumeReconciliation } from "@/components/resume-reconciliation";
 
 type Stage = LifecycleContract["stages"][number];
 type Artifact = OpportunitySummary["artifacts"][number];
@@ -288,7 +289,21 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
   const canGuideApproach = opportunity.primaryAction.kind === "act-outside"
     && opportunity.primaryAction.id === "execute_approach"
     && hasGuideableRoutes;
-  const primary = primaryCopy(opportunity, Boolean(approachPlan), canGuideApproach);
+  const strandedArtifact = opportunity.stage.owner === "agent" && opportunity.stage.suggests
+    ? opportunity.artifacts.find((artifact) => (
+      artifact.action === opportunity.stage.suggests
+      && artifact.expectedAction === opportunity.stage.suggests
+      && artifact.state === "available"
+      && ["canonical", "legacy"].includes(artifact.format)
+    ))
+    : undefined;
+  const primary = strandedArtifact ? {
+    eyebrow: "Existing artifact needs reconciliation",
+    title: `Resume ${words(strandedArtifact.kind.replaceAll("-", "_"))}`,
+    detail: "The canonical artifact already exists. Resume reconciliation without regenerating it or inferring a Stage.",
+    href: "#materials",
+    cta: "Resume reconciliation",
+  } : primaryCopy(opportunity, Boolean(approachPlan), canGuideApproach);
   const provenance = sourcePaths([...contract.provenance, ...opportunity.provenance]);
   const primaryBlocked = opportunity.primaryAction.kind === "generate" && !opportunity.primaryAction.enabled;
 
@@ -359,10 +374,14 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
                   )}
                 </div>
                 <div className="w-full shrink-0 xl:w-48">
-                  <Link href={primary.href} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
-                    {primary.cta} <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                  <p className="mt-2 text-center text-[11px] text-faint">Navigation only, no fact is recorded</p>
+                  {strandedArtifact && opportunity.stage.id ? (
+                    <ResumeReconciliation opportunity={opportunity.opportunity} expectedStage={opportunity.stage.id} expectedRevision={opportunity.revision} />
+                  ) : (
+                    <Link href={primary.href} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">
+                      {primary.cta} <ArrowRight className="size-4" aria-hidden="true" />
+                    </Link>
+                  )}
+                  <p className="mt-2 text-center text-[11px] text-faint">{strandedArtifact ? "Uses the canonical lifecycle seam" : "Navigation only, no fact is recorded"}</p>
                 </div>
               </div>
             </div>
@@ -538,9 +557,13 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             <p className="truncate text-xs font-semibold">{primary.title}</p>
             <p className="truncate text-[10px] text-faint">No fact is recorded here</p>
           </div>
-          <Link href={primary.href} className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md bg-brand px-3 text-xs font-semibold text-brand-foreground hover:bg-brand-200">
-            {primary.cta} <ArrowRight className="size-3.5" aria-hidden="true" />
-          </Link>
+          {strandedArtifact && opportunity.stage.id ? (
+            <div className="ml-auto w-48"><ResumeReconciliation opportunity={opportunity.opportunity} expectedStage={opportunity.stage.id} expectedRevision={opportunity.revision} /></div>
+          ) : (
+            <Link href={primary.href} className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md bg-brand px-3 text-xs font-semibold text-brand-foreground hover:bg-brand-200">
+              {primary.cta} <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          )}
         </div>
       </div>
     </div>

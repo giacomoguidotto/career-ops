@@ -741,3 +741,20 @@ export async function requestOpportunityWork(
   }
   return result as LifecycleCommandOutcome;
 }
+
+export async function reconcileOpportunityWork(
+  root: string,
+  expectation: {
+    opportunity: number;
+    expectedStage: string;
+    expectedRevision: string;
+  },
+): Promise<LifecycleCommandOutcome> {
+  const result = normalizeCommandOutcome(await run(root, "reconcile", commandArguments(
+    expectation.opportunity,
+    expectation.expectedStage,
+    expectation.expectedRevision,
+  )));
+  validateCommandOutcome(result);
+  return result;
+}

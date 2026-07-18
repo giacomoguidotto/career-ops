@@ -25,7 +25,7 @@ const humanizeStep = (label: string): string => STEP_LABELS[label] ?? label;
 // Auth/sign-in failures are the most common real error — detect them so we can give
 // a concrete next step instead of a dead end (#8).
 function isAuthError(job: Job): boolean {
-  if (job.status !== "error") return false;
+  if (job.status !== "error" || job.recovery) return false;
   const hay = `${job.steps[job.steps.length - 1]?.label ?? ""} ${job.text}`.toLowerCase();
   return /auth|login|sign[ -]?in|credential|api[ -]?key|unauthorized|not authenticated|installed and authenticated/.test(hay);
 }
@@ -63,6 +63,11 @@ export const TONE = {
 } as const;
 
 export function pillTone(j: Job): keyof typeof TONE {
+  if (j.recovery) {
+    if (["changed", "recovered", "unchanged"].includes(j.recovery.outcome)) return "good";
+    if (["resumable", "retryable", "paused"].includes(j.recovery.outcome)) return "warn";
+    return "bad";
+  }
   if (j.status === "error") return "bad";
   if (j.status === "done") return j.result?.tone ?? "muted";
   return "muted";
@@ -82,7 +87,7 @@ export function WorkerCard({
   const elapsed = useElapsed(running, job.startedAt);
   const rawLast = job.steps[job.steps.length - 1]?.label;
   const last = rawLast ? humanizeStep(rawLast) : undefined;
-  const bottom = job.status === "done" && job.result?.summary ? job.result.summary : last;
+  const bottom = job.recovery?.message ?? (job.status === "done" && job.result?.summary ? job.result.summary : last);
   const inline = variant === "inline";
   const hasScore = job.result?.score != null;
   const authError = isAuthError(job);
@@ -110,8 +115,13 @@ export function WorkerCard({
             {job.result!.score}
           </span>
         )}
+        {job.recovery && (
+          <span className={cn("ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide", tone.chip)}>
+            {job.recovery.outcome}
+          </span>
+        )}
         {trailing != null && (
-          <span className={cn("shrink-0", hasScore ? "ml-1" : "ml-auto")}>{trailing}</span>
+          <span className={cn("shrink-0", hasScore || job.recovery ? "ml-1" : "ml-auto")}>{trailing}</span>
         )}
       </div>
       <div className={cn("mt-1.5 w-full overflow-hidden rounded-full bg-surface-hover", inline ? "h-1.5" : "h-1")}>

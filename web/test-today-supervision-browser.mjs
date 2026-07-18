@@ -42,6 +42,22 @@ async function waitUntilReady(url, child, output) {
   throw new Error(`web server did not become ready\n${output.join("")}`);
 }
 
+async function waitForTerminalWorker(request, baseUrl, minimumHistory = 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const response = await request.get(`${baseUrl}/api/workers`);
+    const workers = (await response.json()).workers ?? [];
+    const worker = workers.find((candidate) => (
+      candidate.kind === "lifecycle"
+      && candidate.status === "terminal"
+      && candidate.recoveryHistory.length >= minimumHistory
+    ));
+    if (worker) return worker;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("durable lifecycle worker did not settle");
+}
+
 function replaceStage(root, opportunity, from, to) {
   const tracker = join(root, "data", "applications.md");
   const lines = readFileSync(tracker, "utf8").split("\n");
@@ -151,6 +167,27 @@ try {
   });
   assert.equal(duplicate.status(), 409);
   assert.equal((await duplicate.json()).code, "already-running");
+
+  const terminalWorker = await waitForTerminalWorker(phone.request, baseUrl);
+  assert.equal(terminalWorker.recoveryHistory.at(-1).outcome, "retryable");
+  assert.equal(terminalWorker.recoveryHistory.at(-1).nextAction.kind, "retry");
+  await phone.goto(`${baseUrl}/jobs/${terminalWorker.id}`);
+  await phone.getByRole("heading", { name: "No complete artifact exists, and a fresh attempt is safe." }).waitFor();
+  assert.equal(await phone.getByRole("button", { name: "Retry safely" }).isVisible(), true);
+  await phone.getByText("Content-safe diagnostics").click();
+  assert.equal(await phone.getByText("career-ops.opportunity-lifecycle v1").isVisible(), true);
+  await phone.getByRole("button", { name: "Retry safely" }).click();
+  await phone.getByText("Resuming preserved work", { exact: true }).waitFor();
+  const retried = await waitForTerminalWorker(phone.request, baseUrl, 2);
+  assert.equal(retried.id, terminalWorker.id, "retry preserves one durable worker identity");
+  assert.equal(retried.recoveryHistory.length, 2, "retry appends typed recovery history");
+  await phone.getByRole("button", { name: "Acknowledge", exact: true }).click();
+  await phone.reload();
+  await phone.getByRole("heading", { name: "No complete artifact exists, and a fresh attempt is safe." }).waitFor();
+  assert.equal(await phone.getByRole("heading", { name: "Recovery history" }).isVisible(), true, "acknowledgement preserves worker history");
+  assert.equal(await phone.getByRole("button", { name: "Acknowledge", exact: true }).count(), 0, "acknowledgement persists across reload");
+  await phone.goto(baseUrl);
+  await phone.getByRole("heading", { name: "Keep the search moving." }).waitFor();
 
   await phone.getByRole("button", { name: "Review eligible batch" }).click();
   const dialog = phone.getByRole("dialog", { name: "Review what may start" });
