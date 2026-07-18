@@ -408,7 +408,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             {approachPlan ? (
               <>
                 <p className="mt-3 text-sm text-muted">Reviewing this plan is passive. Acting outside career-ops and reporting the result are separate steps.</p>
-                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity} attempts={attempts} />}
+                {canGuideApproach && <GuidedApproach plan={approachPlan.content} opportunity={opportunity} contract={contract} attempts={attempts} />}
                 <article className="report-prose mt-5 rounded-2xl border border-border bg-surface/35 p-5" aria-label="Approach Plan artifact">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{approachPlan.content}</ReactMarkdown>
                 </article>
@@ -447,7 +447,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
               </div>
               <span className="text-xs text-faint tabular-nums">{attempts.length} recorded</span>
             </div>
-            <div className="mt-4"><ReportedEventLauncher opportunity={opportunity} attempts={attempts} /></div>
+            <div className="mt-4"><ReportedEventLauncher opportunity={opportunity} contract={contract} attempts={attempts} /></div>
             {attempts.length > 0 ? (
               <ol className="mt-5 space-y-3">
                 {[...attempts].reverse().map((attempt) => (

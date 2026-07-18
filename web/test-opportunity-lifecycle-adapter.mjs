@@ -16,6 +16,7 @@ import {
   setOpportunityPrimaryLifecycle,
   tryListOpportunityLifecycle,
 } from "./src/lib/core/opportunity-lifecycle.ts";
+import { reportableSuccessors } from "./src/lib/core/reported-event-contract.ts";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -59,7 +60,9 @@ test("adapter transports confirmed Attempts and allowed successor reports throug
     extraOpportunities: [{ num: 42, company: "Reported Fictional", role: "Engineer", stage: "Approach Ready" }],
   });
   try {
-    const before = (await readOpportunityLifecycle(fixture.root, 42)).opportunity;
+    const detail = await readOpportunityLifecycle(fixture.root, 42);
+    const before = detail.opportunity;
+    assert.deepEqual(reportableSuccessors(before, detail.contract), ["discarded"]);
     const attempt = await recordOpportunityAttemptLifecycle(
       fixture.root,
       42,

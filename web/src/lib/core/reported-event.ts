@@ -7,6 +7,7 @@ import type {
   ApproachAttempt,
   OpportunityDetailResult,
 } from "@/lib/core/opportunity-lifecycle";
+import { reportableSuccessors } from "@/lib/core/reported-event-contract";
 
 const ATTEMPT_TYPES = new Set([
   "formal_application",
@@ -151,7 +152,7 @@ function validateInterpretation(
     };
   }
   if (proposal.kind === "successor") {
-    const allowed = detail.opportunity.stage.allowedSuccessors;
+    const allowed = reportableSuccessors(detail.opportunity, detail.contract);
     if (
       !present(proposal.successor)
       || !allowed.includes(proposal.successor)
@@ -187,6 +188,7 @@ function promptFor(
       stage: detail.opportunity.stage,
       revision: detail.opportunity.revision,
       capabilities: detail.opportunity.capabilities,
+      reportableSuccessors: reportableSuccessors(detail.opportunity, detail.contract),
     },
     selectedRoute: route,
     attempts: detail.attempts.map((attempt: ApproachAttempt) => ({
@@ -200,7 +202,7 @@ function promptFor(
     })),
     report,
   };
-  return `CAREER_OPS_REPORTED_EVENT_INTERPRETATION\nYou are a read-only interpretation worker. You cannot write files, change Stage, or record an event.\n\nInterpret the user's natural-language report using only the supplied live Opportunity, selected route, Stage, revision, and Attempt history. Never guess a missing action, channel, recipient, time, result, follow-up relation, or hiring event. If one required fact is missing or ambiguous, ask one focused clarification.\n\nReturn exactly one JSON object and no markdown. Either:\n{"kind":"clarification","question":"one focused question"}\nor\n{"kind":"proposal","proposal":{"kind":"attempt","occurredAt":"ISO 8601 date or timestamp preserving stated precision","type":"one canonical type","channel":"...","recipient":"...","result":"...","followUpTo":null,"notes":""}}\nor\n{"kind":"proposal","proposal":{"kind":"successor","successor":"one live allowed successor id","occurredAt":"ISO 8601 date or timestamp preserving stated precision","result":"..."}}\n\nCanonical Attempt types: ${[...ATTEMPT_TYPES].join(", ")}. A follow_up must reference an existing same-Opportunity Attempt. A non-follow-up must use null. A successor must be listed in the live Stage's allowedSuccessors. A typed proposal is only a not-recorded preview.\n\nLIVE CONTEXT\n${JSON.stringify(context)}`;
+  return `CAREER_OPS_REPORTED_EVENT_INTERPRETATION\nYou are a read-only interpretation worker. You cannot write files, change Stage, or record an event.\n\nInterpret the user's natural-language report using only the supplied live Opportunity, selected route, Stage, revision, and Attempt history. Never guess a missing action, channel, recipient, time, result, follow-up relation, or hiring event. If one required fact is missing or ambiguous, ask one focused clarification.\n\nReturn exactly one JSON object and no markdown. Either:\n{"kind":"clarification","question":"one focused question"}\nor\n{"kind":"proposal","proposal":{"kind":"attempt","occurredAt":"ISO 8601 date or timestamp preserving stated precision","type":"one canonical type","channel":"...","recipient":"...","result":"...","followUpTo":null,"notes":""}}\nor\n{"kind":"proposal","proposal":{"kind":"successor","successor":"one live reportable successor id","occurredAt":"ISO 8601 date or timestamp preserving stated precision","result":"..."}}\n\nCanonical Attempt types: ${[...ATTEMPT_TYPES].join(", ")}. A follow_up must reference an existing same-Opportunity Attempt. A non-follow-up must use null. An action that reaches Approached must be an Attempt. A successor must be listed in reportableSuccessors. A typed proposal is only a not-recorded preview.\n\nLIVE CONTEXT\n${JSON.stringify(context)}`;
 }
 
 function readOnlyArgs(cliId: string, prompt: string, argsFor: (prompt: string) => string[]): string[] {

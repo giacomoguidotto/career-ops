@@ -19,7 +19,7 @@ import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { ReportedEventCheckpoint } from "@/components/reported-event";
-import type { ApproachAttempt, OpportunitySummary } from "@/lib/core/opportunity-lifecycle";
+import type { ApproachAttempt, LifecycleContract, OpportunitySummary } from "@/lib/core/opportunity-lifecycle";
 
 type RouteType = "outreach" | "application" | "qualifying" | "followup";
 type AnswerState = "generated" | "user-edited" | "protected" | "blocked";
@@ -82,7 +82,7 @@ function StatePill({ state }: { state: AnswerState }) {
   );
 }
 
-export function GuidedApproach({ plan, opportunity, attempts }: { plan: string; opportunity: OpportunitySummary; attempts: ApproachAttempt[] }) {
+export function GuidedApproach({ plan, opportunity, contract, attempts }: { plan: string; opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[] }) {
   const routes = useMemo(() => parseApproachPlan(plan) as PlanRoute[], [plan]);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -111,12 +111,12 @@ export function GuidedApproach({ plan, opportunity, attempts }: { plan: string; 
           The canonical Approach Plan has no ranked route that can be prepared here.
         </p>
       )}
-      {open && <GuidedApproachDialog routes={routes} opportunity={opportunity} attempts={attempts} onClose={close} />}
+      {open && <GuidedApproachDialog routes={routes} opportunity={opportunity} contract={contract} attempts={attempts} onClose={close} />}
     </div>
   );
 }
 
-function GuidedApproachDialog({ routes, opportunity, attempts, onClose }: { routes: PlanRoute[]; opportunity: OpportunitySummary; attempts: ApproachAttempt[]; onClose: () => void }) {
+function GuidedApproachDialog({ routes, opportunity, contract, attempts, onClose }: { routes: PlanRoute[]; opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[]; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>("choose");
   const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
   const [draft, setDraft] = useState(routes[0]?.body ?? "");
@@ -270,6 +270,7 @@ function GuidedApproachDialog({ routes, opportunity, attempts, onClose }: { rout
           {phase === "report" && (
             <ReportedEventCheckpoint
               opportunity={opportunity}
+              contract={contract}
               attempts={attempts}
               route={{
                 id: selected.id,

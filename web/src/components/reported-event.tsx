@@ -15,9 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import type {
   ApproachAttempt,
+  LifecycleContract,
   LifecycleCommandOutcome,
   OpportunitySummary,
 } from "@/lib/core/opportunity-lifecycle";
+import { reportableSuccessors } from "@/lib/core/reported-event-contract";
 import type {
   ReportRouteContext,
   ReportedAttemptProposal,
@@ -50,13 +52,14 @@ function cliId() {
 
 type CheckpointProps = {
   opportunity: OpportunitySummary;
+  contract: LifecycleContract;
   attempts: ApproachAttempt[];
   route?: ReportRouteContext | null;
   onBack?: () => void;
   onRecorded?: () => void;
 };
 
-export function ReportedEventCheckpoint({ opportunity: initial, attempts, route = null, onBack, onRecorded }: CheckpointProps) {
+export function ReportedEventCheckpoint({ opportunity: initial, contract, attempts, route = null, onBack, onRecorded }: CheckpointProps) {
   const [context, setContext] = useState(initial);
   const [report, setReport] = useState("");
   const [interpretation, setInterpretation] = useState<ReportedEventInterpretation | null>(null);
@@ -130,12 +133,12 @@ export function ReportedEventCheckpoint({ opportunity: initial, attempts, route 
         setNotice("The Opportunity changed. Nothing was written. Review the fresh context and interpret again.");
         return;
       }
-      if (!response.ok || !body.effect) throw new Error(body.error?.message || body.message || "Confirmation failed.");
       if (body.effect === "blocked" || body.effect === "unavailable") {
         setNotice(body.message);
         if (body.after) setContext(body.after);
         return;
       }
+      if (!response.ok || !body.effect) throw new Error(body.error?.message || body.message || "Confirmation failed.");
       setRecorded(body);
       if (body.after) setContext(body.after);
     } catch (error) {
@@ -197,7 +200,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, attempts, route 
             </div>
           )}
           {proposal && (
-            <ProposalEditor proposal={proposal} opportunity={context} attempts={attempts} onChange={updateProposal} />
+            <ProposalEditor proposal={proposal} opportunity={context} contract={contract} attempts={attempts} onChange={updateProposal} />
           )}
         </aside>
       </div>
@@ -215,7 +218,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, attempts, route 
   );
 }
 
-function ProposalEditor({ proposal, opportunity, attempts, onChange }: { proposal: ReportedEventProposal; opportunity: OpportunitySummary; attempts: ApproachAttempt[]; onChange: (proposal: ReportedEventProposal) => void }) {
+function ProposalEditor({ proposal, opportunity, contract, attempts, onChange }: { proposal: ReportedEventProposal; opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[]; onChange: (proposal: ReportedEventProposal) => void }) {
   const updateAttempt = (field: keyof ReportedAttemptProposal, value: string | null) => {
     if (proposal.kind !== "attempt") return;
     onChange({
@@ -243,7 +246,7 @@ function ProposalEditor({ proposal, opportunity, attempts, onChange }: { proposa
         </div>
       ) : (
         <div className="mt-4 space-y-3">
-          <SelectField label="Allowed successor" value={proposal.successor} onChange={(successor) => onChange({ ...proposal, successor })} options={opportunity.stage.allowedSuccessors.map((id) => [id, words(id)])} />
+          <SelectField label="Allowed successor" value={proposal.successor} onChange={(successor) => onChange({ ...proposal, successor })} options={reportableSuccessors(opportunity, contract).map((id) => [id, words(id)])} />
           <TextField label="Occurred at" value={proposal.occurredAt} onChange={(occurredAt) => onChange({ ...proposal, occurredAt })} />
           <TextField label="Result" value={proposal.result} onChange={(result) => onChange({ ...proposal, result })} />
           <p className="text-[11px] leading-relaxed text-faint">Only a fresh successor declared by the canonical Stage can be confirmed. There is no free-form Stage field.</p>
@@ -273,7 +276,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
   return <label className="block text-[10px] font-semibold uppercase tracking-wide text-faint">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm font-normal normal-case tracking-normal text-foreground"><option value="">Select</option>{options.map(([option, name]) => <option key={option} value={option}>{name}</option>)}</select></label>;
 }
 
-export function ReportedEventLauncher({ opportunity, attempts }: { opportunity: OpportunitySummary; attempts: ApproachAttempt[] }) {
+export function ReportedEventLauncher({ opportunity, contract, attempts }: { opportunity: OpportunitySummary; contract: LifecycleContract; attempts: ApproachAttempt[] }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -310,7 +313,7 @@ export function ReportedEventLauncher({ opportunity, attempts }: { opportunity: 
         <div ref={dialogRef} className="fixed inset-0 z-[95] overflow-y-auto bg-background/98 p-4 backdrop-blur-sm sm:p-8" role="dialog" aria-modal="true" aria-label="Report real-world event">
           <div className="mx-auto max-w-5xl rounded-3xl border border-border bg-surface/80 p-5 shadow-xl sm:p-8">
             <div className="mb-5 flex justify-end"><button ref={closeRef} type="button" onClick={close} className="inline-flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-hover" aria-label="Close reported event"><X className="size-5" /></button></div>
-            <ReportedEventCheckpoint opportunity={opportunity} attempts={attempts} onRecorded={() => window.location.reload()} />
+            <ReportedEventCheckpoint opportunity={opportunity} contract={contract} attempts={attempts} onRecorded={() => window.location.reload()} />
           </div>
         </div>
       )}
