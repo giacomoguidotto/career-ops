@@ -61,6 +61,8 @@ const fixture = createFictionalOpportunityWorkspace({
     ].join('\n'),
   },
 });
+const before = fingerprintFictionalWorkspace(fixture.root);
+const beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
 const port = await availablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const output = [];
@@ -84,7 +86,6 @@ let browser;
 let context;
 let page;
 let traceStopped = false;
-let beforeSnapshot = null;
 try {
   await waitUntilReady(`${baseUrl}/api/opportunities`, child, output);
   browser = await chromium.launch({ headless: true });
@@ -93,8 +94,6 @@ try {
   page = await context.newPage();
   const requests = [];
   page.on('request', (request) => requests.push({ method: request.method(), url: request.url() }));
-  const before = fingerprintFictionalWorkspace(fixture.root);
-  beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
 
   await page.goto(`${baseUrl}/api/doctor`);
   const doctor = JSON.parse(await page.locator('body').innerText());

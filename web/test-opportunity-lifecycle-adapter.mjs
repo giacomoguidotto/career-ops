@@ -94,6 +94,45 @@ test("adapter validates Attempt links, notes, artifact metadata, and safe Opport
   }
 });
 
+test("adapter rejects malformed Attempt dates and negative or unsafe counters", async () => {
+  const listCases = [
+    (result) => { result.opportunities[0].attempts.latest.date = "tomorrow"; },
+    (result) => { result.opportunities[0].attempts.count = -1; },
+    (result) => { result.opportunities[0].attempts.count = Number.MAX_SAFE_INTEGER + 1; },
+    (result) => { result.opportunities[0].attemptAttention.followupCount = -1; },
+    (result) => { result.opportunities[0].attemptAttention.followupCount = Number.MAX_SAFE_INTEGER + 1; },
+  ];
+  for (const mutate of listCases) {
+    const fixture = createFictionalOpportunityWorkspace({
+      materializeCore: true,
+      opportunities: [{ num: 1, company: "Fictional", role: "Researcher", stage: "Approached" }],
+      attempts: [{ id: "A001", opportunity: 1 }],
+    });
+    try {
+      await incompatible(fixture.root, mutate, "invalid-opportunity-summary");
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
+  }
+
+  const focusedFixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [{ num: 1, company: "Fictional", role: "Researcher", stage: "Approached" }],
+    attempts: [{ id: "A001", opportunity: 1 }],
+  });
+  try {
+    const malformed = clone(await readOpportunityLifecycle(focusedFixture.root, 1));
+    malformed.attempts[0].date = "2026-02-31";
+    servePayload(focusedFixture.root, malformed);
+    await assert.rejects(
+      readOpportunityLifecycle(focusedFixture.root, 1),
+      (error) => error instanceof LifecycleAdapterError && error.code === "invalid-opportunity-detail" && error.status === 503,
+    );
+  } finally {
+    removeFictionalOpportunityWorkspace(focusedFixture.root);
+  }
+});
+
 test("adapter gracefully falls back only when the passive contract is unavailable", async () => {
   const missing = path.join(process.cwd(), ".definitely-missing-career-ops-root");
   assert.equal(await tryListOpportunityLifecycle(missing), null);

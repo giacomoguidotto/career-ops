@@ -294,6 +294,7 @@ function readArtifacts({ root, tracker, row, stage, states }) {
     });
     let parsedAction = null;
     let generatedAction = expectedAction;
+    let actionMismatch = false;
     if (inspected.content) {
       const content = inspected.content.toString('utf8');
       parsedAction = packArtifact(content);
@@ -310,9 +311,30 @@ function readArtifacts({ root, tracker, row, stage, states }) {
           disables: [],
           blocksActions: expectedAction ? [expectedAction] : [],
         });
+      } else if (expectedAction && generatedAction !== expectedAction) {
+        actionMismatch = true;
+        warnings.push({
+          code: 'stale-artifact-action',
+          source: inspected.artifact.path,
+          expectedAction,
+          actualAction: generatedAction,
+          disables: [],
+          blocksActions: [expectedAction],
+        });
       }
     }
     artifacts.push(inspected.artifact);
+    if (actionMismatch) {
+      artifacts.push({
+        kind: actionArtifactKind(expectedAction),
+        action: expectedAction,
+        expectedAction,
+        state: 'missing',
+        format: 'unknown',
+        path: null,
+        revision: null,
+      });
+    }
     if (inspected.warning) {
       warnings.push({
         ...inspected.warning,
@@ -616,9 +638,7 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
   return { ...summary, revision: digest(summary) };
 }
 
-export function readOpportunityContract(options = {}) {
-  const root = checkoutRoot(options.root);
-  const states = loadStates({ rootDir: root, force: true });
+function opportunityContract(root, states) {
   const stages = states.records.map(publicStage);
   const contract = {
     id: OPPORTUNITY_LIFECYCLE_CONTRACT_ID,
@@ -638,6 +658,13 @@ export function readOpportunityContract(options = {}) {
   return { ...contract, revision: digest(contract) };
 }
 
+export function readOpportunityContract(options = {}) {
+  const root = checkoutRoot(options.root);
+  const loadStageAuthority = options.loadStageAuthority ?? loadStates;
+  const states = loadStageAuthority({ rootDir: root, force: true });
+  return opportunityContract(root, states);
+}
+
 export function listOpportunities(options = {}) {
   return buildOpportunitySnapshot(options).result;
 }
@@ -645,8 +672,9 @@ export function listOpportunities(options = {}) {
 function buildOpportunitySnapshot(options = {}) {
   const root = checkoutRoot(options.root);
   const now = nowDate(options.now);
-  const states = loadStates({ rootDir: root, force: true });
-  const contract = readOpportunityContract({ root });
+  const loadStageAuthority = options.loadStageAuthority ?? loadStates;
+  const states = loadStageAuthority({ rootDir: root, force: true });
+  const contract = opportunityContract(root, states);
   const tracker = readTracker(root);
   const warnings = tracker.path
     ? [...tracker.warnings]
@@ -699,7 +727,12 @@ export function readOpportunity(options = {}) {
     throw new Error('opportunity must be a positive tracker number');
   }
   const root = checkoutRoot(options.root);
-  const snapshot = buildOpportunitySnapshot({ root, now: options.now, readAttempts: options.readAttempts });
+  const snapshot = buildOpportunitySnapshot({
+    root,
+    now: options.now,
+    readAttempts: options.readAttempts,
+    loadStageAuthority: options.loadStageAuthority,
+  });
   const result = snapshot.result;
   const summary = result.opportunities.find((item) => item.opportunity === opportunity) ?? null;
   if (!summary) return null;

@@ -16,6 +16,7 @@ import {
   readOpportunityContract,
   readOpportunity,
 } from '../opportunity-lifecycle.mjs';
+import { loadStates } from '../tracker-utils.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -51,14 +52,23 @@ test('contract and list expose every canonical Stage and Owner without writes', 
   }
 });
 
-test('passive reads leave the repository User Layer byte-identical', () => {
-  const fixture = createFictionalOpportunityWorkspace({ materializeCore: true });
+test('passive reads leave the target and repository User Layers byte-identical', () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    files: {
+      'cv.md': '# Target fixture CV\n',
+      'modes/_profile.md': '# Target fixture profile\n',
+      'portals.yml': 'title_filter: {}\n',
+    },
+  });
   try {
-    const before = fingerprintUserLayer(REPO_ROOT);
+    const repositoryBefore = fingerprintUserLayer(REPO_ROOT);
+    const targetBefore = fingerprintUserLayer(fixture.root);
     readOpportunityContract({ root: fixture.root });
     listOpportunities({ root: fixture.root, now: '2026-01-20' });
     readOpportunity({ root: fixture.root, opportunity: 1, now: '2026-01-20' });
-    assert.equal(fingerprintUserLayer(REPO_ROOT), before);
+    assert.equal(fingerprintUserLayer(fixture.root), targetBefore);
+    assert.equal(fingerprintUserLayer(REPO_ROOT), repositoryBefore);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
@@ -371,6 +381,40 @@ test('focused reads use one coherent Attempt snapshot', () => {
   }
 });
 
+test('list and focused reads load one coherent Stage authority snapshot each', () => {
+  const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
+  let reads = 0;
+  try {
+    const result = listOpportunities({
+      root: fixture.root,
+      loadStageAuthority: (options) => {
+        reads += 1;
+        const states = loadStates(options);
+        if (reads > 1) states.records[0].label = 'Changed between reads';
+        return states;
+      },
+    });
+    assert.equal(reads, 1);
+    assert.equal(result.contract.stages[0].label, result.opportunities[0].stage.label);
+
+    reads = 0;
+    const focused = readOpportunity({
+      root: fixture.root,
+      opportunity: 1,
+      loadStageAuthority: (options) => {
+        reads += 1;
+        const states = loadStates(options);
+        if (reads > 1) states.records[0].label = 'Changed between reads';
+        return states;
+      },
+    });
+    assert.equal(reads, 1);
+    assert.equal(focused.contract.stages[0].label, focused.opportunity.stage.label);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test('artifact reads confine symlinks, tolerate directories, and revise when bytes change', () => {
   const outside = mkdtempSync(join(tmpdir(), 'career-ops-artifact-outside-'));
   const fixture = createFictionalOpportunityWorkspace({
@@ -478,6 +522,51 @@ test('expected generated artifact kinds derive from every agent-owned Stage', ()
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
+});
+
+test('wrong-action next-packs stay inspectable and block only the expected Stage action', () => {
+  const cases = [
+    ['Evaluated', 'generate_approach_plan', '**Suggests:** generate_negotiation_prep', 'generate_negotiation_prep'],
+    ['Responded', 'generate_interview_cheatsheet', '**Action:** execute_approach', 'generate_approach_plan'],
+    ['Offer', 'generate_negotiation_prep', '**Suggests:** generate_interview_cheatsheet', 'generate_interview_cheatsheet'],
+  ];
+  for (const [stage, expectedAction, header, foundAction] of cases) {
+    const fixture = createFictionalOpportunityWorkspace({
+      materializeCore: true,
+      opportunities: [{ num: 1, company: `${stage} Co`, role: 'Researcher', stage }],
+      approachPlans: {
+        '001-wrong.md': `# Wrong action pack\n\n${header}\n`,
+      },
+    });
+    try {
+      const opportunity = listOpportunities({ root: fixture.root }).opportunities[0];
+      const found = opportunity.artifacts.find((artifact) => artifact.action === foundAction);
+      const expected = opportunity.artifacts.find(
+        (artifact) => artifact.action === expectedAction && artifact.state === 'missing',
+      );
+      const warning = opportunity.warnings.find((item) => item.code === 'stale-artifact-action');
+
+      assert.equal(found.state, 'available');
+      assert.equal(found.expectedAction, expectedAction);
+      assert.equal(expected.kind, expectedAction.replace(/^generate_/, '').replace(/_/g, '-'));
+      assert.deepEqual(warning.blocksActions, [expectedAction]);
+      assert.equal(warning.actualAction, foundAction);
+      assert.equal(opportunity.primaryAction.id, expectedAction);
+      assert.equal(opportunity.primaryAction.enabled, false);
+      assert.equal(opportunity.primaryAction.reason, 'incompatible-artifact');
+      assert.equal(opportunity.capabilities.generate, false);
+      assert.equal(opportunity.capabilities.passiveRead, true);
+      assert.equal(opportunity.capabilities.openArtifacts, true);
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
+  }
+});
+
+test('lifecycle workflow covers doctor and the web adapter suite', () => {
+  const workflow = readFileSync(join(REPO_ROOT, '.github', 'workflows', 'web-ci.yml'), 'utf8');
+  assert.equal((workflow.match(/- 'doctor\.mjs'/g) ?? []).length, 2);
+  assert.equal(workflow.includes('- run: npm test'), true);
 });
 
 test('state schema version rejects non-positive and coercible invalid values', () => {

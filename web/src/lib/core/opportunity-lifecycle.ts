@@ -201,13 +201,26 @@ function isOpportunityStage(value: unknown): value is OpportunityStage {
     && typeof value.description === "string";
 }
 
+function isIsoOccurrence(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const date = value.match(/^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/);
+  if (!date) return false;
+  const parsedDate = new Date(`${date[1]}T00:00:00Z`);
+  if (Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date[1]) return false;
+  return !value.includes("T") || !Number.isNaN(Date.parse(value));
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 function isApproachAttempt(value: unknown): value is ApproachAttempt {
   return isRecord(value)
     && typeof value.id === "string"
     && typeof value.opportunity === "number"
     && Number.isSafeInteger(value.opportunity)
     && value.opportunity > 0
-    && typeof value.date === "string"
+    && isIsoOccurrence(value.date)
     && typeof value.type === "string"
     && typeof value.channel === "string"
     && typeof value.recipient === "string"
@@ -228,13 +241,13 @@ function isAttemptAttention(value: unknown): value is OpportunitySummary["attemp
   return isRecord(value)
     && isOneOf(value.state, ATTEMPT_ATTENTION_STATES)
     && isNullableString(value.nextReview)
-    && (value.followupCount === undefined || Number.isInteger(value.followupCount))
+    && (value.followupCount === undefined || isNonNegativeSafeInteger(value.followupCount))
     && (value.latestAttemptId === undefined || isNullableString(value.latestAttemptId));
 }
 
 function isAttemptAggregate(value: unknown): value is OpportunitySummary["attempts"] {
   return isRecord(value)
-    && Number.isInteger(value.count)
+    && isNonNegativeSafeInteger(value.count)
     && (value.latest === null || isApproachAttempt(value.latest))
     && isStringArray(value.channels)
     && typeof value.formalSubmitted === "boolean";

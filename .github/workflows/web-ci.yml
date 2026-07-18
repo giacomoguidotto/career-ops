@@ -19,6 +19,7 @@ on:
       - 'advance-stage.mjs'
       - 'tests/fixtures/fictional-opportunity-workspace.mjs'
       - 'tests/opportunity-lifecycle.test.mjs'
+      - 'doctor.mjs'
   push:
     branches: [main]
     paths:
@@ -34,6 +35,7 @@ on:
       - 'advance-stage.mjs'
       - 'tests/fixtures/fictional-opportunity-workspace.mjs'
       - 'tests/opportunity-lifecycle.test.mjs'
+      - 'doctor.mjs'
 
 permissions:
   contents: read
