@@ -595,7 +595,7 @@ function LedgerRow({
           aria-label={`Open ${opportunity.company}, ${opportunity.role}${selected ? ", selected" : ""}`}
           className="flex min-w-0 items-start gap-2.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
         >
-          <CompanyLogo name={opportunity.company} size={28} />
+          <CompanyLogo name={opportunity.company} size={28} retryable={false} />
           <div className="min-w-0 [overflow-wrap:anywhere]">
             <p className="font-semibold">{opportunity.company}</p>
             <p className="text-xs leading-relaxed text-muted">#{String(opportunity.opportunity).padStart(3, "0")} · {opportunity.role}</p>
