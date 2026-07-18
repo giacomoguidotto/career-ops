@@ -316,8 +316,9 @@ progressed row plus an agent-owned sibling:
    `Members`, `Primary`, and `Outreach anchor` use tracker numbers (`#313`). The
    evidence cell carries concise source links or report/contact references, not
    unsupported inference. Re-research when membership, recruiters, or org
-   structure changes; the registry is a cache of evidence, not permission to
-   skip current research.
+   structure changes. A `Reviewed` date older than 90 days is stale and blocks
+   selection until the evidence is refreshed. The registry is a cache of
+   evidence, not permission to skip current research.
 
 Before any implicit selection, run the mandatory machine preflight:
 

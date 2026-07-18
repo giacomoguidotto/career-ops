@@ -25,6 +25,7 @@ import {
 } from './followup-cadence.mjs';
 import { readApproachAttempts } from './approach-attempts.mjs';
 import {
+  candidacyStageIsReleased,
   decisionFromReport,
   decisionFromTrackerNotes,
   parseClusterRegistry,
@@ -450,26 +451,71 @@ function reportDecision(row, artifactState) {
   return artifactState?.reportContent ? decisionFromReport(artifactState.reportContent) : 'unknown';
 }
 
-function readCandidacy({ root, rows, states, artifactByNum }) {
+function readCandidacy({ root, rows, states, artifactByNum, now }) {
   const registryPath = join(root, 'data', 'candidacy-clusters.md');
   const registry = readOptional(registryPath);
   const clusters = registry == null ? [] : parseClusterRegistry(registry);
   const decisions = new Map(rows.map((row) => [row.num, reportDecision(row, artifactByNum.get(row.num))]));
-  const selection = selectCandidacyCandidates({ rows, clusters, states, decisionByNum: decisions });
-  return { registryPath: registry == null ? null : registryPath, selection };
+  const selection = selectCandidacyCandidates({ rows, clusters, states, decisionByNum: decisions, now: now.value });
+  return { registryPath: registry == null ? null : registryPath, clusters, rows, states, selection };
 }
 
 function candidacyForRow(row, candidacy) {
   const { selection } = candidacy;
   const research = selection.researchRequired.find((item) => item.applications.includes(row.num));
+  const selectionCluster = selection.clusters.find((item) => item.members?.includes(row.num));
+  const registryCluster = candidacy.clusters?.find((item) => item.id === selectionCluster?.id) ?? null;
+  const memberRows = (selectionCluster?.members ?? research?.applications ?? [])
+    .map((num) => candidacy.rows?.find((candidate) => candidate.num === num))
+    .filter(Boolean);
+  const members = memberRows.map((member) => {
+    const stage = resolveState(member.status, candidacy.states);
+    const eligible = selection.eligible.find((item) => item.num === member.num);
+    const suppressed = selection.suppressed.find((item) => item.num === member.num);
+    return {
+      opportunity: member.num,
+      role: member.role,
+      stage: stage?.id ?? null,
+      stageLabel: stage?.label ?? member.status,
+      owner: stage?.owner ?? null,
+      selection: suppressed ? 'suppressed' : eligible ? 'eligible' : 'not-agent-owned',
+      reason: suppressed?.reason ?? null,
+    };
+  });
+  const entryAgentStage = candidacy.states.records.find((stage) => stage.owner === 'agent') ?? null;
+  const hasReservedMember = members.some((member) => (
+    member.stage
+    && !candidacyStageIsReleased(member.stage)
+    && member.stage !== entryAgentStage?.id
+  ));
+  const details = {
+    shared: Boolean(registryCluster && registryCluster.members.length > 1),
+    surface: registryCluster?.surface ?? null,
+    confidence: registryCluster?.confidence ?? null,
+    evidence: registryCluster?.evidence ?? null,
+    reviewed: registryCluster?.reviewed ?? null,
+    recommendedLead: selectionCluster?.recommendedLead ?? null,
+    persistedPrimary: selectionCluster?.storedPrimary ?? null,
+    members,
+    research: research ? {
+      reason: research.reason,
+      applications: research.applications,
+      unclassified: research.unclassified,
+      multiplyClassified: research.multiplyClassified,
+      invalidClusters: research.invalidClusters,
+    } : null,
+    canSelectPrimary: false,
+    canReleasePrimary: false,
+    canGenerateOnce: false,
+  };
   if (research) {
     return {
       state: 'research-required', reason: research.reason, clusterId: null,
-      primary: null, outreachAnchor: null,
+      primary: null, outreachAnchor: null, ...details,
     };
   }
   const suppressed = selection.suppressed.find((item) => item.num === row.num);
-  const cluster = selection.clusters.find((item) => item.members?.includes(row.num));
+  const cluster = selectionCluster;
   if (suppressed) {
     return {
       state: 'suppressed',
@@ -477,29 +523,43 @@ function candidacyForRow(row, candidacy) {
       clusterId: suppressed.clusterId,
       primary: suppressed.primary,
       outreachAnchor: cluster?.outreachAnchor ?? null,
+      ...details,
+      canSelectPrimary: details.shared && !hasReservedMember,
+      canReleasePrimary: details.shared && cluster?.storedPrimary === row.num,
     };
   }
   const eligible = selection.eligible.find((item) => item.num === row.num);
   if (eligible) {
     return {
-      state: eligible.primary === row.num ? 'primary' : 'eligible',
+      state: cluster?.storedPrimary === row.num ? 'primary' : 'eligible',
       reason: null,
       clusterId: eligible.clusterId,
       primary: eligible.primary,
       outreachAnchor: cluster?.outreachAnchor ?? null,
+      ...details,
+      canSelectPrimary: details.shared && !hasReservedMember && cluster?.storedPrimary !== row.num,
+      canReleasePrimary: details.shared && cluster?.storedPrimary === row.num,
     };
   }
   if (cluster) {
     const primary = cluster.effectivePrimary ?? cluster.storedPrimary ?? null;
+    const memberStage = resolveState(row.status, candidacy.states);
+    const maySelectPrimary = memberStage?.owner === 'agent';
     return {
       state: primary === row.num ? 'primary' : 'member',
       reason: null,
       clusterId: cluster.id,
       primary,
       outreachAnchor: cluster.outreachAnchor ?? null,
+      ...details,
+      canSelectPrimary: details.shared && !hasReservedMember && maySelectPrimary && cluster.storedPrimary !== row.num,
+      canReleasePrimary: details.shared && cluster.storedPrimary === row.num,
     };
   }
-  return { state: 'not-coordinated', reason: null, clusterId: null, primary: null, outreachAnchor: null };
+  return {
+    state: 'not-coordinated', reason: null, clusterId: null, primary: null, outreachAnchor: null,
+    ...details,
+  };
 }
 
 function opportunitySummary({ root, tracker, row, states, contract, attempts, cadence, overrides, candidacy, now, artifactState }) {
@@ -602,6 +662,16 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
     capabilities.recordAttempt = false;
     capabilities.reportSuccessor = false;
   }
+  candidacyState.canGenerateOnce = Boolean(
+    candidacyState.shared
+    && candidacyState.state === 'suppressed'
+    && candidacyState.reason !== 'accepted-primary'
+    && stageRecord?.owner === 'agent'
+    && stageRecord.suggests
+    && contract.capabilities.generationRequest
+    && !row.unknownTrackerFormat
+    && !artifactState.warnings.some((warning) => (warning.blocksActions ?? []).includes(stageRecord.suggests)),
+  );
   const artifactActionBlocked = artifactState.warnings.some(
     (warning) => (warning.blocksActions ?? []).includes(stageRecord?.suggests),
   );
@@ -712,8 +782,14 @@ function buildOpportunitySnapshot(options = {}) {
       ])
     : []);
   const candidacy = tracker.path
-    ? readCandidacy({ root, rows: tracker.rows, states, artifactByNum })
-    : { registryPath: null, selection: { eligible: [], suppressed: [], researchRequired: [], clusters: [], warnings: [] } };
+    ? readCandidacy({ root, rows: tracker.rows, states, artifactByNum, now })
+    : {
+        registryPath: null,
+        clusters: [],
+        rows: [],
+        states,
+        selection: { eligible: [], suppressed: [], researchRequired: [], clusters: [], warnings: [] },
+      };
   const opportunities = tracker.path
     ? tracker.rows.map((row) => opportunitySummary({
         root,
@@ -765,9 +841,11 @@ export function readOpportunity(options = {}) {
 
 const COMMAND_EFFECTS = new Set(['accepted', 'changed', 'unchanged', 'blocked', 'conflict', 'unavailable']);
 
-function commandOutcome({ code, effect, retryable, message, before = null, after = before, artifacts = [], workOrder = null }) {
+function commandOutcome({
+  code, effect, retryable, message, before = null, after = before, artifacts = [], workOrder = null, consequences = null,
+}) {
   if (!COMMAND_EFFECTS.has(effect)) throw new Error(`invalid lifecycle command effect: ${effect}`);
-  return { code, effect, retryable, message, before, after, artifacts, workOrder };
+  return { code, effect, retryable, message, before, after, artifacts, workOrder, consequences };
 }
 
 function parseCommandExpectation(options) {
@@ -797,7 +875,7 @@ function commandArtifacts(summary) {
   })) ?? [];
 }
 
-function workOrderFor(summary, states) {
+function workOrderFor(summary, states, authorization = null) {
   const stage = resolveState(summary.rawStage, states);
   const ready = stage ? pairedReadyStage(stage, states, stage.suggests) : null;
   if (!stage || stage.owner !== 'agent' || !stage.suggests || !ready) return null;
@@ -810,6 +888,7 @@ function workOrderFor(summary, states) {
     source: { stage: stage.id, revision: summary.revision },
     artifact: { kind, directory: 'output/next-packs' },
     consequence: { stage: ready.id, label: ready.label },
+    ...(authorization ? { authorization } : {}),
   };
 }
 
@@ -823,7 +902,17 @@ function hasExactKeys(value, keys) {
 }
 
 function validWorkOrder(value) {
-  return hasExactKeys(value, ['id', 'opportunity', 'action', 'source', 'artifact', 'consequence'])
+  const keys = ['id', 'opportunity', 'action', 'source', 'artifact', 'consequence'];
+  const validKeys = hasExactKeys(value, keys) || hasExactKeys(value, [...keys, 'authorization']);
+  const validAuthorization = value?.authorization === undefined || (
+    hasExactKeys(value.authorization, ['kind', 'clusterId', 'opportunity'])
+    && value.authorization.kind === 'single-generation-exception'
+    && typeof value.authorization.clusterId === 'string'
+    && Number.isSafeInteger(value.authorization.opportunity)
+    && value.authorization.opportunity === value.opportunity
+  );
+  return validKeys
+    && validAuthorization
     && typeof value.id === 'string'
     && /^[a-f0-9]{64}$/.test(value.id)
     && Number.isSafeInteger(value.opportunity)
@@ -862,12 +951,25 @@ function readWorkState(path, canonicalWorkOrder = null, nowMs = Date.now()) {
   try {
     const value = JSON.parse(readFileSync(path, 'utf8'));
     if (!validWorkState(value)) return { invalid: true };
-    if (canonicalWorkOrder && digest(value.workOrder) !== digest(canonicalWorkOrder)) return { invalid: true };
+    if (canonicalWorkOrder) {
+      const { authorization: _storedAuthorization, ...storedCanonical } = value.workOrder;
+      const { authorization: _requestedAuthorization, ...requestedCanonical } = canonicalWorkOrder;
+      if (digest(storedCanonical) !== digest(requestedCanonical)) return { invalid: true };
+    }
     if (Date.parse(value.lease.expiresAt) <= nowMs) return { stale: true };
     return value;
   } catch {
     return { invalid: true };
   }
+}
+
+function sameWorkOrderForReconciliation(stored, current) {
+  if (!validWorkOrder(stored) || !validWorkOrder(current)) return false;
+  const normalize = (workOrder) => {
+    const { authorization: _authorization, ...canonical } = workOrder;
+    return { ...canonical, source: { ...canonical.source, revision: null } };
+  };
+  return digest(normalize(stored)) === digest(normalize(current));
 }
 
 function writeWorkState(root, workOrder, nowMs, leaseMs) {
@@ -956,7 +1058,12 @@ export async function requestOpportunityWork(options = {}) {
     }
     const before = focused.opportunity;
     if (expectationConflict(before, expected)) return conflictOutcome(before);
-    if (before.stage.owner !== 'agent' || !before.capabilities.generate) {
+    const candidacyOverride = options.candidacyOverride === true;
+    const overrideAllowed = candidacyOverride && before.candidacy.canGenerateOnce;
+    if (
+      before.stage.owner !== 'agent'
+      || (candidacyOverride ? !overrideAllowed : !before.capabilities.generate)
+    ) {
       return commandOutcome({
         code: 'generation-blocked', effect: 'blocked', retryable: false,
         message: 'Generation is not available for the current Opportunity state.',
@@ -965,7 +1072,11 @@ export async function requestOpportunityWork(options = {}) {
     }
 
     const states = loadStates({ rootDir: root, force: true });
-    const workOrder = workOrderFor(before, states);
+    const workOrder = workOrderFor(before, states, overrideAllowed ? {
+      kind: 'single-generation-exception',
+      clusterId: before.candidacy.clusterId,
+      opportunity: before.opportunity,
+    } : null);
     if (!workOrder) {
       return commandOutcome({
         code: 'generation-unavailable', effect: 'unavailable', retryable: false,
@@ -991,8 +1102,189 @@ export async function requestOpportunityWork(options = {}) {
     writeWorkState(root, workOrder, clock.nowMs, clock.leaseMs);
     return commandOutcome({
       code: 'work-requested', effect: 'accepted', retryable: false,
-      message: 'Work request accepted.',
+      message: overrideAllowed
+        ? 'One generation request was accepted without changing the standing candidacy coordination.'
+        : 'Work request accepted.',
       before, artifacts: commandArtifacts(before), workOrder,
+      consequences: overrideAllowed ? {
+        kind: 'single-generation-exception',
+        clusterId: before.candidacy.clusterId,
+        outreachAnchor: before.candidacy.outreachAnchor,
+        stagesUnchanged: true,
+      } : null,
+    });
+  });
+}
+
+function replaceClusterPrimary(content, clusterId, primary) {
+  const lines = String(content).split('\n');
+  let headers = null;
+  let changed = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].startsWith('|')) continue;
+    const trailingPipe = lines[index].trimEnd().endsWith('|');
+    const parts = lines[index].split('|').slice(1);
+    if (parts.at(-1)?.trim() === '') parts.pop();
+    const cells = parts.map((cell) => cell.trim());
+    const lower = cells.map((cell) => cell.toLowerCase());
+    if (lower.includes('cluster id') && lower.includes('primary')) {
+      headers = Object.fromEntries(lower.map((name, cellIndex) => [name, cellIndex]));
+      continue;
+    }
+    if (!headers || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
+    if (cells[headers['cluster id']] !== clusterId) continue;
+    cells[headers.primary] = primary == null ? '' : `#${primary}`;
+    lines[index] = `| ${cells.join(' | ')}${trailingPipe ? ' |' : ''}`;
+    changed += 1;
+  }
+  if (changed !== 1) return { ok: false, reason: changed ? 'duplicate-candidacy-cluster' : 'candidacy-cluster-not-found' };
+  return { ok: true, content: lines.join('\n') };
+}
+
+/**
+ * Persist or release one cluster Primary after a fresh evidence and revision
+ * check. Only the candidacy registry changes; every Opportunity Stage and the
+ * Outreach anchor must remain byte-for-byte authoritative.
+ */
+export async function setOpportunityPrimary(options = {}) {
+  if (!Object.prototype.hasOwnProperty.call(options, 'primary') || options.primary === undefined) {
+    throw new Error('primary is required');
+  }
+  const expected = parseCommandExpectation(options);
+  const primary = options.primary == null ? null : Number(options.primary);
+  if (primary != null && (!Number.isSafeInteger(primary) || primary <= 0)) {
+    throw new Error('primary must be a positive tracker number or null');
+  }
+  if (primary != null && primary !== expected.opportunity) {
+    throw new Error('primary must match the target Opportunity');
+  }
+  const root = checkoutRoot(options.root);
+  return withLifecycleLock(root, options, async () => {
+    const focused = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+    if (!focused) {
+      return commandOutcome({
+        code: 'opportunity-not-found', effect: 'unavailable', retryable: false,
+        message: 'The Opportunity was not found.',
+      });
+    }
+    const before = focused.opportunity;
+    if (expectationConflict(before, expected)) return conflictOutcome(before);
+    if (
+      before.candidacy.state === 'research-required'
+      || !before.candidacy.shared
+      || !before.candidacy.clusterId
+    ) {
+      return commandOutcome({
+        code: 'candidacy-evidence-required', effect: 'blocked', retryable: false,
+        message: 'Fresh canonical Hiring-surface evidence is required before candidacy coordination can change.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    if (primary == null && before.candidacy.persistedPrimary !== before.opportunity) {
+      return commandOutcome({
+        code: 'primary-release-blocked', effect: 'blocked', retryable: false,
+        message: 'Only the persisted Primary Opportunity can release this Hiring surface.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    if (primary != null && !before.candidacy.canSelectPrimary) {
+      return commandOutcome({
+        code: 'primary-selection-blocked', effect: 'blocked', retryable: false,
+        message: 'This Opportunity cannot become Primary in the current canonical state.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    const workNowMs = options.nowMs ?? Date.now();
+    if (!Number.isFinite(workNowMs) || workNowMs < 0) {
+      throw new Error('nowMs must be a non-negative timestamp');
+    }
+    const states = loadStates({ rootDir: root, force: true });
+    let activeWork = null;
+    for (const member of before.candidacy.members) {
+      const summary = readOpportunity({ root, opportunity: member.opportunity, now: options.now })?.opportunity;
+      const workOrder = summary ? workOrderFor(summary, states) : null;
+      if (!workOrder) continue;
+      const workState = readWorkState(workStatePath(root, workOrder), null, workNowMs);
+      if (workState && !workState.invalid && !workState.stale) {
+        activeWork = workState;
+        break;
+      }
+    }
+    if (activeWork) {
+      return commandOutcome({
+        code: 'candidacy-work-active', effect: 'blocked', retryable: false,
+        message: 'Primary coordination cannot change while lifecycle work is active for this Hiring surface.',
+        before, artifacts: commandArtifacts(before), workOrder: activeWork.workOrder,
+      });
+    }
+
+    const registryPath = join(root, 'data', 'candidacy-clusters.md');
+    const registryContent = readOptional(registryPath);
+    if (registryContent == null) {
+      return commandOutcome({
+        code: 'candidacy-registry-unavailable', effect: 'unavailable', retryable: false,
+        message: 'The candidacy registry is unavailable.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    const replacement = replaceClusterPrimary(registryContent, before.candidacy.clusterId, primary);
+    if (!replacement.ok) {
+      return commandOutcome({
+        code: replacement.reason, effect: 'unavailable', retryable: false,
+        message: 'The candidacy registry could not be updated safely.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    if (replacement.content === registryContent) {
+      return commandOutcome({
+        code: 'primary-unchanged', effect: 'unchanged', retryable: false,
+        message: 'The persisted Primary Opportunity is already current.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+
+    let after;
+    let wroteRegistry = false;
+    try {
+      writeFileAtomic(registryPath, replacement.content);
+      wroteRegistry = true;
+      after = readOpportunity({ root, opportunity: expected.opportunity, now: options.now })?.opportunity;
+      const beforeStages = before.candidacy.members.map((member) => [member.opportunity, member.stage]);
+      const afterStages = after?.candidacy.members.map((member) => [member.opportunity, member.stage]);
+      if (
+        !after
+        || after.candidacy.outreachAnchor !== before.candidacy.outreachAnchor
+        || digest(afterStages) !== digest(beforeStages)
+      ) throw new Error('candidacy invariant failed');
+    } catch {
+      let restored = true;
+      if (wroteRegistry) {
+        try { writeFileAtomic(registryPath, registryContent); } catch { restored = false; }
+      }
+      return commandOutcome({
+        code: restored ? 'candidacy-write-failed' : 'candidacy-recovery-required',
+        effect: 'unavailable', retryable: restored,
+        message: restored
+          ? 'Candidacy coordination was not changed. Prior canonical state was restored.'
+          : 'Candidacy coordination could not be completed or restored. Manual recovery is required.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
+    return commandOutcome({
+      code: primary == null ? 'primary-released' : 'primary-selected',
+      effect: 'changed', retryable: false,
+      message: primary == null
+        ? 'The Hiring surface was released without changing Stage or the Outreach anchor.'
+        : 'The Primary Opportunity changed without changing Stage or the Outreach anchor.',
+      before, after, artifacts: commandArtifacts(after),
+      consequences: {
+        kind: primary == null ? 'primary-release' : 'primary-selection',
+        clusterId: before.candidacy.clusterId,
+        outreachAnchor: before.candidacy.outreachAnchor,
+        stagesUnchanged: true,
+        members: after.candidacy.members,
+      },
     });
   });
 }
@@ -1050,10 +1342,25 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
     const before = focused.opportunity;
-    if (expectationConflict(before, expected)) return conflictOutcome(before);
-
     const states = loadStates({ rootDir: root, force: true });
     const stage = resolveState(before.rawStage, states);
+    const workOrder = workOrderFor(before, states);
+    const activeWork = workOrder
+      ? readWorkState(workStatePath(root, workOrder))
+      : null;
+    const activeExpectationMatches = Boolean(
+      activeWork
+      && !activeWork.invalid
+      && !activeWork.stale
+      && sameWorkOrderForReconciliation(activeWork.workOrder, workOrder)
+      && activeWork.workOrder.source.stage === expected.expectedStage
+      && activeWork.workOrder.source.revision === expected.expectedRevision
+    );
+    if (
+      before.stage.id !== expected.expectedStage
+      || (before.revision !== expected.expectedRevision && !activeExpectationMatches)
+    ) return conflictOutcome(before);
+
     const action = predecessorAction(stage, states);
     const artifact = expectedGeneratedArtifact(before, action);
     if (!stage || !action || !artifact) {
@@ -1071,7 +1378,17 @@ export async function reconcileOpportunityWork(options = {}) {
         before, artifacts: commandArtifacts(before),
       });
     }
-    if (stage.owner !== 'agent' || !before.capabilities.generate) {
+    const authorization = activeExpectationMatches
+      ? activeWork.workOrder.authorization
+      : null;
+    const oneGenerationAuthorized = Boolean(
+      authorization
+      && authorization.kind === 'single-generation-exception'
+      && authorization.opportunity === before.opportunity
+      && authorization.clusterId === before.candidacy.clusterId
+      && before.candidacy.canGenerateOnce,
+    );
+    if (stage.owner !== 'agent' || (!before.capabilities.generate && !oneGenerationAuthorized)) {
       return commandOutcome({
         code: 'reconciliation-blocked', effect: 'blocked', retryable: false,
         message: 'Reconciliation is not available for the current Opportunity state.',
@@ -1088,7 +1405,13 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
 
-    const workOrder = workOrderFor(before, states);
+    if (!workOrder) {
+      return commandOutcome({
+        code: 'generation-unavailable', effect: 'unavailable', retryable: false,
+        message: 'A canonical work order could not be derived.',
+        before, artifacts: commandArtifacts(before),
+      });
+    }
     const replacement = prepareTrackerStageReplacement(tracker, before.opportunity, advance.toLabel);
     if (!replacement.ok) {
       return commandOutcome({
@@ -1143,25 +1466,38 @@ export async function reconcileOpportunityWork(options = {}) {
 
 function parseCliArgs(argv) {
   const [action, ...rest] = argv;
-  if (!['contract', 'list', 'read', 'request', 'reconcile'].includes(action)) {
-    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read|request|reconcile> [--root PATH] [--opportunity NUM] [--expected-stage ID] [--expected-revision SHA256] [--now YYYY-MM-DD]');
+  if (!['contract', 'list', 'read', 'request', 'reconcile', 'primary'].includes(action)) {
+    throw new Error('usage: opportunity-lifecycle.mjs <contract|list|read|request|reconcile|primary> [--root PATH] [--opportunity NUM] [--expected-stage ID] [--expected-revision SHA256] [--primary NUM|none] [--candidacy-override] [--now YYYY-MM-DD]');
   }
-  const options = { action, root: MODULE_ROOT, opportunity: null, expectedStage: null, expectedRevision: null, now: null };
+  const options = {
+    action, root: MODULE_ROOT, opportunity: null, expectedStage: null, expectedRevision: null,
+    primary: undefined, candidacyOverride: false, now: null,
+  };
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
     if (argument === '--root') options.root = rest[++index];
     else if (argument === '--opportunity') options.opportunity = rest[++index];
     else if (argument === '--expected-stage') options.expectedStage = rest[++index];
     else if (argument === '--expected-revision') options.expectedRevision = rest[++index];
+    else if (argument === '--primary') {
+      if (index + 1 >= rest.length || rest[index + 1].startsWith('--')) {
+        throw new Error('--primary requires NUM or none');
+      }
+      const value = rest[++index];
+      options.primary = value === 'none' ? null : value;
+    } else if (argument === '--candidacy-override') options.candidacyOverride = true;
     else if (argument === '--now') options.now = rest[++index];
     else throw new Error(`unknown argument: ${argument}`);
   }
   if (!options.root) throw new Error('--root requires a path');
-  if (['read', 'request', 'reconcile'].includes(action) && options.opportunity == null) {
+  if (['read', 'request', 'reconcile', 'primary'].includes(action) && options.opportunity == null) {
     throw new Error(`${action} requires --opportunity NUM`);
   }
-  if (['request', 'reconcile'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
+  if (['request', 'reconcile', 'primary'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
     throw new Error(`${action} requires --expected-stage ID and --expected-revision SHA256`);
+  }
+  if (action === 'primary' && options.primary === undefined) {
+    throw new Error('primary requires --primary NUM|none');
   }
   return options;
 }
@@ -1187,6 +1523,7 @@ async function runCli() {
         };
       }
     } else if (options.action === 'request') result = await requestOpportunityWork(options);
+    else if (options.action === 'primary') result = await setOpportunityPrimary(options);
     else result = await reconcileOpportunityWork(options);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {

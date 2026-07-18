@@ -13,7 +13,6 @@ import {
   MapPin,
   ShieldCheck,
   Sparkles,
-  UsersRound,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +26,7 @@ import { GuidedApproach } from "@/components/guided-approach";
 import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { CandidacyCoordination } from "@/components/candidacy-coordination";
 
 type Stage = LifecycleContract["stages"][number];
 type Artifact = OpportunitySummary["artifacts"][number];
@@ -215,26 +215,6 @@ function ArtifactState({ artifact }: { artifact: Artifact }) {
     )}>
       <Icon className="size-3" aria-hidden="true" /> {artifact.state}
     </span>
-  );
-}
-
-function CandidacyContext({ opportunity }: { opportunity: OpportunitySummary }) {
-  const candidacy = opportunity.candidacy;
-  if (["not-coordinated", "eligible"].includes(candidacy.state) && !candidacy.clusterId) return null;
-  return (
-    <section aria-labelledby="candidacy-heading" className="mt-4 rounded-2xl border border-border bg-surface/55 p-4">
-      <div className="flex items-center gap-2">
-        <UsersRound className="size-4 text-brand" aria-hidden="true" />
-        <h2 id="candidacy-heading" className="text-sm font-semibold">Candidacy context</h2>
-      </div>
-      <dl className="mt-3 space-y-2 text-xs">
-        <ContextRow label="State" value={words(candidacy.state.replaceAll("-", "_"))} />
-        {candidacy.clusterId && <ContextRow label="Hiring surface" value={candidacy.clusterId} />}
-        {candidacy.primary && <ContextRow label="Primary" value={`Opportunity #${candidacy.primary}`} />}
-        {candidacy.outreachAnchor && <ContextRow label="Outreach anchor" value={`Opportunity #${candidacy.outreachAnchor}`} />}
-      </dl>
-      {candidacy.reason && <p className="mt-3 text-xs leading-relaxed text-muted">{words(candidacy.reason.replaceAll("-", "_"))}</p>}
-    </section>
   );
 }
 
@@ -530,7 +510,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
 
         <aside aria-label="Opportunity context" className="border-t border-border bg-surface/20 px-5 py-6 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-l lg:border-t-0">
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Opportunity context</p>
-          <CandidacyContext opportunity={opportunity} />
+          <CandidacyCoordination opportunity={opportunity} />
           <Readiness opportunity={opportunity} />
           <details className="mt-5 border-t border-border pt-5">
             <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium">

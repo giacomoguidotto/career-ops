@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -17,11 +17,13 @@ import {
   readOpportunity,
   reconcileOpportunityWork,
   requestOpportunityWork,
+  setOpportunityPrimary,
 } from '../opportunity-lifecycle.mjs';
 import { loadStates, trackerLockDirFor } from '../tracker-utils.mjs';
 import { detectColumns, inspectColumns } from '../tracker-parse.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const TODAY = new Date().toISOString().slice(0, 10);
 
 test('contract and list expose every canonical Stage and Owner without writes', () => {
   const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
@@ -190,6 +192,12 @@ test('passive summaries compose Attempt, cadence, artifact, and candidacy author
     );
     assert.equal(applied.candidacy.state, 'primary');
     assert.equal(applied.candidacy.clusterId, 'C-001');
+    assert.equal(applied.candidacy.shared, true);
+    assert.equal(applied.candidacy.surface, 'Shared research team');
+    assert.equal(applied.candidacy.evidence, 'tracker note');
+    assert.equal(applied.candidacy.recommendedLead, 1);
+    assert.equal(applied.candidacy.persistedPrimary, 1);
+    assert.deepEqual(applied.candidacy.members.map((member) => member.opportunity), [1, 2]);
     assert.equal(applied.capabilities.recordAttempt, true);
     assert.equal(sibling.candidacy.state, 'suppressed');
     assert.equal(sibling.candidacy.primary, 1);
@@ -584,6 +592,372 @@ test('explicit work requests cover every Agent-owned Stage without changing life
     } finally {
       removeFictionalOpportunityWorkspace(fixture.root);
     }
+  }
+});
+
+test('durable Primary selection and release preserve every Stage and the Outreach anchor', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Shared Co', role: 'Primary Researcher', stage: 'Evaluated', notes: 'APPLY: primary' },
+      { num: 2, company: 'Shared Co', role: 'Alternate Researcher', stage: 'Evaluated', notes: 'APPLY: alternate' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| shared-research | Shared Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const trackerBefore = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.canSelectPrimary, true);
+    assert.equal(before.candidacy.persistedPrimary, 1);
+    assert.equal(before.candidacy.recommendedLead, 2);
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+
+    await assert.rejects(
+      setOpportunityPrimary({
+        root: fixture.root,
+        opportunity: 2,
+        expectedStage: before.stage.id,
+        expectedRevision: before.revision,
+      }),
+      /primary is required/,
+    );
+    const malformedCli = spawnSync(process.execPath, [
+      join(REPO_ROOT, 'opportunity-lifecycle.mjs'),
+      'primary',
+      '--root', fixture.root,
+      '--opportunity', '2',
+      '--expected-stage', before.stage.id,
+      '--expected-revision', before.revision,
+    ], { encoding: 'utf8' });
+    assert.equal(malformedCli.status, 2);
+    assert.match(malformedCli.stderr, /primary requires --primary NUM\|none/);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+
+    const selected = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(selected.code, 'primary-selected');
+    assert.equal(selected.effect, 'changed');
+    assert.equal(selected.after.candidacy.persistedPrimary, 2);
+    assert.equal(selected.after.candidacy.outreachAnchor, 1);
+    assert.equal(selected.consequences.stagesUnchanged, true);
+    assert.deepEqual(
+      selected.before.candidacy.members.map((member) => [member.opportunity, member.stage]),
+      selected.after.candidacy.members.map((member) => [member.opportunity, member.stage]),
+    );
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+
+    const released = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: null,
+      expectedStage: selected.after.stage.id,
+      expectedRevision: selected.after.revision,
+    });
+    assert.equal(released.code, 'primary-released');
+    assert.equal(released.after.candidacy.persistedPrimary, null);
+    assert.equal(released.after.candidacy.outreachAnchor, 1);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('a suppressed persisted Primary can release when an accepted sibling leads', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Accepted Co', role: 'Stored Primary', stage: 'Evaluated' },
+      { num: 2, company: 'Accepted Co', role: 'Accepted Sibling', stage: 'Accepted' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| accepted-surface | Accepted Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY}`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    const trackerBefore = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.reason, 'accepted-primary');
+    assert.equal(before.candidacy.persistedPrimary, 1);
+    assert.equal(before.candidacy.canSelectPrimary, false);
+    assert.equal(before.candidacy.canReleasePrimary, true);
+
+    const released = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 1,
+      primary: null,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(released.code, 'primary-released');
+    assert.equal(released.after.candidacy.persistedPrimary, null);
+    assert.equal(released.after.candidacy.outreachAnchor, 1);
+    assert.equal(released.after.stage.id, before.stage.id);
+    const registryAfter = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.match(registryAfter, new RegExp(`accepted-surface.*\\| ${TODAY}$`, 'm'));
+    assert.equal(released.after.candidacy.state, 'suppressed');
+    assert.equal(released.after.candidacy.research, null);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('released terminal cluster members cannot become Primary', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Terminal Co', role: 'Active Lead', stage: 'Evaluated' },
+      { num: 2, company: 'Terminal Co', role: 'Closed Sibling', stage: 'Rejected' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| terminal-surface | Terminal Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.stage.id, 'rejected');
+    assert.equal(before.candidacy.state, 'member');
+    assert.equal(before.candidacy.canSelectPrimary, false);
+
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'primary-selection-blocked');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('a progressed sibling reserves the Hiring surface from durable Primary changes', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Reserved Co', role: 'Progressed Lead', stage: 'Approach Ready' },
+      { num: 2, company: 'Reserved Co', role: 'Evaluated Alternate', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| reserved-surface | Reserved Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.reason, 'reserved-primary');
+    assert.equal(before.candidacy.canSelectPrimary, false);
+    assert.equal(before.candidacy.canGenerateOnce, true);
+
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'primary-selection-blocked');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('Primary changes are blocked while any cluster member has active lifecycle work', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Active Work Co', role: 'Lead', stage: 'Evaluated' },
+      { num: 2, company: 'Active Work Co', role: 'Alternate', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| active-work-surface | Active Work Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const lead = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    const reservation = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 1,
+      expectedStage: lead.stage.id,
+      expectedRevision: lead.revision,
+      nowMs: 1_000,
+      workLeaseMs: 1_000,
+    });
+    assert.equal(reservation.code, 'work-requested');
+
+    const alternate = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: alternate.stage.id,
+      expectedRevision: alternate.revision,
+      nowMs: 1_500,
+    });
+    assert.equal(blocked.code, 'candidacy-work-active');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(blocked.workOrder.id, reservation.workOrder.id);
+    assert.equal(blocked.workOrder.opportunity, 1);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('evidence failures and drift block Primary changes before any registry write', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Drift Co', role: 'Researcher', stage: 'Evaluated' },
+      { num: 2, company: 'Drift Co', role: 'Engineer', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      '| drift-surface | Drift Co | Unknown | certain | #1 | #1 | #1 |  |  |',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'research-required');
+    assert.equal(before.candidacy.research.reason, 'invalid-classification');
+    assert.equal(before.candidacy.research.unclassified.includes(2), true);
+    const outcome = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(outcome.code, 'candidacy-evidence-required');
+    assert.equal(outcome.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('one-generation exception is scoped to one suppressed Opportunity and never persists an override', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Override Co', role: 'Lead', stage: 'Evaluated', notes: 'APPLY: lead' },
+      { num: 2, company: 'Override Co', role: 'Alternate', stage: 'Evaluated', notes: 'APPLY: alternate' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| override-surface | Override Co | Shared recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    const blocked = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'generation-blocked');
+
+    const accepted = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      candidacyOverride: true,
+    });
+    assert.equal(accepted.code, 'work-requested');
+    assert.equal(accepted.workOrder.authorization.kind, 'single-generation-exception');
+    assert.equal(accepted.workOrder.authorization.opportunity, 2);
+    assert.equal(accepted.consequences.stagesUnchanged, true);
+    assert.equal(readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity.stage.id, 'evaluated');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+
+    const repeated = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      candidacyOverride: true,
+    });
+    assert.equal(repeated.code, 'already-running');
+
+    const artifactPath = join(fixture.root, 'output', 'next-packs', '002-one-generation.md');
+    writeFileSync(artifactPath, [
+      '# One-generation artifact',
+      '',
+      '**Stage:** evaluated',
+      '**Owner:** agent',
+      '**Suggests:** generate_approach_plan',
+      '',
+    ].join('\n'));
+    const current = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    assert.notEqual(current.revision, accepted.workOrder.source.revision);
+    const reconciled = await reconcileOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: accepted.workOrder.source.stage,
+      expectedRevision: accepted.workOrder.source.revision,
+    });
+    assert.equal(reconciled.code, 'work-reconciled');
+    assert.equal(reconciled.after.stage.id, 'approach_ready');
+    assert.equal(existsSync(join(
+      fixture.root,
+      '.career-ops-web',
+      'lifecycle-work',
+      `${accepted.workOrder.id}.json`,
+    )), false);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
   }
 });
 
