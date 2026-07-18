@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -618,6 +618,28 @@ test('durable Primary selection and release preserve every Stage and the Outreac
     assert.equal(before.candidacy.canSelectPrimary, true);
     assert.equal(before.candidacy.persistedPrimary, 1);
     assert.equal(before.candidacy.recommendedLead, 2);
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+
+    await assert.rejects(
+      setOpportunityPrimary({
+        root: fixture.root,
+        opportunity: 2,
+        expectedStage: before.stage.id,
+        expectedRevision: before.revision,
+      }),
+      /primary is required/,
+    );
+    const malformedCli = spawnSync(process.execPath, [
+      join(REPO_ROOT, 'opportunity-lifecycle.mjs'),
+      'primary',
+      '--root', fixture.root,
+      '--opportunity', '2',
+      '--expected-stage', before.stage.id,
+      '--expected-revision', before.revision,
+    ], { encoding: 'utf8' });
+    assert.equal(malformedCli.status, 2);
+    assert.match(malformedCli.stderr, /primary requires --primary NUM\|none/);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
 
     const selected = await setOpportunityPrimary({
       root: fixture.root,
@@ -647,6 +669,47 @@ test('durable Primary selection and release preserve every Stage and the Outreac
     assert.equal(released.code, 'primary-released');
     assert.equal(released.after.candidacy.persistedPrimary, null);
     assert.equal(released.after.candidacy.outreachAnchor, 1);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('a suppressed persisted Primary can release when an accepted sibling leads', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Accepted Co', role: 'Stored Primary', stage: 'Evaluated' },
+      { num: 2, company: 'Accepted Co', role: 'Accepted Sibling', stage: 'Accepted' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| accepted-surface | Accepted Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    const trackerBefore = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.reason, 'accepted-primary');
+    assert.equal(before.candidacy.persistedPrimary, 1);
+    assert.equal(before.candidacy.canSelectPrimary, false);
+    assert.equal(before.candidacy.canReleasePrimary, true);
+
+    const released = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 1,
+      primary: null,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(released.code, 'primary-released');
+    assert.equal(released.after.candidacy.persistedPrimary, null);
+    assert.equal(released.after.candidacy.outreachAnchor, 1);
+    assert.equal(released.after.stage.id, before.stage.id);
     assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);

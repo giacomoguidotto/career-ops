@@ -753,10 +753,22 @@ try {
   const beforeCoordination = await page.evaluate(async () => (await fetch('/api/opportunities/101')).json());
   const stageSnapshot = beforeCoordination.opportunity.candidacy.members.map((member) => [member.opportunity, member.stage]);
 
-  await page.getByRole('button', { name: 'Generate once' }).click();
+  const generateOnce = page.getByRole('button', { name: 'Generate once' });
+  await generateOnce.click();
   const generationReview = page.getByRole('dialog', { name: 'Generate once for Opportunity #101?' });
   await generationReview.waitFor();
   assert.equal(await generationReview.getByText('no factual Stage changes', { exact: false }).isVisible(), true);
+  assert.equal(await generationReview.getByRole('button', { name: 'Generate once' }).evaluate((node) => node === document.activeElement), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Close candidacy review' }).evaluate((node) => node === document.activeElement), true);
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await generationReview.getByRole('button', { name: 'Generate once' }).evaluate((node) => node === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  await generationReview.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.textContent?.includes('Generate once'));
+  assert.equal(await generateOnce.evaluate((node) => node === document.activeElement), true);
+  await generateOnce.click();
+  await generationReview.waitFor();
   const generationRequest = page.waitForRequest((request) => request.url().endsWith('/api/run') && request.method() === 'POST');
   const generationResponse = page.waitForResponse((response) => response.url().endsWith('/api/run') && response.request().method() === 'POST');
   await generationReview.getByRole('button', { name: 'Generate once' }).click();
@@ -773,6 +785,8 @@ try {
     candidacyOverride: true,
   });
   await page.getByText('Starting one authorized generation for Opportunity #101.').waitFor();
+  await page.waitForFunction(() => document.activeElement?.textContent?.includes('Generate once'));
+  assert.equal(await generateOnce.evaluate((node) => node === document.activeElement), true);
 
   await page.getByRole('button', { name: 'Make this Primary' }).click();
   const primaryReview = page.getByRole('dialog', { name: 'Make Opportunity #101 Primary?' });

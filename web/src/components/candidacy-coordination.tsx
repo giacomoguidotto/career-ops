@@ -41,22 +41,52 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const coordinationRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!command) return;
     confirmRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) setCommand(null);
+      if (event.key === "Escape" && !busy) {
+        event.preventDefault();
+        closeReview();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [])].filter((item) => item.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [command, busy]);
 
+  function dismissReview() {
+    setCommand(null);
+    setTimeout(() => {
+      const target = triggerRef.current?.isConnected ? triggerRef.current : coordinationRef.current;
+      target?.focus();
+    }, 0);
+  }
+
   function closeReview() {
     if (busy) return;
-    setCommand(null);
-    setTimeout(() => triggerRef.current?.focus(), 0);
+    dismissReview();
   }
 
   function review(next: Command, trigger: HTMLButtonElement) {
@@ -86,7 +116,7 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
         });
         if (!job) throw new Error("The one-generation worker could not be started.");
         setNotice(`Starting one authorized generation for Opportunity #${opportunity.opportunity}.`);
-        setCommand(null);
+        dismissReview();
         return;
       }
       const response = await fetch(`/api/opportunities/${opportunity.opportunity}`, {
@@ -103,7 +133,7 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
         throw new Error(result.message ?? result.error?.message ?? "The candidacy command could not be completed.");
       }
       setNotice(result.message);
-      setCommand(null);
+      dismissReview();
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The candidacy command could not be completed.");
@@ -153,7 +183,7 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
   };
   return (
     <>
-      <section aria-labelledby="candidacy-heading" className="mt-4 rounded-2xl border border-border bg-surface/55 p-4">
+      <section ref={coordinationRef} tabIndex={-1} aria-labelledby="candidacy-heading" className="mt-4 rounded-2xl border border-border bg-surface/55 p-4 outline-none">
         <div className="flex items-center gap-2">
           <UsersRound className="size-4 text-brand" aria-hidden="true" />
           <h2 id="candidacy-heading" className="text-sm font-semibold">Shared Hiring surface</h2>
@@ -200,7 +230,7 @@ export function CandidacyCoordination({ opportunity }: { opportunity: Opportunit
 
       {command && copy && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeReview(); }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="candidacy-review-title" className="w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-2xl">
+          <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="candidacy-review-title" className="w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-brand-text">Consequence review</p>

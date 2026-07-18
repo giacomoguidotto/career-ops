@@ -518,6 +518,7 @@ function candidacyForRow(row, candidacy) {
       outreachAnchor: cluster?.outreachAnchor ?? null,
       ...details,
       canSelectPrimary: details.shared && suppressed.reason !== 'accepted-primary',
+      canReleasePrimary: details.shared && cluster?.storedPrimary === row.num,
     };
   }
   const eligible = selection.eligible.find((item) => item.num === row.num);
@@ -1125,6 +1126,9 @@ function replaceClusterPrimary(content, clusterId, primary) {
  * Outreach anchor must remain byte-for-byte authoritative.
  */
 export async function setOpportunityPrimary(options = {}) {
+  if (!Object.prototype.hasOwnProperty.call(options, 'primary') || options.primary === undefined) {
+    throw new Error('primary is required');
+  }
   const expected = parseCommandExpectation(options);
   const primary = options.primary == null ? null : Number(options.primary);
   if (primary != null && (!Number.isSafeInteger(primary) || primary <= 0)) {
@@ -1391,7 +1395,7 @@ function parseCliArgs(argv) {
   }
   const options = {
     action, root: MODULE_ROOT, opportunity: null, expectedStage: null, expectedRevision: null,
-    primary: null, candidacyOverride: false, now: null,
+    primary: undefined, candidacyOverride: false, now: null,
   };
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
@@ -1400,6 +1404,9 @@ function parseCliArgs(argv) {
     else if (argument === '--expected-stage') options.expectedStage = rest[++index];
     else if (argument === '--expected-revision') options.expectedRevision = rest[++index];
     else if (argument === '--primary') {
+      if (index + 1 >= rest.length || rest[index + 1].startsWith('--')) {
+        throw new Error('--primary requires NUM or none');
+      }
       const value = rest[++index];
       options.primary = value === 'none' ? null : value;
     } else if (argument === '--candidacy-override') options.candidacyOverride = true;
@@ -1412,6 +1419,9 @@ function parseCliArgs(argv) {
   }
   if (['request', 'reconcile', 'primary'].includes(action) && (!options.expectedStage || !options.expectedRevision)) {
     throw new Error(`${action} requires --expected-stage ID and --expected-revision SHA256`);
+  }
+  if (action === 'primary' && options.primary === undefined) {
+    throw new Error('primary requires --primary NUM|none');
   }
   return options;
 }
