@@ -121,10 +121,10 @@ const fixture = createFictionalOpportunityWorkspace({
       '',
       '| Question | Answer | Notes |',
       '|---|---|---|',
-      '| Why this role? | Northstar builds the operator-facing AI systems I care about. | Source: fictional CV |',
-      '| Example of a production workflow | A supervised workflow with explicit human review. | Source: fictional CV |',
+      '| Why this role? | Northstar builds the operator-facing AI systems I care about. | Source: fictional CV. Regeneration: I care about Northstar because it builds operator-facing AI systems. |',
+      '| Example of a production workflow | A supervised workflow with explicit human review. | Source: fictional CV. Regeneration: An explicit human-review step anchored my supervised production workflow. |',
       '| Desired salary | TBD | Missing personal fact blocker |',
-      '| What would you teach the team? | How to expose uncertainty before it becomes an operational surprise. | Explicit JD instruction: answer in one concrete sentence. |',
+      '| What would you teach the team? | How to expose uncertainty before it becomes an operational surprise. | Explicit JD instruction: answer in one concrete sentence, maximum 100 characters. Regeneration: I would teach the team to expose uncertainty before it becomes operational risk. |',
       '',
       '### Send the Gating Question',
       '- **When:** before applying',
@@ -586,9 +586,18 @@ try {
   await firstAnswer.getByRole('button', { name: 'Regenerate item' }).click();
   assert.equal(await firstAnswerBox.inputValue(), protectedValue);
   assert.equal(await firstAnswer.locator('[data-rerun-proposal]').isVisible(), true);
+  assert.notEqual((await firstAnswer.locator('[data-rerun-proposal]').textContent())?.includes(protectedValue), true);
+  const generatedAnswer = answerCards.nth(1).getByRole('textbox');
+  const generatedValue = await generatedAnswer.inputValue();
   await page.getByRole('button', { name: 'Rerun all' }).click();
+  await page.getByText(/Rerun finished/).waitFor();
+  await page.waitForFunction(
+    ({ selector, value }) => document.querySelector(selector)?.value !== value,
+    { selector: '[data-answer-id="2-example-of-a-production-workflow"] textarea', value: generatedValue },
+  );
   assert.equal(await firstAnswerBox.inputValue(), protectedValue);
   assert.equal(await firstAnswer.locator('[data-rerun-proposal]').isVisible(), true);
+  assert.notEqual(await generatedAnswer.inputValue(), generatedValue);
   assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
   const salaryAnswer = answerCards.nth(2);
   assert.equal(await salaryAnswer.getByRole('textbox').inputValue(), '');
@@ -596,6 +605,13 @@ try {
   assert.equal(await salaryAnswer.locator('[data-answer-state="user-edited"]').isVisible(), true);
   await salaryAnswer.getByRole('button', { name: 'Protect edit' }).click();
   assert.equal(await salaryAnswer.locator('[data-answer-state="protected"]').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isEnabled(), true);
+  const instructionAnswer = answerCards.nth(3);
+  const instructionBox = instructionAnswer.getByRole('textbox');
+  await instructionBox.fill('x'.repeat(101));
+  assert.equal(await instructionAnswer.getByText(/101 \/ 100 characters/).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
+  await instructionBox.fill('Reviewed concrete sentence.');
   assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isEnabled(), true);
   await page.getByRole('button', { name: /Routes/ }).click();
 

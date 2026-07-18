@@ -1,5 +1,3 @@
-const ROUTE_TYPES = ["outreach", "application", "qualifying", "followup"];
-
 function clean(value) {
   return String(value ?? "").trim();
 }
@@ -52,8 +50,21 @@ function materialType(title) {
 }
 
 function parseLimit(value) {
-  const match = clean(value).match(/(?:^|\D)(\d+)\s*\/\s*(\d+)\s*(?:char|character)/i);
-  return match ? Number(match[2]) : null;
+  const text = clean(value);
+  const counter = text.match(/(?:^|\D)(\d+)\s*\/\s*(\d+)\s*(?:char|character)/i);
+  if (counter) return Number(counter[2]);
+  const declared = text.match(/(?:max(?:imum)?\s*|limit(?:ed)?\s*(?:to|:)\s*|(?:under|within|up to|≤|<=)\s*)(\d+)\s*(?:char|character)/i)
+    ?? text.match(/(\d+)\s*[- ]character\s+(?:max(?:imum)?|limit)/i);
+  return declared ? Number(declared[1]) : null;
+}
+
+function regenerationCandidates(notes, current) {
+  const match = clean(notes).match(/(?:regeneration|alternative)(?:\s+answers?)?\s*:\s*(.+)$/i);
+  if (!match) return [];
+  return match[1]
+    .split(/\s*\|\|\s*/)
+    .map(clean)
+    .filter((value) => value && value !== current);
 }
 
 function messageBody(lines) {
@@ -86,13 +97,15 @@ function tableAnswers(lines) {
     const notes = notesIndex >= 0 ? columns[notesIndex] ?? "" : "";
     const blocked = !value || /^(?:-|—|tbd|unknown|missing)$/i.test(value)
       || /\b(?:blocker|missing personal fact|user must provide|unsupported fact)\b/i.test(notes);
-    const instruction = notes.match(/(?:explicit\s+)?jd\s+instruction\s*:\s*(.+)$/i)?.[1]?.trim() ?? null;
+    const instruction = notes.match(/(?:explicit\s+)?jd\s+instruction\s*:\s*(.+?)(?=\s+(?:regeneration|alternative)(?:\s+answers?)?\s*:|$)/i)?.[1]?.trim() ?? null;
     return {
       id: `${index + 1}-${slug(label) || "answer"}`,
       label,
       value: blocked ? "" : value,
       notes,
       instruction,
+      limit: parseLimit(`${instruction ?? ""} ${notes}`),
+      regenerationCandidates: regenerationCandidates(notes, value),
       state: blocked ? "blocked" : "generated",
     };
   });
@@ -107,23 +120,36 @@ function missingDestination(value) {
 export function parseApproachPlan(markdown) {
   const allSections = sections(markdown);
   const ranked = allSections.filter((section) => /^\d+\.\s+/.test(section.title));
-  const materials = new Map();
-  for (const section of allSections) {
-    const type = materialType(section.title);
-    if (type && !materials.has(type)) materials.set(type, section);
+  const materials = allSections
+    .map((section, index) => ({ section, index, type: materialType(section.title), fields: metadata(section.lines) }))
+    .filter((material) => material.type);
+  const usedMaterials = new Set();
+
+  function matchingMaterial(type, fields) {
+    const candidates = materials.filter((material) => material.type === type && !usedMaterials.has(material.index));
+    if (candidates.length === 0) return null;
+    const rankedCandidates = candidates.map((material) => {
+      let score = 0;
+      if (clean(fields.to) && clean(fields.to) === clean(material.fields.to)) score += 4;
+      if (clean(fields.channel) && clean(fields.channel) === clean(material.fields.channel)) score += 2;
+      return { material, score };
+    }).sort((left, right) => right.score - left.score || left.material.index - right.material.index);
+    const selected = rankedCandidates[0].material;
+    usedMaterials.add(selected.index);
+    return selected;
   }
 
   return ranked.map((section, index) => {
     const rankMatch = section.title.match(/^(\d+)\.\s+(?:Best:\s*)?(.+)$/i);
     const fields = metadata(section.lines);
     const type = routeType(`${fields.route ?? ""} ${rankMatch?.[2] ?? section.title} ${fields.channel ?? ""}`);
-    const material = materials.get(type);
-    const materialFields = material ? metadata(material.lines) : {};
+    const material = matchingMaterial(type, fields);
+    const materialFields = material?.fields ?? {};
     const destination = clean(materialFields.to || fields.to);
     const channel = clean(materialFields.channel || fields.channel);
     const connectionNote = clean(materialFields["connection note"]);
-    const body = material ? messageBody(material.lines) : "";
-    const answers = type === "application" && material ? tableAnswers(material.lines) : [];
+    const body = material ? messageBody(material.section.lines) : "";
+    const answers = type === "application" && material ? tableAnswers(material.section.lines) : [];
     return {
       id: `${rankMatch?.[1] ?? index + 1}-${type}`,
       rank: Number(rankMatch?.[1] ?? index + 1),
@@ -144,9 +170,9 @@ export function parseApproachPlan(markdown) {
           ? "The canonical Approach Plan does not declare a channel."
           : type === "application" && answers.length === 0
             ? "The canonical Approach Plan does not contain application answers."
+            : type !== "application" && !body
+              ? "The canonical Approach Plan does not contain sendable text for this route."
             : null,
     };
   }).sort((left, right) => left.rank - right.rank);
 }
-
-export { ROUTE_TYPES };

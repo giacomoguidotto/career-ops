@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 
 type RouteType = "outreach" | "application" | "qualifying" | "followup";
 type AnswerState = "generated" | "user-edited" | "protected" | "blocked";
@@ -28,6 +29,8 @@ type PlanAnswer = {
   value: string;
   notes: string;
   instruction: string | null;
+  limit: number | null;
+  regenerationCandidates: string[];
   state: AnswerState;
 };
 
@@ -48,7 +51,12 @@ type PlanRoute = {
   blockedReason: string | null;
 };
 
-type AnswerDraft = PlanAnswer & { originalValue: string; proposal?: string | null; regenerated?: boolean };
+type AnswerDraft = PlanAnswer & {
+  originalValue: string;
+  proposal?: string | null;
+  regenerationIndex: number;
+  regenerationStatus?: "changed" | "proposed" | "unavailable";
+};
 
 const routeLabels: Record<RouteType, string> = {
   outreach: "Outreach",
@@ -157,8 +165,8 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
 
   if (!selected) return null;
   const overLimit = selected.limit != null && draft.length > selected.limit;
-  const missingAnswers = selected.type === "application" && answers.some((answer) => !answer.value.trim() || answer.state === "blocked");
-  const blocked = Boolean(selected.blockedReason) || overLimit || missingAnswers;
+  const invalidAnswers = selected.type === "application" && answers.some((answer) => answerBlocked(answer));
+  const blocked = Boolean(selected.blockedReason) || overLimit || invalidAnswers;
   const steps: Array<{ id: Phase; label: string }> = [
     { id: "choose", label: "Choose" },
     { id: "prepare", label: "Prepare" },
@@ -178,7 +186,7 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
 
   function changeAnswer(id: string, value: string) {
     setAnswers((current) => current.map((answer) => answer.id === id
-      ? { ...answer, value, state: value.trim() ? "user-edited" : "blocked", proposal: null }
+      ? { ...answer, value, state: value.trim() ? "user-edited" : "blocked", proposal: null, regenerationStatus: undefined }
       : answer));
   }
 
@@ -191,18 +199,13 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
   function regenerateAnswer(id: string) {
     setAnswers((current) => current.map((answer) => {
       if (answer.id !== id) return answer;
-      if (["user-edited", "protected"].includes(answer.state)) {
-        return { ...answer, proposal: answer.originalValue || "No source-backed replacement is available." };
-      }
-      return { ...answer, regenerated: true };
+      return regeneratedAnswer(answer);
     }));
   }
 
   function rerunAll() {
     setRerunNotice(true);
-    setAnswers((current) => current.map((answer) => answer.state === "protected"
-      ? { ...answer, proposal: answer.originalValue || "No source-backed replacement is available." }
-      : answer.state === "generated" ? { ...answer, regenerated: true } : answer));
+    setAnswers((current) => current.map((answer) => regeneratedAnswer(answer)));
   }
 
   return (
@@ -267,7 +270,44 @@ function GuidedApproachDialog({ routes, opportunity, onClose }: { routes: PlanRo
 }
 
 function answerDrafts(route?: PlanRoute): AnswerDraft[] {
-  return (route?.answers ?? []).map((answer) => ({ ...answer, originalValue: answer.value, proposal: null }));
+  return (route?.answers ?? []).map((answer) => ({
+    ...answer,
+    originalValue: answer.value,
+    proposal: null,
+    regenerationIndex: 0,
+  }));
+}
+
+function answerBlocked(answer: AnswerDraft) {
+  return !answer.value.trim()
+    || answer.state === "blocked"
+    || (answer.limit != null && answer.value.length > answer.limit);
+}
+
+function regeneratedAnswer(answer: AnswerDraft): AnswerDraft {
+  if (answer.state === "blocked") return answer;
+  const candidates = [...answer.regenerationCandidates, answer.originalValue]
+    .filter((candidate, index, all) => candidate && candidate !== answer.value && all.indexOf(candidate) === index);
+  const next = candidates[answer.regenerationIndex % Math.max(candidates.length, 1)];
+  if (!next) {
+    return { ...answer, proposal: null, regenerationStatus: "unavailable" };
+  }
+  const regenerationIndex = answer.regenerationIndex + 1;
+  if (answer.state === "generated") {
+    return {
+      ...answer,
+      value: next,
+      proposal: null,
+      regenerationIndex,
+      regenerationStatus: "changed",
+    };
+  }
+  return {
+    ...answer,
+    proposal: next,
+    regenerationIndex,
+    regenerationStatus: "proposed",
+  };
 }
 
 function Heading({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) {
@@ -395,18 +435,29 @@ function ApplicationAnswers(props: PrepareProps) {
         </div>
         <SecondaryButton onClick={props.onRerunAll}><RefreshCw className="size-3.5" aria-hidden="true" /> Rerun all</SecondaryButton>
       </div>
-      {props.rerunNotice && <p className="mt-3 text-xs text-faint" role="status">Rerun complete. Protected values remain unchanged; proposals appear beside them.</p>}
+      {props.rerunNotice && (
+        <p className="mt-3 text-xs text-faint" role="status">
+          Rerun finished. Protected values remain unchanged; source-backed alternatives appear beside them when the canonical plan provides one.
+        </p>
+      )}
       <div className="mt-4 space-y-3">
         {props.answers.map((answer, index) => (
           <div key={answer.id} className="rounded-2xl border border-border bg-background/35 p-4" data-answer-id={answer.id}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <label htmlFor={`answer-${answer.id}`} className="text-sm font-semibold"><span className="mr-2 font-mono text-[10px] text-faint">{String(index + 1).padStart(2, "0")}</span>{answer.label}</label>
-              <StatePill state={answer.state} />
+              <StatePill state={answerBlocked(answer) ? "blocked" : answer.state} />
             </div>
             <textarea id={`answer-${answer.id}`} value={answer.value} placeholder={answer.state === "blocked" ? "Missing personal fact. Left blank." : undefined} onChange={(event) => props.onAnswer(answer.id, event.target.value)} className={cn(
               "mt-3 min-h-24 w-full resize-y rounded-xl border bg-surface p-3 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-brand/30",
-              answer.state === "blocked" ? "border-amber-500/45" : "border-border",
+              answerBlocked(answer) ? "border-amber-500/45" : "border-border",
             )} />
+            <p className={cn(
+              "mt-2 font-mono text-[10px]",
+              answer.limit != null && answer.value.length > answer.limit ? "font-semibold text-rose-700 dark:text-rose-300" : "text-faint",
+            )} data-answer-limit={answer.limit ?? "none"}>
+              {answer.limit == null ? `${answer.value.length} characters · no declared limit` : `${answer.value.length} / ${answer.limit} characters`}
+              {answer.limit != null && answer.value.length > answer.limit ? " · trim before continuing" : ""}
+            </p>
             {answer.instruction && (
               <p className="mt-2 rounded-lg border border-brand/20 bg-brand-soft/25 p-2 text-xs text-muted" data-jd-instruction>
                 <strong className="text-foreground">Explicit JD instruction:</strong> {answer.instruction}
@@ -419,7 +470,8 @@ function ApplicationAnswers(props: PrepareProps) {
                 <p className="mt-1 text-muted">{answer.proposal}</p>
               </div>
             )}
-            {answer.regenerated && <p className="mt-2 text-[11px] text-faint" role="status">Regenerated from the current canonical plan.</p>}
+            {answer.regenerationStatus === "changed" && <p className="mt-2 text-[11px] text-faint" role="status">Regenerated from a source-backed alternative in the current canonical plan.</p>}
+            {answer.regenerationStatus === "unavailable" && <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300" role="status">No different source-backed alternative is declared. Reviewed text was preserved.</p>}
             <div className="mt-3 flex flex-wrap justify-end gap-2">
               <SecondaryButton onClick={() => props.onRegenerateAnswer(answer.id)}><RefreshCw className="size-3.5" aria-hidden="true" /> Regenerate item</SecondaryButton>
               {answer.state === "user-edited" && <SecondaryButton onClick={() => props.onProtectAnswer(answer.id)}><LockKeyhole className="size-3.5" aria-hidden="true" /> Protect edit</SecondaryButton>}
@@ -471,9 +523,9 @@ function Block({ children }: { children: React.ReactNode }) {
 }
 
 function PrimaryButton({ disabled = false, onClick, children }: { disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-not-allowed disabled:opacity-45">{children}</button>;
+  return <Button type="button" disabled={disabled} onClick={onClick} className="min-h-11 rounded-lg px-4 font-semibold">{children}</Button>;
 }
 
 function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-muted hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50">{children}</button>;
+  return <Button type="button" variant="outline" onClick={onClick} className="min-h-11 rounded-lg px-3 text-muted">{children}</Button>;
 }

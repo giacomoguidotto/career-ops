@@ -629,8 +629,8 @@ Press `o` to open and fill the form: {ATS/form URL}
 
 | Question | Answer | Notes |
 |---|---|---|
-| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
-| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
+| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance; for a non-blocked paste-ready answer, end with `Regeneration: {one source-equivalent alternative}`} |
+| {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance; for a non-blocked paste-ready answer, end with `Regeneration: {one source-equivalent alternative}`} |
 
 ### Send the Outreach Message
 - **When:** {before applying / while applying / after submitting / later}
@@ -692,6 +692,16 @@ Only after the gate clears, press `o` to open and fill the form: {ATS/form URL}
 |---|---|---|
 | {Exact field label} | {paste-ready answer / exact selection / upload file or artifact} | {source, confidence, user review, blocker, or admin nuance} |
 ````
+
+For every non-blocked, paste-ready application answer, the Notes cell MUST end
+with exactly one `Regeneration: {alternative}` entry. The alternative must use
+the same cited facts, satisfy the same explicit JD instruction, contain no table
+separator, and be ready to paste. Never add a regeneration alternative to a
+blank blocker, exact selection, upload instruction, or administrative value.
+This lets the reviewed preparation UI rerun one generated answer or propose a
+change beside a protected edit without inventing candidate facts. Older packs
+without this entry remain readable; their original generated answer is the only
+source-backed fallback for a later protected edit.
 
 Use only those six metadata lines. Do not add `Current status`, `Next
 checkpoint`, `Selected because`, `Selected`, or a second standalone `Report`
