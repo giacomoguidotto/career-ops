@@ -130,7 +130,9 @@ function tableAnswers(lines) {
 
 function missingDestination(value) {
   const text = clean(value);
-  return !text || /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
+  if (!text) return true;
+  if (/(?:https?:\/\/|mailto:)/i.test(text)) return false;
+  return /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
 }
 
 function destinationToken(value) {
@@ -174,7 +176,7 @@ export function parseApproachPlan(markdown) {
   return ranked.map((section, index) => {
     const rankMatch = section.title.match(/^(\d+)\.\s+(?:Best:\s*)?(.+)$/i);
     const fields = metadata(section.lines);
-    const type = routeType(`${fields.route ?? ""} ${rankMatch?.[2] ?? section.title} ${fields.channel ?? ""}`);
+    const type = routeType(fields.route || `${rankMatch?.[2] ?? section.title} ${fields.channel ?? ""}`);
     const material = matchingMaterial(type, fields);
     const materialFields = material?.fields ?? {};
     const destination = clean(materialFields.to || fields.to);

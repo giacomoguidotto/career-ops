@@ -149,3 +149,39 @@ test("matches canonical application sections that declare the destination in pro
   assert.deepEqual(application.answers.map((answer) => answer.label), ["Why this role?"]);
   assert.equal(application.blockedReason, null);
 });
+
+test("explicit outreach route metadata outranks timing words in its label", () => {
+  const explicit = [
+    "### 1. Warm outreach before applying",
+    "- **Route:** peer outreach",
+    "- **To:** Maya Chen | https://example.invalid/maya",
+    "- **Channel:** LinkedIn connection note",
+    "",
+    "### Send the Outreach Message",
+    "- **To:** Maya Chen | https://example.invalid/maya",
+    "- **Channel:** LinkedIn connection note",
+    "",
+    "Hello Maya.",
+  ].join("\n");
+  const route = parseApproachPlan(explicit)[0];
+  assert.equal(route.type, "outreach");
+  assert.equal(route.body, "Hello Maya.");
+  assert.equal(route.blockedReason, null);
+});
+
+test("a concrete URL keeps names containing placeholder words verified", () => {
+  const verified = [
+    "### 1. Official form",
+    "- **Route:** formal application",
+    "- **To:** Unknown Worlds | https://unknownworlds.example/jobs/123",
+    "- **Channel:** ATS",
+    "",
+    "### Fill the Application Form",
+    "Press `o` to open and fill the form: https://unknownworlds.example/jobs/123",
+    "",
+    "| Question | Answer | Notes |",
+    "|---|---|---|",
+    "| Name | Candidate-provided name | Source: fictional CV. |",
+  ].join("\n");
+  assert.equal(parseApproachPlan(verified)[0].blockedReason, null);
+});
