@@ -57,6 +57,11 @@ const fixture = createFictionalOpportunityWorkspace({
       report: '[report](../reports/002-northstar-fictional.md)',
       pdf: '[pdf](../output/002-northstar-fictional.pdf)',
     },
+    4: {
+      company: 'Legacy Plan Fictional',
+      role: 'Legacy Approach Specialist',
+      stage: 'Approach Ready',
+    },
   },
   attempts: [{
     id: 'A001',
@@ -69,6 +74,7 @@ const fixture = createFictionalOpportunityWorkspace({
     notes: 'Confirmed fictional submission.',
   }],
   approachPlans: {
+    '004-legacy-founder-pack.md': readFileSync(join(WEB_ROOT, '..', 'tests', 'fixtures', 'approaches', '247-founder-pack.md'), 'utf8'),
     '002-northstar-fictional.md': [
       '# Northstar Fictional Approach Plan',
       '',
@@ -651,6 +657,14 @@ try {
   await approachFallback.waitFor();
   assert.equal(await approachFallback.getAttribute('href'), '#approach-plan');
   assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
+
+  await page.goto(`${baseUrl}/pipeline/4`);
+  await page.getByRole('heading', { name: 'Legacy Plan Fictional', exact: true }).waitFor();
+  const legacyPlanFallback = page.getByRole('link', { name: /Review Approach Plan/ }).first();
+  await legacyPlanFallback.waitFor();
+  assert.equal(await legacyPlanFallback.getAttribute('href'), '#approach-plan');
+  assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
+  assert.equal(await page.getByText(/Email the founders together/).isVisible(), true);
 
   await page.goto(`${baseUrl}/pipeline/3`);
   await page.getByRole('heading', { name: 'Attempts' }).waitFor();

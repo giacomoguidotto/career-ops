@@ -24,6 +24,7 @@ import { CompanyLogo } from "@/components/company-logo";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
 import { GuidedApproach } from "@/components/guided-approach";
+import { parseApproachPlan } from "@/lib/approach-plan.mjs";
 import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -115,7 +116,7 @@ function LifecyclePosition({ eyebrow, label, title, muted = false }: { eyebrow: 
   );
 }
 
-function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
+function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean, canGuideApproach: boolean): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
   const action = words(opportunity.primaryAction.id);
   switch (opportunity.primaryAction.kind) {
     case "generate":
@@ -141,6 +142,15 @@ function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean):
           eyebrow: "Your next step",
           title: action || "Act outside career-ops",
           detail: "The canonical Approach Plan is not readable. Review its artifact status before preparing any external action.",
+          href: "#approach-plan",
+          cta: "Review Approach Plan",
+        };
+      }
+      if (!canGuideApproach) {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "Review the readable Approach Plan. This legacy format has no ranked route that the guided preparation flow can safely interpret.",
           href: "#approach-plan",
           cta: "Review Approach Plan",
         };
@@ -291,9 +301,13 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
-  const primary = primaryCopy(opportunity, Boolean(approachPlan));
+  const hasGuideableRoutes = approachPlan
+    ? (parseApproachPlan(approachPlan.content) as unknown[]).length > 0
+    : false;
   const canGuideApproach = opportunity.primaryAction.kind === "act-outside"
-    && opportunity.primaryAction.id === "execute_approach";
+    && opportunity.primaryAction.id === "execute_approach"
+    && hasGuideableRoutes;
+  const primary = primaryCopy(opportunity, Boolean(approachPlan), canGuideApproach);
   const provenance = sourcePaths([...contract.provenance, ...opportunity.provenance]);
   const primaryBlocked = opportunity.primaryAction.kind === "generate" && !opportunity.primaryAction.enabled;
 
