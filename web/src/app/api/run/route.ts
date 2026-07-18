@@ -4,6 +4,7 @@ import path from "node:path";
 import { resolveCli } from "@/lib/clis";
 import { careerOpsRoot, readMemory } from "@/lib/career-ops";
 import { acquireTrackerWrite, releaseTrackerWrite } from "@/lib/core/run-registry";
+import { LifecycleAdapterError, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,22 @@ export const maxDuration = 800; // a real oferta evaluation / pdf-mode CV tailor
 // drift). kind "research" stays read-only. Streams progress as NDJSON events.
 function buildPrompt(kind: string, input: string, memory: string, today: string): string {
   const mem = memory.trim() ? `\n\nDurable notes about the user (from their profile):\n${memory.trim()}\n` : "";
+  if (kind === "lifecycle") {
+    const workOrder = JSON.parse(input) as LifecycleWorkOrder;
+    return `You are fulfilling one explicit, canonical career-ops work order on the user's machine.
+
+Read modes/next.md and the in-scope candidate sources it requires. Fulfill only this work order:
+${JSON.stringify(workOrder, null, 2)}
+
+Generate the named ${workOrder.artifact.kind} artifact for Opportunity #${workOrder.opportunity} in ${workOrder.artifact.directory}. Starting and streaming this work must not change Stage. Do not send, submit, contact anyone, fill a live form, or record a real-world action.
+
+After the canonical artifact is complete, reconcile it through the guarded lifecycle seam:
+node opportunity-lifecycle.mjs reconcile --opportunity ${workOrder.opportunity} --expected-stage ${workOrder.source.stage} --expected-revision ${workOrder.source.revision}
+
+If reconciliation reports a conflict or block, preserve the artifact and report the exact canonical outcome. Do not edit the tracker directly.
+
+End with EXACTLY one final line: VERDICT: {5 if the artifact was completed and reconciled, else 1}/5 | {content-safe outcome in 12 words or fewer}`;
+  }
   if (kind === "research") {
     return `You are investigating the user's OWN work / portfolio to surface job-search-relevant strengths, headless. Investigate the target (use WebFetch for URLs; read local files if referenced) and report: what it is, why it is impressive, and how to leverage it in their job search — which roles/claims it supports and how to frame it on a CV. Be specific, honest, and encouraging.${mem}
 
@@ -84,14 +101,23 @@ export async function POST(req: Request) {
   }
   const { spec, binPath } = resolved;
 
+  if (!["evaluate", "research", "pdf", "fix-portal", "lifecycle"].includes(kind)) {
+    return Response.json({ error: "unsupported run kind" }, { status: 400 });
+  }
+
   // These run the REAL core (modes/scripts), not just data — fail clearly if the
   // root is incomplete instead of faking it.
-  const needsScript: Record<string, string> = { evaluate: "modes/offer.md", "fix-portal": "verify-portals.mjs", pdf: "generate-pdf.mjs" };
-  const required = needsScript[kind];
-  if (required && !fs.existsSync(path.join(careerOpsRoot(), required))) {
+  const needsFiles: Record<string, string[]> = {
+    evaluate: ["modes/offer.md"],
+    "fix-portal": ["verify-portals.mjs"],
+    pdf: ["generate-pdf.mjs"],
+    lifecycle: ["opportunity-lifecycle.mjs", "modes/next.md", "config/profile.yml", "modes/_profile.md"],
+  };
+  const missingRequired = (needsFiles[kind] ?? []).find((required) => !fs.existsSync(path.join(careerOpsRoot(), required)));
+  if (missingRequired) {
     return new Response(
       JSON.stringify({
-        error: `This needs a complete career-ops checkout (${required}). CAREER_OPS_ROOT has data only — point it at a full checkout.`,
+        error: `This needs a complete career-ops checkout (${missingRequired}). CAREER_OPS_ROOT has data only — point it at a full checkout.`,
       }),
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
@@ -99,7 +125,7 @@ export async function POST(req: Request) {
 
   // An A–F score is meaningless without a CV to score against — the CLI would
   // hallucinate a fit narrative and still emit a VERDICT. Require cv.md first.
-  if ((kind === "evaluate" || kind === "pdf") && !fs.existsSync(path.join(careerOpsRoot(), "cv.md"))) {
+  if ((kind === "evaluate" || kind === "pdf" || kind === "lifecycle") && !fs.existsSync(path.join(careerOpsRoot(), "cv.md"))) {
     return new Response(
       JSON.stringify({ error: "Add your CV first so I can score this against you — drop it on the home page." }),
       { status: 400, headers: { "Content-Type": "application/json" } },
@@ -107,7 +133,30 @@ export async function POST(req: Request) {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const prompt = buildPrompt(kind, input, readMemory(), today);
+  let promptInput = input;
+  if (kind === "lifecycle") {
+    let expectation: { opportunity: number; expectedStage: string; expectedRevision: string };
+    try {
+      expectation = JSON.parse(input);
+    } catch {
+      return Response.json({ error: "invalid lifecycle expectation" }, { status: 400 });
+    }
+    try {
+      const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
+      if (outcome.code !== "work-requested" || !outcome.workOrder) {
+        const status = outcome.effect === "conflict" || outcome.code === "already-running" ? 409 : 422;
+        return Response.json({ error: outcome.message, code: outcome.code, outcome }, { status });
+      }
+      promptInput = JSON.stringify(outcome.workOrder);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Lifecycle work could not be requested.";
+      return Response.json(
+        { error: message, code: error instanceof LifecycleAdapterError ? error.code : "lifecycle-request-failed" },
+        { status: error instanceof LifecycleAdapterError ? error.status : 503 },
+      );
+    }
+  }
+  const prompt = buildPrompt(kind, promptInput, readMemory(), today);
 
   const isClaude = cliId === "claude";
   // Tool scope by kind (comma-separated lists; disallowedTools is the hard
@@ -116,7 +165,7 @@ export async function POST(req: Request) {
   // report). 'research' stays read-only. Task (sub-agents) is always blocked
   // (runaway cost). NEVER auto-submits — that is a prompt-level guarantee.
   const tools =
-    kind === "evaluate" || kind === "fix-portal" || kind === "pdf"
+    kind === "evaluate" || kind === "fix-portal" || kind === "pdf" || kind === "lifecycle"
       ? { allowed: "Read,WebFetch,WebSearch,Write,Edit,Bash,Glob,Grep", disallowed: "Task,NotebookEdit" }
       : { allowed: "Read,WebFetch,WebSearch,Glob,Grep", disallowed: "Bash,Write,Edit,NotebookEdit,Task" };
   const args = isClaude
@@ -140,7 +189,7 @@ export async function POST(req: Request) {
   const reportsBefore = persists ? countReports() : 0;
   // Tracker-mutating runs hold a write token so a row delete can't race their merge
   // (tracker.mjs delete doesn't yet share a lock with merge-tracker — see run-registry).
-  const writeToken = kind === "evaluate" || kind === "pdf" ? acquireTrackerWrite() : null;
+  const writeToken = kind === "evaluate" || kind === "pdf" || kind === "lifecycle" ? acquireTrackerWrite() : null;
 
   const child = spawn(binPath, args, { cwd: careerOpsRoot(), env: process.env });
   const enc = new TextEncoder();
@@ -157,6 +206,9 @@ export async function POST(req: Request) {
       let sawError = false;
       let lastTokens = 0; // per-run token cost from the Claude result event (#6) — local only
       let lastCostUsd: number | null = null;
+      if (kind === "lifecycle") {
+        controller.enqueue(enc.encode(`${JSON.stringify({ type: "status", label: "Canonical work reserved" })}\n`));
+      }
       // pdf-mode tailors a full CV + renders it — give it more headroom.
       const killMs = kind === "pdf" ? 720_000 : 285_000;
       killer = setTimeout(() => {

@@ -136,6 +136,26 @@ export type OpportunityDetailResult = {
   revision: string;
 };
 
+export type LifecycleWorkOrder = {
+  id: string;
+  opportunity: number;
+  action: string;
+  source: { stage: string; revision: string };
+  artifact: { kind: string; directory: "output/next-packs" };
+  consequence: { stage: string; label: string };
+};
+
+export type LifecycleCommandOutcome = {
+  code: string;
+  effect: "accepted" | "changed" | "unchanged" | "blocked" | "conflict" | "unavailable";
+  retryable: boolean;
+  message: string;
+  before: OpportunitySummary | null;
+  after: OpportunitySummary | null;
+  artifacts: OpportunitySummary["artifacts"];
+  workOrder: LifecycleWorkOrder | null;
+};
+
 export class LifecycleAdapterError extends Error {
   public readonly code: string;
   public readonly status: number;
@@ -269,6 +289,30 @@ function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][nu
     && isNullableString(value.revision);
 }
 
+function isLifecycleWorkOrder(value: unknown): value is LifecycleWorkOrder {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && /^[a-f0-9]{64}$/.test(value.id)
+    && typeof value.opportunity === "number"
+    && Number.isSafeInteger(value.opportunity)
+    && value.opportunity > 0
+    && typeof value.action === "string"
+    && /^[a-z][a-z0-9_]*$/.test(value.action)
+    && isRecord(value.source)
+    && typeof value.source.stage === "string"
+    && /^[a-z][a-z0-9_]*$/.test(value.source.stage)
+    && typeof value.source.revision === "string"
+    && /^[a-f0-9]{64}$/.test(value.source.revision)
+    && isRecord(value.artifact)
+    && typeof value.artifact.kind === "string"
+    && /^[a-z][a-z0-9-]*$/.test(value.artifact.kind)
+    && value.artifact.directory === "output/next-packs"
+    && isRecord(value.consequence)
+    && typeof value.consequence.stage === "string"
+    && /^[a-z][a-z0-9_]*$/.test(value.consequence.stage)
+    && typeof value.consequence.label === "string";
+}
+
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
 }
@@ -340,7 +384,7 @@ function lifecycleScript(root: string): string {
   return script;
 }
 
-async function run(root: string, action: "contract" | "list" | "read", extra: string[] = []): Promise<unknown> {
+async function run(root: string, action: "contract" | "list" | "read" | "request", extra: string[] = []): Promise<unknown> {
   const resolvedRoot = path.resolve(root);
   if (!fs.existsSync(resolvedRoot)) {
     throw new LifecycleAdapterError("checkout-unavailable", "The career-ops checkout is unavailable.", 503);
@@ -428,4 +472,45 @@ export async function readOpportunityLifecycle(root: string, opportunity: number
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
   }
   return result as OpportunityDetailResult;
+}
+
+export async function requestOpportunityWork(
+  root: string,
+  expectation: { opportunity: number; expectedStage: string; expectedRevision: string },
+): Promise<LifecycleCommandOutcome> {
+  if (!Number.isSafeInteger(expectation.opportunity) || expectation.opportunity <= 0) {
+    throw new LifecycleAdapterError("invalid-opportunity", "Opportunity must be a positive tracker number.", 400);
+  }
+  if (!/^[a-z][a-z0-9_]*$/.test(expectation.expectedStage)) {
+    throw new LifecycleAdapterError("invalid-expected-stage", "Expected Stage must be a canonical Stage id.", 400);
+  }
+  if (!/^[a-f0-9]{64}$/.test(expectation.expectedRevision)) {
+    throw new LifecycleAdapterError("invalid-expected-revision", "Expected revision must be a lifecycle summary revision.", 400);
+  }
+  const result = await run(root, "request", [
+    "--opportunity", String(expectation.opportunity),
+    "--expected-stage", expectation.expectedStage,
+    "--expected-revision", expectation.expectedRevision,
+  ]);
+  if (
+    !isRecord(result)
+    || typeof result.code !== "string"
+    || !/^[a-z][a-z0-9-]*$/.test(result.code)
+    || !isOneOf(result.effect, ["accepted", "changed", "unchanged", "blocked", "conflict", "unavailable"] as const)
+    || typeof result.retryable !== "boolean"
+    || typeof result.message !== "string"
+    || (result.before !== null && !isRecord(result.before))
+    || (result.after !== null && !isRecord(result.after))
+    || !Array.isArray(result.artifacts)
+    || !result.artifacts.every(isArtifact)
+    || (result.workOrder !== null && !isLifecycleWorkOrder(result.workOrder))
+  ) {
+    throw new LifecycleAdapterError("invalid-lifecycle-command", "The lifecycle command result is incompatible.", 503);
+  }
+  if (result.before !== null) validateOpportunity(result.before);
+  if (result.after !== null) validateOpportunity(result.after);
+  if (result.workOrder && result.workOrder.opportunity !== expectation.opportunity) {
+    throw new LifecycleAdapterError("invalid-lifecycle-command", "The lifecycle command result is incompatible.", 503);
+  }
+  return result as LifecycleCommandOutcome;
 }

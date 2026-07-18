@@ -6,7 +6,7 @@ import { TodayDashboard } from "@/components/home/today-dashboard";
 export const dynamic = "force-dynamic"; // always read fresh local files at request time (never at build — CI has no user data)
 
 export default async function Home() {
-  const { inbox, applications } = await pipelineSummary();
+  const { inbox, applications, lifecycle } = await pipelineSummary();
   const { phase, onboardingNeeded } = await doctorState({ applications, inbox });
   // First run (truly empty install): the CV-upload takeover IS the home — value
   // before commitment. The full dashboard returns once they have a CV or any data.
@@ -18,7 +18,7 @@ export default async function Home() {
   return (
     <>
       {onboardingNeeded && <OnboardingBanner />}
-      <TodayDashboard applications={applications} inbox={inbox} inBetween={phase === "in-between"} />
+      <TodayDashboard opportunities={lifecycle?.opportunities ?? []} inBetween={phase === "in-between"} />
     </>
   );
 }
