@@ -260,6 +260,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             applyRecovery(id, error.recovery as WorkRecovery);
             return;
           }
+          if (opts.kind === "lifecycle" && error.groupSettled) {
+            window.dispatchEvent(new CustomEvent("co-worker-settled", { detail: { kind: "lifecycle", outcome: error.code } }));
+          }
           finish("error", error.error || "Failed to start");
           return;
         }

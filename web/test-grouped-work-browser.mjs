@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -66,6 +66,30 @@ async function waitForWorker(request, baseUrl, id, minimumHistory = 1) {
   throw new Error(`durable worker ${id} did not settle`);
 }
 
+async function waitForGroupChild(request, baseUrl, groupId, workerId, outcome) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const response = await request.get(`${baseUrl}/api/work-groups/${groupId}`);
+    if (response.ok()) {
+      const group = (await response.json()).group;
+      const child = [...group.activeChildren, ...group.historyChildren].find((candidate) => candidate.workerId === workerId);
+      if (child?.outcome === outcome) return child;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`group child ${workerId} did not settle as ${outcome}`);
+}
+
+function replaceStage(root, opportunity, from, to) {
+  const tracker = join(root, "data", "applications.md");
+  const lines = readFileSync(tracker, "utf8").split("\n");
+  const index = lines.findIndex((line) => new RegExp(`^\\|\\s*${opportunity}\\s*\\|`).test(line));
+  assert.notEqual(index, -1);
+  assert.equal(lines[index].includes(`| ${from} |`), true);
+  lines[index] = lines[index].replace(`| ${from} |`, `| ${to} |`);
+  writeFileSync(tracker, lines.join("\n"));
+}
+
 function recovery(order, outcome, options = {}) {
   const nextAction = {
     changed: { kind: "open", label: "Open result", href: `/pipeline/${order.opportunity}#materials` },
@@ -99,7 +123,7 @@ function recovery(order, outcome, options = {}) {
 
 const fixture = createFictionalOpportunityWorkspace({
   materializeCore: true,
-  opportunities: Array.from({ length: 10 }, (_, index) => ({
+  opportunities: Array.from({ length: 11 }, (_, index) => ({
     num: index + 1,
     date: "2026-07-18",
     company: `Grouped Browser ${index + 1}`,
@@ -117,6 +141,7 @@ const fixture = createFictionalOpportunityWorkspace({
 });
 const orders = await Promise.all(Array.from({ length: 9 }, (_, index) => workOrder(fixture.root, index + 1)));
 const reserved = (await readOpportunityLifecycle(fixture.root, 10)).opportunity;
+const staleReserved = (await readOpportunityLifecycle(fixture.root, 11)).opportunity;
 writeFileSync(join(fixture.root, "output", "next-packs", "004-partial.md"), "# Preserved partial checkpoint\n");
 const groupId = "group-browser-mixed-truth";
 const dispositions = ["ready", "ready", "ready", "ready", "ready", "ready", "conflict", "suppressed", "ready", "ready"];
@@ -144,8 +169,19 @@ createDurableWorkGroup(fixture.root, {
     disposition: "ready",
     code: "ready",
     message: "Canonical work was reviewed.",
+  }, {
+    workerId: "job-browser-11",
+    opportunity: 11,
+    title: "Grouped Browser 11",
+    subtitle: "Engineer",
+    expectedStage: staleReserved.stage.id,
+    expectedRevision: staleReserved.revision,
+    disposition: "ready",
+    code: "ready",
+    message: "Canonical work was reviewed.",
   }],
 });
+replaceStage(fixture.root, 11, "Evaluated", "Discarded");
 
 const outcomes = ["changed", "recovered", "retryable", "resumable", "paused", "unchanged"];
 for (const [index, outcome] of outcomes.entries()) {
@@ -211,9 +247,15 @@ try {
   assert.equal((await waitForWorker(desktop.request, baseUrl, "job-browser-4", 2)).recoveryHistory.at(-1).outcome, "resumable", "resume preserves partial canonical work");
   await desktop.getByRole("button", { name: "Resume when available" }).click();
   assert.equal((await waitForWorker(desktop.request, baseUrl, "job-browser-5", 2)).recoveryHistory.length, 2, "paused work resumes through the same worker identity");
-  await desktop.getByRole("button", { name: "Start reserved work" }).click();
+  await desktop.getByRole("button", { name: "Start reserved work" }).first().click();
   const started = await waitForWorker(desktop.request, baseUrl, "job-browser-10");
   assert.equal(started.batchId, groupId, "interrupted launch starts only under its durable group owner");
+  const staleCard = desktop.locator("article").filter({ hasText: "#11 · Grouped Browser 11" });
+  await staleCard.getByRole("button", { name: "Start reserved work" }).click();
+  const settledStaleChild = await waitForGroupChild(desktop.request, baseUrl, groupId, "job-browser-11", "conflict");
+  await desktop.getByText(settledStaleChild.message).waitFor();
+  const staleWorker = await desktop.request.get(`${baseUrl}/api/workers/job-browser-11`);
+  assert.equal(staleWorker.status(), 404, "stale queued work does not create a worker");
   assert.equal(await desktop.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
 
   phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", reducedMotion: "reduce" });
@@ -228,7 +270,10 @@ try {
   assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
 
   const api = await (await phone.request.get(`${baseUrl}/api/work-groups/${groupId}`)).json();
-  assert.equal(api.group.children.length, 10);
+  assert.equal(api.group.children.length, 11);
+  const staleChild = api.group.activeChildren.find((candidate) => candidate.workerId === "job-browser-11");
+  assert.equal(staleChild.outcome, "conflict", "failed stale start becomes durable terminal truth");
+  assert.equal(staleChild.canonicalEvidence.revision, staleReserved.revision, "reviewed revision remains visible after drift");
   assert.equal(api.group.summary.failed, 5, "partial failure does not collapse successful siblings");
   console.log("PASS grouped work browser journeys");
 } finally {

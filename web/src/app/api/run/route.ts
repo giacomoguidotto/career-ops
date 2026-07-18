@@ -11,7 +11,7 @@ import {
 } from "@/lib/core/run-registry";
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
 import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
-import { owningGroupForChild, ownsGroupChild } from "@/lib/core/work-group-store";
+import { owningGroupForChild, ownsGroupChild, settleQueuedGroupChildConflict } from "@/lib/core/work-group-store";
 import { isWorkGroupId } from "@/lib/core/work-group";
 import {
   appendWorkerPhase,
@@ -258,7 +258,16 @@ export async function POST(req: Request) {
         const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
         if (outcome.code !== "work-requested" || !outcome.workOrder) {
           const status = outcome.effect === "conflict" || outcome.code === "already-running" ? 409 : 422;
-          return Response.json({ error: outcome.message, code: outcome.code, outcome }, { status });
+          const groupSettled = Boolean(body.batchId && outcome.effect === "conflict" && settleQueuedGroupChildConflict(careerOpsRoot(), {
+            groupId: body.batchId,
+            workerId: durableWorkerId,
+            opportunity: expectation.opportunity,
+            expectedStage: expectation.expectedStage,
+            expectedRevision: expectation.expectedRevision,
+            code: outcome.code,
+            message: outcome.message,
+          }));
+          return Response.json({ error: outcome.message, code: outcome.code, outcome, groupSettled }, { status });
         }
         lifecycleWorkOrder = outcome.workOrder;
       } catch (error) {

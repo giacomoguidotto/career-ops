@@ -10,6 +10,7 @@ import {
   GROUP_CHILD_OUTCOMES,
   ownsGroupChild,
   readProjectedWorkGroup,
+  settleQueuedGroupChildConflict,
 } from "./src/lib/core/work-group-store.ts";
 import { isWorkGroupId } from "./src/lib/core/work-group.ts";
 import { acknowledgeDurableWorker, createDurableWorker, settleDurableWorker } from "./src/lib/core/worker-store.ts";
@@ -156,6 +157,20 @@ test("reviewed ready child without a worker remains safely startable", async () 
     const child = readProjectedWorkGroup(fixture.root, group.id).activeChildren[0];
     assert.equal(child.state, "queued");
     assert.deepEqual(child.nextAction, { kind: "resume", label: "Start reserved work", href: null });
+    assert.equal(settleQueuedGroupChildConflict(fixture.root, {
+      groupId: group.id,
+      workerId: child.workerId,
+      opportunity: child.opportunity,
+      expectedStage: child.canonicalEvidence.stage,
+      expectedRevision: child.canonicalEvidence.revision,
+      code: "opportunity-conflict",
+      message: "The Opportunity changed after review.",
+    }), true);
+    const conflicted = readProjectedWorkGroup(fixture.root, group.id).activeChildren[0];
+    assert.equal(conflicted.state, "attention");
+    assert.equal(conflicted.outcome, "conflict");
+    assert.equal(conflicted.nextAction.kind, "review");
+    assert.equal(conflicted.canonicalEvidence.revision, order.source.revision, "reviewed evidence survives terminal drift");
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

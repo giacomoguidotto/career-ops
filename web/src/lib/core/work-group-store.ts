@@ -64,6 +64,22 @@ function writeNew(root: string, group: DurableWorkGroup): DurableWorkGroup {
   return group;
 }
 
+function writeReplacement(root: string, group: DurableWorkGroup): DurableWorkGroup {
+  const target = groupPath(root, group.id);
+  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(group, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    fs.renameSync(temporary, target);
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      // renameSync removes the temporary name after the replacement succeeds.
+    }
+  }
+  return group;
+}
+
 function withCreationLock<T>(root: string, create: () => T): T {
   const lockPath = creationLockPath(root);
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
@@ -174,6 +190,49 @@ export function ownsGroupChild(root: string, groupId: string, workerId: string, 
 
 export function owningGroupForChild(root: string, workerId: string): DurableWorkGroup | null {
   return listDurableWorkGroups(root).find((group) => group.children.some((child) => child.workerId === workerId)) ?? null;
+}
+
+export function settleQueuedGroupChildConflict(
+  root: string,
+  input: {
+    groupId: string;
+    workerId: string;
+    opportunity: number;
+    expectedStage: string;
+    expectedRevision: string;
+    code: string;
+    message: string;
+  },
+): boolean {
+  if (
+    !GROUP_ID.test(input.groupId)
+    || !WORKER_ID.test(input.workerId)
+    || !Number.isSafeInteger(input.opportunity)
+    || input.opportunity <= 0
+    || !STAGE.test(input.expectedStage)
+    || !REVISION.test(input.expectedRevision)
+  ) return false;
+  return withCreationLock(root, () => {
+    const group = readDurableWorkGroup(root, input.groupId);
+    if (!group) return false;
+    const index = group.children.findIndex((child) => (
+      child.workerId === input.workerId
+      && child.opportunity === input.opportunity
+      && child.expectedStage === input.expectedStage
+      && child.expectedRevision === input.expectedRevision
+      && child.disposition === "ready"
+    ));
+    if (index === -1) return false;
+    const children = [...group.children];
+    children[index] = {
+      ...children[index],
+      disposition: "conflict",
+      code: input.code.slice(0, 120),
+      message: input.message.slice(0, 500),
+    };
+    writeReplacement(root, { ...group, children });
+    return true;
+  });
 }
 
 function groupOutcome(recovery: WorkRecovery): GroupChildOutcome {
