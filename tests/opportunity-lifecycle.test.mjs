@@ -105,6 +105,16 @@ test('confirmed reports append typed Attempts, preserve links, and never invent 
       successor: 'approached',
     });
     assert.equal(bypass.code, 'successor-report-blocked');
+    const fingerprint = fingerprintFictionalWorkspace(fixture.root);
+    const impossibleDate = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 42,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      attempt: { ...baseAttempt, occurredAt: '2026-02-31T10:00:00Z' },
+    });
+    assert.equal(impossibleDate.code, 'attempt-confirmation-invalid');
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), fingerprint);
     const first = await recordOpportunityAttempt({
       root: fixture.root,
       opportunity: 42,

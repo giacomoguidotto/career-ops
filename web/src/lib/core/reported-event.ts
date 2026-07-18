@@ -80,8 +80,8 @@ function occurredAt(value: unknown): value is string {
     const parsed = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
   }
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
-    && !Number.isNaN(Date.parse(value));
+  const timestamp = value.match(/^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/);
+  return Boolean(timestamp && occurredAt(timestamp[1]) && !Number.isNaN(Date.parse(value)));
 }
 
 function focusedQuestion(value: unknown): string {
