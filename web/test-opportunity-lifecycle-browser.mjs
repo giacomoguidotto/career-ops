@@ -755,6 +755,46 @@ try {
   const beforeCoordination = await page.evaluate(async () => (await fetch('/api/opportunities/101')).json());
   const stageSnapshot = beforeCoordination.opportunity.candidacy.members.map((member) => [member.opportunity, member.stage]);
 
+  await page.getByRole('button', { name: 'Make this Primary' }).click();
+  const primaryReview = page.getByRole('dialog', { name: 'Make Opportunity #101 Primary?' });
+  await primaryReview.waitFor();
+  assert.equal(await primaryReview.getByText('#100, preserved').isVisible(), true);
+  assert.equal(await primaryReview.getByText(/#100 Eligible → Suppressed/).isVisible(), true);
+  assert.equal(await primaryReview.getByText(/#101 Suppressed → Eligible/).isVisible(), true);
+  const primaryResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  await primaryReview.getByRole('button', { name: 'Confirm Primary change' }).click();
+  const primary = await (await primaryResponse).json();
+  assert.equal(primary.code, 'primary-selected');
+  assert.equal(primary.after.candidacy.persistedPrimary, 101);
+  assert.equal(primary.after.candidacy.outreachAnchor, 100);
+  assert.deepEqual(primary.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
+
+  await page.getByRole('button', { name: 'Release Primary' }).waitFor();
+  await page.getByRole('button', { name: 'Release Primary' }).click();
+  const releaseReview = page.getByRole('dialog', { name: 'Release Opportunity #101 as Primary?' });
+  const releaseResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  await releaseReview.getByRole('button', { name: 'Confirm release' }).click();
+  const released = await (await releaseResponse).json();
+  assert.equal(released.code, 'primary-released');
+  assert.equal(released.after.candidacy.persistedPrimary, null);
+  assert.equal(released.after.candidacy.outreachAnchor, 100);
+  assert.deepEqual(released.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
+
+  await page.goto(`${baseUrl}/pipeline/100`);
+  await page.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Make this Primary' }).click();
+  const restoreReview = page.getByRole('dialog', { name: 'Make Opportunity #100 Primary?' });
+  const restoreResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/100') && response.request().method() === 'POST');
+  await restoreReview.getByRole('button', { name: 'Confirm Primary change' }).click();
+  const restored = await (await restoreResponse).json();
+  assert.equal(restored.code, 'primary-selected');
+  assert.equal(restored.after.candidacy.persistedPrimary, 100);
+  assert.equal(restored.after.candidacy.outreachAnchor, 100);
+  assert.deepEqual(restored.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
+
+  await page.goto(`${baseUrl}/pipeline/101`);
+  await page.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
+
   const generateOnce = page.getByRole('button', { name: 'Generate once' });
   await generateOnce.click();
   const generationReview = page.getByRole('dialog', { name: 'Generate once for Opportunity #101?' });
@@ -789,31 +829,6 @@ try {
   await page.getByText('Starting one authorized generation for Opportunity #101.').waitFor();
   await page.waitForFunction(() => document.activeElement?.textContent?.includes('Generate once'));
   assert.equal(await generateOnce.evaluate((node) => node === document.activeElement), true);
-
-  await page.getByRole('button', { name: 'Make this Primary' }).click();
-  const primaryReview = page.getByRole('dialog', { name: 'Make Opportunity #101 Primary?' });
-  await primaryReview.waitFor();
-  assert.equal(await primaryReview.getByText('#100, preserved').isVisible(), true);
-  assert.equal(await primaryReview.getByText(/#100 Eligible → Suppressed/).isVisible(), true);
-  assert.equal(await primaryReview.getByText(/#101 Suppressed → Eligible/).isVisible(), true);
-  const primaryResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
-  await primaryReview.getByRole('button', { name: 'Confirm Primary change' }).click();
-  const primary = await (await primaryResponse).json();
-  assert.equal(primary.code, 'primary-selected');
-  assert.equal(primary.after.candidacy.persistedPrimary, 101);
-  assert.equal(primary.after.candidacy.outreachAnchor, 100);
-  assert.deepEqual(primary.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
-
-  await page.getByRole('button', { name: 'Release Primary' }).waitFor();
-  await page.getByRole('button', { name: 'Release Primary' }).click();
-  const releaseReview = page.getByRole('dialog', { name: 'Release Opportunity #101 as Primary?' });
-  const releaseResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
-  await releaseReview.getByRole('button', { name: 'Confirm release' }).click();
-  const released = await (await releaseResponse).json();
-  assert.equal(released.code, 'primary-released');
-  assert.equal(released.after.candidacy.persistedPrimary, null);
-  assert.equal(released.after.candidacy.outreachAnchor, 100);
-  assert.deepEqual(released.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
   passiveBaseline = fingerprintFictionalWorkspace(fixture.root);
 
   mkdirSync(ARTIFACT_DIR, { recursive: true });
@@ -864,10 +879,11 @@ try {
 
   const writes = requests.filter((request) => request.method !== 'GET' && request.method !== 'HEAD');
   assert.deepEqual(writes.map((request) => [request.method, new URL(request.url).pathname]), [
+    ['POST', '/api/opportunities/101'],
+    ['POST', '/api/opportunities/101'],
+    ['POST', '/api/opportunities/100'],
     ['POST', '/api/run'],
     ['POST', '/api/runs/save'],
-    ['POST', '/api/opportunities/101'],
-    ['POST', '/api/opportunities/101'],
   ]);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), true);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);

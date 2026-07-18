@@ -757,6 +757,54 @@ test('released terminal cluster members cannot become Primary', async () => {
   }
 });
 
+test('Primary changes are blocked while any cluster member has active lifecycle work', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Active Work Co', role: 'Lead', stage: 'Evaluated' },
+      { num: 2, company: 'Active Work Co', role: 'Alternate', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| active-work-surface | Active Work Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const lead = readOpportunity({ root: fixture.root, opportunity: 1 }).opportunity;
+    const reservation = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 1,
+      expectedStage: lead.stage.id,
+      expectedRevision: lead.revision,
+      nowMs: 1_000,
+      workLeaseMs: 1_000,
+    });
+    assert.equal(reservation.code, 'work-requested');
+
+    const alternate = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: alternate.stage.id,
+      expectedRevision: alternate.revision,
+      nowMs: 1_500,
+    });
+    assert.equal(blocked.code, 'candidacy-work-active');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(blocked.workOrder.id, reservation.workOrder.id);
+    assert.equal(blocked.workOrder.opportunity, 1);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test('evidence failures and drift block Primary changes before any registry write', async () => {
   const fixture = createFictionalOpportunityWorkspace({
     opportunities: [

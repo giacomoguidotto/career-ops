@@ -51,6 +51,43 @@ test("adapter accepts the published lifecycle structure", async () => {
   }
 });
 
+test("adapter defaults the pre-coordination v1 candidacy shape from older checkouts", async () => {
+  const fixture = createFictionalOpportunityWorkspace({ materializeCore: true, missingOptionalFiles: true });
+  try {
+    const legacy = clone(await listOpportunityLifecycle(fixture.root));
+    for (const opportunity of legacy.opportunities) {
+      opportunity.candidacy = {
+        state: opportunity.candidacy.state,
+        reason: opportunity.candidacy.reason,
+        clusterId: opportunity.candidacy.clusterId,
+        primary: opportunity.candidacy.primary,
+        outreachAnchor: opportunity.candidacy.outreachAnchor,
+      };
+    }
+    servePayload(fixture.root, legacy);
+
+    const result = await listOpportunityLifecycle(fixture.root);
+    assert.equal(result.contract.version, 1);
+    assert.deepEqual(result.opportunities[0].candidacy, {
+      ...legacy.opportunities[0].candidacy,
+      shared: false,
+      surface: null,
+      confidence: null,
+      evidence: null,
+      reviewed: null,
+      recommendedLead: null,
+      persistedPrimary: null,
+      members: [],
+      research: null,
+      canSelectPrimary: false,
+      canReleasePrimary: false,
+      canGenerateOnce: false,
+    });
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test("adapter rejects future versions and malformed domain values", async () => {
   const cases = [
     [(result) => { result.contract.version = 999; }, "invalid-lifecycle-contract"],
@@ -59,6 +96,7 @@ test("adapter rejects future versions and malformed domain values", async () => 
     [(result) => { result.opportunities[0].primaryAction.kind = "invented"; }, "invalid-opportunity-summary"],
     [(result) => { result.opportunities[0].candidacy.shared = "yes"; }, "invalid-opportunity-summary"],
     [(result) => { result.opportunities[0].candidacy.members = [{ opportunity: -1 }]; }, "invalid-opportunity-summary"],
+    [(result) => { delete result.opportunities[0].candidacy.members; }, "invalid-opportunity-summary"],
   ];
   for (const [mutate, code] of cases) {
     const fixture = createFictionalOpportunityWorkspace({ materializeCore: true, missingOptionalFiles: true });

@@ -355,6 +355,56 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((item) => typeof item === "string");
 }
 
+const CANDIDACY_EXTENSION_KEYS = [
+  "shared",
+  "surface",
+  "confidence",
+  "evidence",
+  "reviewed",
+  "recommendedLead",
+  "persistedPrimary",
+  "members",
+  "research",
+  "canSelectPrimary",
+  "canReleasePrimary",
+  "canGenerateOnce",
+] as const;
+
+function normalizeCandidacy(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const hasExtension = CANDIDACY_EXTENSION_KEYS.some((key) => Object.hasOwn(value, key));
+  if (hasExtension) return value;
+  return {
+    ...value,
+    shared: false,
+    surface: null,
+    confidence: null,
+    evidence: null,
+    reviewed: null,
+    recommendedLead: null,
+    persistedPrimary: null,
+    members: [],
+    research: null,
+    canSelectPrimary: false,
+    canReleasePrimary: false,
+    canGenerateOnce: false,
+  };
+}
+
+function normalizeOpportunity(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return { ...value, candidacy: normalizeCandidacy(value.candidacy) };
+}
+
+function normalizeCommandOutcome(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return {
+    ...value,
+    before: value.before === null ? null : normalizeOpportunity(value.before),
+    after: value.after === null ? null : normalizeOpportunity(value.after),
+  };
+}
+
 function isCandidacy(value: unknown): value is OpportunitySummary["candidacy"] {
   return isRecord(value)
     && isOneOf(value.state, CANDIDACY_STATES)
@@ -534,10 +584,10 @@ export async function setOpportunityPrimaryLifecycle(
   expectedRevision: string,
   primary: number | null,
 ): Promise<LifecycleCommandOutcome> {
-  const result = await run(root, "primary", [
+  const result = normalizeCommandOutcome(await run(root, "primary", [
     ...commandArguments(opportunity, expectedStage, expectedRevision),
     "--primary", primary == null ? "none" : String(primary),
-  ]);
+  ]));
   validateCommandOutcome(result);
   return result;
 }
@@ -554,11 +604,12 @@ export async function listOpportunityLifecycle(root: string): Promise<Opportunit
     throw new LifecycleAdapterError("invalid-lifecycle-list", "The lifecycle list is incompatible.", 503);
   }
   validateContract(result.contract);
-  for (const opportunity of result.opportunities) validateOpportunity(opportunity);
+  const opportunities = result.opportunities.map(normalizeOpportunity);
+  for (const opportunity of opportunities) validateOpportunity(opportunity);
   if (typeof result.revision !== "string") {
     throw new LifecycleAdapterError("invalid-lifecycle-list", "The lifecycle list is incompatible.", 503);
   }
-  return result as OpportunityListResult;
+  return { ...result, opportunities } as OpportunityListResult;
 }
 
 export async function tryListOpportunityLifecycle(root: string): Promise<OpportunityListResult | null> {
@@ -582,9 +633,10 @@ export async function readOpportunityLifecycle(root: string, opportunity: number
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
   }
   validateContract(result.contract);
-  validateOpportunity(result.opportunity);
+  const opportunitySummary = normalizeOpportunity(result.opportunity);
+  validateOpportunity(opportunitySummary);
   if (
-    result.opportunity.opportunity !== opportunity
+    opportunitySummary.opportunity !== opportunity
     || result.attempts.some((attempt) => attempt.opportunity !== opportunity)
   ) {
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
@@ -592,7 +644,7 @@ export async function readOpportunityLifecycle(root: string, opportunity: number
   if (typeof result.revision !== "string") {
     throw new LifecycleAdapterError("invalid-opportunity-detail", "The Opportunity detail is incompatible.", 503);
   }
-  return result as OpportunityDetailResult;
+  return { ...result, opportunity: opportunitySummary } as OpportunityDetailResult;
 }
 
 export async function requestOpportunityWork(
@@ -616,12 +668,12 @@ export async function requestOpportunityWork(
   if (expectation.candidacyOverride !== undefined && expectation.candidacyOverride !== true) {
     throw new LifecycleAdapterError("invalid-candidacy-override", "Candidacy override must be the explicit one-generation authorization.", 400);
   }
-  const result = await run(root, "request", [
+  const result = normalizeCommandOutcome(await run(root, "request", [
     "--opportunity", String(expectation.opportunity),
     "--expected-stage", expectation.expectedStage,
     "--expected-revision", expectation.expectedRevision,
     ...(expectation.candidacyOverride ? ["--candidacy-override"] : []),
-  ]);
+  ]));
   if (
     !isRecord(result)
     || typeof result.code !== "string"

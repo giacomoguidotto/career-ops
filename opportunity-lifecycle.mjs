@@ -1188,6 +1188,30 @@ export async function setOpportunityPrimary(options = {}) {
       });
     }
 
+    const workNowMs = options.nowMs ?? Date.now();
+    if (!Number.isFinite(workNowMs) || workNowMs < 0) {
+      throw new Error('nowMs must be a non-negative timestamp');
+    }
+    const states = loadStates({ rootDir: root, force: true });
+    let activeWork = null;
+    for (const member of before.candidacy.members) {
+      const summary = readOpportunity({ root, opportunity: member.opportunity, now: options.now })?.opportunity;
+      const workOrder = summary ? workOrderFor(summary, states) : null;
+      if (!workOrder) continue;
+      const workState = readWorkState(workStatePath(root, workOrder), null, workNowMs);
+      if (workState && !workState.invalid && !workState.stale) {
+        activeWork = workState;
+        break;
+      }
+    }
+    if (activeWork) {
+      return commandOutcome({
+        code: 'candidacy-work-active', effect: 'blocked', retryable: false,
+        message: 'Primary coordination cannot change while lifecycle work is active for this Hiring surface.',
+        before, artifacts: commandArtifacts(before), workOrder: activeWork.workOrder,
+      });
+    }
+
     const registryPath = join(root, 'data', 'candidacy-clusters.md');
     const registryContent = readOptional(registryPath);
     if (registryContent == null) {
