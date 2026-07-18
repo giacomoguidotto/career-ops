@@ -328,6 +328,8 @@ try {
   await page.keyboard.press('j');
   await page.keyboard.press('k');
   await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+k');
+  assert.equal(await page.getByRole('dialog', { name: 'Pipeline commands' }).count(), 0);
   assert.equal(page.url(), inboxUrl);
   await page.getByRole('button', { name: /Return to Stage ledger/ }).click();
 

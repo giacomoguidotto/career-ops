@@ -248,7 +248,7 @@ export function PipelineView({
         return;
       }
       if (isTypingTarget(event.target)) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (!inboxOpen && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         openDialog("commands");
       } else if (event.metaKey || event.ctrlKey || event.altKey) {
