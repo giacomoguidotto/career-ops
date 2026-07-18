@@ -537,7 +537,7 @@ function candidacyForRow(row, candidacy) {
   if (cluster) {
     const primary = cluster.effectivePrimary ?? cluster.storedPrimary ?? null;
     const memberStage = resolveState(row.status, candidacy.states);
-    const maySelectPrimary = memberStage?.owner === 'agent' && !RELEASED_STAGE_IDS.has(memberStage.id);
+    const maySelectPrimary = memberStage?.owner === 'agent';
     return {
       state: primary === row.num ? 'primary' : 'member',
       reason: null,

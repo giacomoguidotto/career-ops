@@ -320,7 +320,7 @@ let page;
 let traceStopped = false;
 let passiveBaseline = before;
 try {
-  await waitUntilReady(`${baseUrl}/api/opportunities`, child, output);
+  await waitUntilReady(baseUrl, child, output);
   browser = await chromium.launch({ headless: true });
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
   await context.addInitScript(() => localStorage.setItem('career-ops:config', JSON.stringify({ cliId: 'codex' })));
@@ -346,8 +346,10 @@ try {
   await page.reload();
   await page.waitForLoadState('networkidle');
 
-  await page.goto(`${baseUrl}/api/opportunities`);
-  const list = JSON.parse(await page.locator('body').innerText());
+  const listResponse = await page.goto(`${baseUrl}/api/opportunities`);
+  const listBody = await page.locator('body').innerText();
+  assert.equal(listResponse?.ok(), true, `opportunity API returned ${listResponse?.status()}: ${listBody}`);
+  const list = JSON.parse(listBody);
   assert.equal(list.contract.id, 'career-ops.opportunity-lifecycle');
   assert.equal(list.opportunities.length > fixture.stages.length, true);
   assert.equal(list.opportunities.some((opportunity) => opportunity.rawStage === 'FUTURE_STAGE'), true);
