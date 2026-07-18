@@ -1044,7 +1044,9 @@ try {
   assert.equal(await generationReview.getByRole('button', { name: 'Generate once' }).evaluate((node) => node === document.activeElement), true);
   await page.keyboard.press('Escape');
   await generationReview.waitFor({ state: 'hidden' });
-  await page.waitForFunction(() => document.activeElement?.textContent?.includes('Generate once'));
+  const generateOnceHandle = await generateOnce.elementHandle();
+  assert.ok(generateOnceHandle);
+  await page.waitForFunction((button) => document.activeElement === button, generateOnceHandle);
   assert.equal(await generateOnce.evaluate((node) => node === document.activeElement), true);
   await generateOnce.click();
   await generationReview.waitFor();
