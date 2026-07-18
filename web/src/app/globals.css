@@ -131,6 +131,12 @@ html {
     animation: none;
   }
   .job-indeterminate::after { animation: none; width: 100%; opacity: 0.35; }
+  .pipeline-ledger *,
+  .pipeline-ledger *::before,
+  .pipeline-ledger *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ── Report / CV markdown prose (theme-aware) ───────────────────────────── */

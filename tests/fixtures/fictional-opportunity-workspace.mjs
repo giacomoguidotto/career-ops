@@ -195,6 +195,7 @@ export function createFictionalOpportunityWorkspace(options = {}) {
       ...(options.opportunityPatches[opportunity.num] ?? {}),
     }));
   }
+  opportunities.push(...(options.extraOpportunities ?? []));
   if (options.includeAliases) {
     opportunities.push(...aliasOpportunities(stages, opportunities.length + 1));
   }
