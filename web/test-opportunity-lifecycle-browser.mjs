@@ -1129,7 +1129,7 @@ try {
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `pdf-overflow-review-${review.name}.png`), fullPage: true });
 
     await reviewPage.goto(`${baseUrl}/jobs`);
-    await reviewPage.getByRole('heading', { name: 'Workers' }).waitFor();
+    await reviewPage.getByRole('heading', { name: 'Workers', exact: true }).waitFor();
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `worker-recovery-${review.name}.png`), fullPage: true });
     await reviewContext.close();
   }
