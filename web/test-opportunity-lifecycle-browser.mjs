@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { delimiter, join } from 'node:path';
@@ -78,18 +78,56 @@ const fixture = createFictionalOpportunityWorkspace({
     { num: 109, company: 'Another Fictional Co', role: 'Engineer', stage: 'Evaluated' },
     { num: 110, company: 'Stale Evidence Co', role: 'Researcher', stage: 'Evaluated' },
     { num: 111, company: 'Stale Evidence Co', role: 'Engineer', stage: 'Evaluated' },
+    { num: 112, company: 'First Attempt Co', role: 'Engineer', stage: 'Approach Ready' },
+    { num: 113, company: 'Repair Attempt Co', role: 'Engineer', stage: 'Approach Ready' },
+    { num: 114, company: 'Review Flow Co', role: 'Engineer', stage: 'Approach Ready' },
   ],
-  attempts: [{
-    id: 'A001',
-    opportunity: 3,
-    date: '2026-01-16T09:42:00Z',
-    type: 'formal_application',
-    channel: 'fictional_portal',
-    recipient: 'Fictional Hiring Team',
-    result: 'sent',
-    notes: 'Confirmed fictional submission.',
-  }],
+  attempts: [
+    {
+      id: 'A001',
+      opportunity: 3,
+      date: '2026-01-16T09:42:00Z',
+      type: 'formal_application',
+      channel: 'fictional_portal',
+      recipient: 'Fictional Hiring Team',
+      result: 'sent',
+      notes: 'Confirmed fictional submission.',
+    },
+    {
+      id: 'A014',
+      opportunity: 2,
+      date: '2026-07-10',
+      type: 'recruiter_outreach',
+      channel: 'email',
+      recipient: 'Elena Rossi',
+      result: 'sent, awaiting reply',
+      notes: 'Confirmed fictional recruiter thread.',
+    },
+  ],
   approachPlans: {
+    '114-review-flow-co.md': [
+      '# Review Flow Co Approach Plan',
+      '',
+      '**Stage:** approach_ready',
+      '**Owner:** user',
+      '**Suggests:** execute_approach',
+      '',
+      '## Ranked Approaches',
+      '',
+      '### 1. Best: Peer introduction',
+      '- **Route:** peer outreach',
+      '- **To:** Review Peer | https://example.invalid/review-peer',
+      '- **Channel:** LinkedIn connection note',
+      '- **Timing:** now',
+      '',
+      '### Send the Outreach Message',
+      '- **To:** Review Peer | https://example.invalid/review-peer',
+      '- **Channel:** LinkedIn connection note',
+      '- **Connection note:** yes, 90/300 chars',
+      '- **Instruction:** Review and send outside career-ops.',
+      '',
+      'A fictional message for rendered review.',
+    ].join('\n'),
     '004-legacy-founder-pack.md': [
       '**Action:** execute_approach',
       '',
@@ -274,7 +312,27 @@ const fixture = createFictionalOpportunityWorkspace({
 const binDir = join(fixture.root, 'fixture-bin');
 mkdirSync(binDir, { recursive: true });
 const codex = join(binDir, 'codex');
-writeFileSync(codex, "#!/bin/sh\nprintf 'VERDICT: 5/5 | fictional authorized generation completed\\n'\n");
+writeFileSync(codex, [
+  '#!/bin/sh',
+  'case "$*" in',
+  '  *"They replied."*)',
+  `    printf '%s\\n' '${JSON.stringify({ kind: 'clarification', question: 'What exactly did the recruiter say, and when did the reply arrive?' })}'`,
+  '    ;;',
+  '  *"I sent another follow-up"*)',
+  `    printf '%s\\n' '${JSON.stringify({ kind: 'proposal', proposal: { kind: 'attempt', occurredAt: '2026-07-18', type: 'follow_up', channel: 'email', recipient: 'Elena Rossi', result: 'sent, awaiting reply', followUpTo: 'A015', notes: '' } })}'`,
+  '    ;;',
+  '  *"The recruiter invited me"*)',
+  `    printf '%s\\n' '${JSON.stringify({ kind: 'proposal', proposal: { kind: 'successor', successor: 'responded', occurredAt: '2026-07-18', result: 'invited to interview' } })}'`,
+  '    ;;',
+  '  *"I sent Elena the follow-up"*)',
+  `    printf '%s\\n' '${JSON.stringify({ kind: 'proposal', proposal: { kind: 'attempt', occurredAt: '2026-07-18', type: 'follow_up', channel: 'email', recipient: 'Elena Rossi', result: 'sent, awaiting reply', followUpTo: 'A014', notes: '' } })}'`,
+  '    ;;',
+  '  *)',
+  "    printf 'VERDICT: 5/5 | fictional authorized generation completed\\n'",
+  '    ;;',
+  'esac',
+  '',
+].join('\n'));
 chmodSync(codex, 0o755);
 const before = fingerprintFictionalWorkspace(fixture.root);
 const beforeSnapshot = snapshotFictionalWorkspace(fixture.root);
@@ -688,10 +746,101 @@ try {
   await page.locator('[data-route-type="followup"]').click();
   await page.getByRole('button', { name: /Prepare this route/ }).click();
   assert.equal(await page.getByText(/Continues confirmed Attempt A014/).isVisible(), true);
-  await page.keyboard.press('Escape');
-  await page.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor({ state: 'detached' });
-  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Start guided approach');
-  assert.equal(await guidedTrigger.evaluate((node) => node === document.activeElement), true);
+  await page.getByRole('button', { name: /Ready to act/ }).click();
+  await page.getByRole('button', { name: /I acted outside career-ops/ }).click();
+  const naturalReport = page.getByRole('textbox', { name: 'Natural-language report' });
+  await naturalReport.fill('I sent Elena the follow-up by email today. No reply yet.');
+  const interpretationFingerprint = fingerprintFictionalWorkspace(fixture.root);
+  await page.getByRole('button', { name: 'Interpret report' }).click();
+  await page.locator('[data-interpretation="proposal"]').waitFor();
+  assert.equal(await page.getByText('Preview · Not recorded').isVisible(), true);
+  assert.equal(fingerprintFictionalWorkspace(fixture.root), interpretationFingerprint);
+  assert.equal(readFileSync(join(fixture.root, 'data', 'approach-attempts.md'), 'utf8').includes('| A015 |'), false);
+  await page.getByLabel('Result', { exact: true }).fill('sent, no reply yet');
+  await page.getByRole('button', { name: 'Confirm and add to history' }).click();
+  await page.locator('[data-reported-event="recorded"]').waitFor();
+  assert.equal(readFileSync(join(fixture.root, 'data', 'approach-attempts.md'), 'utf8').includes('| A015 | 2 | 2026-07-18 | follow_up | email | Elena Rossi | sent, no reply yet | A014 |'), true);
+  await page.getByRole('button', { name: 'Reload canonical history' }).click();
+  await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+  assert.equal(await page.getByLabel(/current Approached/).isVisible(), true);
+
+  await page.getByRole('button', { name: 'Report real-world event' }).click();
+  const reportDialog = page.getByRole('dialog', { name: 'Report real-world event' });
+  await reportDialog.getByRole('textbox', { name: 'Natural-language report' }).fill('They replied.');
+  await reportDialog.getByRole('button', { name: 'Interpret report' }).click();
+  await reportDialog.locator('[data-interpretation="clarification"]').waitFor();
+  assert.equal(await reportDialog.getByText(/What exactly did the recruiter say/).isVisible(), true);
+  await reportDialog.getByRole('textbox', { name: 'Natural-language report' }).fill('I sent another follow-up to Elena by email today. No reply yet.');
+  await reportDialog.getByRole('button', { name: 'Interpret report' }).click();
+  await reportDialog.locator('[data-interpretation="proposal"]').waitFor();
+  await reportDialog.getByRole('button', { name: 'Confirm and add to history' }).click();
+  await reportDialog.locator('[data-reported-event="recorded"]').waitFor();
+  await reportDialog.getByRole('button', { name: 'Reload canonical history' }).click();
+  await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+  assert.equal((await (await fetch(`${baseUrl}/api/opportunities/2`)).json()).opportunity.attempts.count, 3);
+
+  await page.getByRole('button', { name: 'Report real-world event' }).click();
+  const staleDialog = page.getByRole('dialog', { name: 'Report real-world event' });
+  await staleDialog.getByRole('textbox', { name: 'Natural-language report' }).fill('I sent another follow-up to Elena by email today. No reply yet.');
+  await staleDialog.getByRole('button', { name: 'Interpret report' }).click();
+  await staleDialog.locator('[data-interpretation="proposal"]').waitFor();
+  const successor = await page.evaluate(async () => {
+    const fresh = await (await fetch('/api/opportunities/2')).json();
+    const response = await fetch('/api/opportunities/2/reported-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'confirm',
+        expectedStage: fresh.opportunity.stage.id,
+        expectedRevision: fresh.opportunity.revision,
+        proposal: { kind: 'successor', successor: 'responded', occurredAt: '2026-07-18', result: 'invited to interview' },
+      }),
+    });
+    return response.json();
+  });
+  assert.equal(successor.code, 'successor-recorded');
+  await staleDialog.getByRole('button', { name: 'Confirm and add to history' }).click();
+  await staleDialog.getByText(/Nothing was written/).waitFor();
+  assert.equal((await (await fetch(`${baseUrl}/api/opportunities/2`)).json()).opportunity.attempts.count, 3);
+  await staleDialog.getByRole('button', { name: 'Close reported event' }).click();
+
+  const firstAttempt = await page.evaluate(async () => {
+    const fresh = await (await fetch('/api/opportunities/112')).json();
+    const response = await fetch('/api/opportunities/112/reported-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'confirm',
+        expectedStage: fresh.opportunity.stage.id,
+        expectedRevision: fresh.opportunity.revision,
+        proposal: { kind: 'attempt', occurredAt: '2026-07-18', type: 'formal_application', channel: 'ats', recipient: 'First Attempt Hiring', result: 'submitted', followUpTo: null, notes: '' },
+      }),
+    });
+    return response.json();
+  });
+  assert.equal(firstAttempt.code, 'attempt-recorded');
+  assert.equal(firstAttempt.after.stage.id, 'approached');
+  assert.equal(firstAttempt.after.attempts.count, 1);
+
+  appendFileSync(join(fixture.root, 'data', 'approach-attempts.md'), '| A018 | 113 | 2026-07-18 | formal_application | ats | Repair Attempt Hiring | submitted |  | simulated partial write |\n');
+  const repairedAttempt = await page.evaluate(async () => {
+    const fresh = await (await fetch('/api/opportunities/113')).json();
+    const response = await fetch('/api/opportunities/113/reported-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'confirm',
+        expectedStage: fresh.opportunity.stage.id,
+        expectedRevision: fresh.opportunity.revision,
+        proposal: { kind: 'attempt', occurredAt: '2026-07-18', type: 'formal_application', channel: 'ats', recipient: 'Repair Attempt Hiring', result: 'submitted', followUpTo: null, notes: 'simulated partial write' },
+      }),
+    });
+    return response.json();
+  });
+  assert.equal(repairedAttempt.code, 'attempt-recorded');
+  assert.equal(repairedAttempt.after.stage.id, 'approached');
+  assert.equal(repairedAttempt.after.attempts.count, 1);
+  passiveBaseline = fingerprintFictionalWorkspace(fixture.root);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
   for (const opportunity of [5, 7]) {
@@ -844,8 +993,8 @@ try {
       reducedMotion: 'reduce',
     });
     const reviewPage = await reviewContext.newPage();
-    await reviewPage.goto(`${baseUrl}/pipeline/2`);
-    await reviewPage.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+    await reviewPage.goto(`${baseUrl}/pipeline/114`);
+    await reviewPage.getByRole('heading', { name: 'Review Flow Co', exact: true }).waitFor();
     await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
     await reviewPage.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor();
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -879,6 +1028,9 @@ try {
 
   const writes = requests.filter((request) => request.method !== 'GET' && request.method !== 'HEAD');
   assert.deepEqual(writes.map((request) => [request.method, new URL(request.url).pathname]), [
+    ...Array.from({ length: 8 }, () => ['POST', '/api/opportunities/2/reported-event']),
+    ['POST', '/api/opportunities/112/reported-event'],
+    ['POST', '/api/opportunities/113/reported-event'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/101'],
     ['POST', '/api/opportunities/100'],

@@ -142,6 +142,9 @@ export async function recordApproachAttempt(options) {
     followUpTo = null,
     notes = '',
     dryRun = false,
+    lockHeld = false,
+    rootDir = null,
+    onMutationStep = null,
   } = options;
   const opportunity = Number(rawOpportunity);
   if (!Number.isInteger(opportunity) || opportunity <= 0) throw new Error('opportunity must be a positive tracker number');
@@ -152,7 +155,7 @@ export async function recordApproachAttempt(options) {
   if (!normalized(result)) throw new Error('result is required');
 
   let lock = null;
-  if (!dryRun) {
+  if (!dryRun && !lockHeld) {
     lock = await acquireTrackerLock(trackerLockDirFor(appsFile), {
       timeoutMs: Number(process.env.CAREER_OPS_TRACKER_LOCK_TIMEOUT_MS) || 60_000,
       tracker: appsFile,
@@ -163,7 +166,7 @@ export async function recordApproachAttempt(options) {
     const trackerContent = readFileSync(appsFile, 'utf-8');
     const target = trackerTarget(trackerContent, opportunity);
     if (!target) throw new Error(`no Opportunity #${opportunity}`);
-    const states = loadStates();
+    const states = rootDir ? loadStates({ rootDir, force: true }) : loadStates();
     const stage = resolveState(target.row.status, states);
     const approachedStage = states.records.find((record) => record.owner === 'external' && record.onDemand.includes('review_approach'));
     if (!approachedStage) throw new Error('states.yml has no external review_approach stage');
@@ -208,8 +211,12 @@ export async function recordApproachAttempt(options) {
     if (!duplicate) {
       const existing = existsSync(attemptsFile) ? readFileSync(attemptsFile, 'utf-8').trimEnd() : APPROACH_ATTEMPTS_HEADER;
       writeFileAtomic(attemptsFile, `${existing}\n${attemptLine(candidate)}\n`);
+      onMutationStep?.('attempt-written');
     }
-    if (stageNeedsRepair) writeFileAtomic(appsFile, withStage(target, approachedStage.label));
+    if (stageNeedsRepair) {
+      writeFileAtomic(appsFile, withStage(target, approachedStage.label));
+      onMutationStep?.('stage-written');
+    }
 
     return {
       changed: !duplicate || stageNeedsRepair,

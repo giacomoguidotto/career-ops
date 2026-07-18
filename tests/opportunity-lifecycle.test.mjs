@@ -16,6 +16,8 @@ import {
   readOpportunityContract,
   readOpportunity,
   reconcileOpportunityWork,
+  recordOpportunityAttempt,
+  reportOpportunitySuccessor,
   requestOpportunityWork,
   setOpportunityPrimary,
 } from '../opportunity-lifecycle.mjs';
@@ -74,6 +76,168 @@ test('passive reads leave the target and repository User Layers byte-identical',
     readOpportunity({ root: fixture.root, opportunity: 1, now: '2026-01-20' });
     assert.equal(fingerprintUserLayer(fixture.root), targetBefore);
     assert.equal(fingerprintUserLayer(REPO_ROOT), repositoryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('confirmed reports append typed Attempts, preserve links, and never invent another lifecycle', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    extraOpportunities: [{ num: 42, company: 'Report Fictional', role: 'Engineer', stage: 'Approach Ready' }],
+  });
+  const baseAttempt = {
+    occurredAt: '2026-07-18T10:30:00+02:00',
+    type: 'peer_outreach',
+    channel: 'linkedin',
+    recipient: 'Fictional Peer',
+    result: 'sent, awaiting reply',
+    followUpTo: null,
+    notes: 'Confirmed by the fictional user.',
+  };
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 42 }).opportunity;
+    const bypass = await reportOpportunitySuccessor({
+      root: fixture.root,
+      opportunity: 42,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      successor: 'approached',
+    });
+    assert.equal(bypass.code, 'successor-report-blocked');
+    const first = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 42,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      attempt: baseAttempt,
+    });
+    assert.equal(first.code, 'attempt-recorded');
+    assert.equal(first.after.stage.id, 'approached');
+    assert.equal(first.after.attempts.count, 1);
+    assert.equal(first.consequences.attempt.date, baseAttempt.occurredAt);
+
+    const repeated = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 42,
+      expectedStage: first.after.stage.id,
+      expectedRevision: first.after.revision,
+      attempt: { ...baseAttempt, occurredAt: '2026-07-19', result: 'second message sent' },
+    });
+    assert.equal(repeated.after.stage.id, 'approached');
+    assert.equal(repeated.after.attempts.count, 2);
+
+    const linked = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 42,
+      expectedStage: repeated.after.stage.id,
+      expectedRevision: repeated.after.revision,
+      attempt: {
+        ...baseAttempt,
+        occurredAt: '2026-07-22',
+        type: 'follow_up',
+        result: 'follow-up sent',
+        followUpTo: first.consequences.attempt.id,
+      },
+    });
+    assert.equal(linked.after.stage.id, 'approached');
+    assert.equal(linked.after.attempts.count, 3);
+    assert.equal(linked.consequences.attempt.followUpTo, first.consequences.attempt.id);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('partial Attempt writes repair on a fresh retry while stale confirmations write nothing', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    extraOpportunities: [{ num: 43, company: 'Repair Fictional', role: 'Engineer', stage: 'Approach Ready' }],
+  });
+  const attempt = {
+    occurredAt: '2026-07-18',
+    type: 'formal_application',
+    channel: 'ats',
+    recipient: 'Fictional Hiring Team',
+    result: 'submitted',
+    followUpTo: null,
+    notes: '',
+  };
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 43 }).opportunity;
+    const partial = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 43,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      attempt,
+      onMutationStep(step) { if (step === 'attempt-written') throw new Error('fictional interruption'); },
+    });
+    assert.equal(partial.code, 'attempt-stage-repair-required');
+    assert.equal(partial.after.stage.id, 'approach_ready');
+    assert.equal(partial.after.attempts.count, 1);
+
+    const repaired = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 43,
+      expectedStage: partial.after.stage.id,
+      expectedRevision: partial.after.revision,
+      attempt,
+    });
+    assert.equal(repaired.code, 'attempt-recorded');
+    assert.equal(repaired.after.stage.id, 'approached');
+    assert.equal(repaired.after.attempts.count, 1);
+    assert.equal(repaired.consequences.stageRepaired, true);
+
+    const fingerprint = fingerprintFictionalWorkspace(fixture.root);
+    const stale = await recordOpportunityAttempt({
+      root: fixture.root,
+      opportunity: 43,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      attempt: { ...attempt, occurredAt: '2026-07-19' },
+    });
+    assert.equal(stale.effect, 'conflict');
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), fingerprint);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('reported World events can select only a fresh allowed successor', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    extraOpportunities: [{ num: 44, company: 'Successor Fictional', role: 'Engineer', stage: 'Approached' }],
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 44 }).opportunity;
+    const invalid = await reportOpportunitySuccessor({
+      root: fixture.root,
+      opportunity: 44,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      successor: 'offer',
+    });
+    assert.equal(invalid.code, 'successor-report-blocked');
+
+    const changed = await reportOpportunitySuccessor({
+      root: fixture.root,
+      opportunity: 44,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      successor: 'responded',
+    });
+    assert.equal(changed.code, 'successor-recorded');
+    assert.equal(changed.after.stage.id, 'responded');
+
+    const fingerprint = fingerprintFictionalWorkspace(fixture.root);
+    const stale = await reportOpportunitySuccessor({
+      root: fixture.root,
+      opportunity: 44,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      successor: 'rejected',
+    });
+    assert.equal(stale.effect, 'conflict');
+    assert.equal(fingerprintFictionalWorkspace(fixture.root), fingerprint);
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }

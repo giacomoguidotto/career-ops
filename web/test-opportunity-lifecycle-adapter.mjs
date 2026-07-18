@@ -10,6 +10,8 @@ import {
   LifecycleAdapterError,
   listOpportunityLifecycle,
   readOpportunityLifecycle,
+  recordOpportunityAttemptLifecycle,
+  reportOpportunitySuccessorLifecycle,
   requestOpportunityWork,
   setOpportunityPrimaryLifecycle,
   tryListOpportunityLifecycle,
@@ -46,6 +48,44 @@ test("adapter accepts the published lifecycle structure", async () => {
     const result = await listOpportunityLifecycle(fixture.root);
     assert.equal(result.contract.version, 1);
     assert.equal(result.opportunities.length, fixture.stages.length);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test("adapter transports confirmed Attempts and allowed successor reports through the canonical seam", async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    extraOpportunities: [{ num: 42, company: "Reported Fictional", role: "Engineer", stage: "Approach Ready" }],
+  });
+  try {
+    const before = (await readOpportunityLifecycle(fixture.root, 42)).opportunity;
+    const attempt = await recordOpportunityAttemptLifecycle(
+      fixture.root,
+      42,
+      before.stage.id,
+      before.revision,
+      {
+        occurredAt: TODAY,
+        type: "formal_application",
+        channel: "ats",
+        recipient: "Fictional Hiring Team",
+        result: "submitted",
+        followUpTo: null,
+        notes: "",
+      },
+    );
+    assert.equal(attempt.code, "attempt-recorded");
+    assert.equal(attempt.after.stage.id, "approached");
+    const successor = await reportOpportunitySuccessorLifecycle(
+      fixture.root,
+      42,
+      attempt.after.stage.id,
+      attempt.after.revision,
+      "responded",
+    );
+    assert.equal(successor.code, "successor-recorded");
+    assert.equal(successor.after.stage.id, "responded");
   } finally {
     removeFictionalOpportunityWorkspace(fixture.root);
   }
