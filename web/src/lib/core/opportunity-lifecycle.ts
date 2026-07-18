@@ -506,6 +506,7 @@ async function run(
   root: string,
   action: "contract" | "list" | "read" | "request" | "reconcile" | "primary" | "attempt" | "successor",
   extra: string[] = [],
+  input: string | null = null,
 ): Promise<unknown> {
   const resolvedRoot = path.resolve(root);
   if (!fs.existsSync(resolvedRoot)) {
@@ -513,7 +514,7 @@ async function run(
   }
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
-      execFile(
+      const child = execFile(
         process.execPath,
         [lifecycleScript(resolvedRoot), action, "--root", resolvedRoot, ...extra],
         {
@@ -524,6 +525,7 @@ async function run(
         },
         (error, output) => error ? reject(error) : resolve(output),
       );
+      if (input !== null) child.stdin?.end(input);
     });
     let parsed: unknown;
     try {
@@ -609,11 +611,10 @@ export async function recordOpportunityAttemptLifecycle(
   expectedRevision: string,
   attempt: AttemptConfirmation,
 ): Promise<LifecycleCommandOutcome> {
-  const encoded = Buffer.from(JSON.stringify(attempt), "utf8").toString("base64url");
   const result = normalizeCommandOutcome(await run(root, "attempt", [
     ...commandArguments(opportunity, expectedStage, expectedRevision),
-    "--attempt-json", encoded,
-  ]));
+    "--attempt-stdin",
+  ], JSON.stringify(attempt)));
   validateCommandOutcome(result);
   return result;
 }

@@ -50,6 +50,11 @@ function cliId() {
   catch { return ""; }
 }
 
+function localCalendarDate() {
+  const now = new Date();
+  return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
+}
+
 type CheckpointProps = {
   opportunity: OpportunitySummary;
   contract: LifecycleContract;
@@ -61,6 +66,7 @@ type CheckpointProps = {
 
 export function ReportedEventCheckpoint({ opportunity: initial, contract, attempts, route = null, onBack, onRecorded }: CheckpointProps) {
   const [context, setContext] = useState(initial);
+  const [attemptHistory, setAttemptHistory] = useState(attempts);
   const [report, setReport] = useState("");
   const [interpretation, setInterpretation] = useState<ReportedEventInterpretation | null>(null);
   const [busy, setBusy] = useState<"interpret" | "confirm" | null>(null);
@@ -87,6 +93,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
           cliId: selectedCli,
           expectedStage: context.stage.id,
           expectedRevision: context.revision,
+          localDate: localCalendarDate(),
           report,
           route,
         }),
@@ -94,11 +101,13 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
       const body = await response.json();
       if (response.status === 409 && body.after) {
         setContext(body.after);
+        if (Array.isArray(body.attempts)) setAttemptHistory(body.attempts);
         setNotice("The Opportunity changed. Fresh context is loaded; interpret the report again.");
         return;
       }
       if (!response.ok) throw new Error(body.error?.message || "Interpretation failed.");
       setContext(body.opportunity);
+      if (Array.isArray(body.attempts)) setAttemptHistory(body.attempts);
       setInterpretation(body.interpretation);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Interpretation failed.");
@@ -129,6 +138,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
       const body = await response.json();
       if (response.status === 409 && body.after) {
         setContext(body.after);
+        if (Array.isArray(body.attempts)) setAttemptHistory(body.attempts);
         setInterpretation(null);
         setNotice("The Opportunity changed. Nothing was written. Review the fresh context and interpret again.");
         return;
@@ -136,6 +146,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
       if (body.effect === "blocked" || body.effect === "unavailable") {
         setNotice(body.message);
         if (body.after) setContext(body.after);
+        if (Array.isArray(body.attempts)) setAttemptHistory(body.attempts);
         return;
       }
       if (!response.ok || !body.effect) throw new Error(body.error?.message || body.message || "Confirmation failed.");
@@ -149,13 +160,14 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
   }
 
   if (recorded) {
+    const changed = recorded.effect !== "unchanged";
     return (
       <div data-reported-event="recorded">
-        <Heading eyebrow="Confirmed canonical fact" title="Added to history" body={recorded.message} />
+        <Heading eyebrow={changed ? "Confirmed canonical fact" : "Confirmation already known"} title={changed ? "Added to history" : "Already in history"} body={recorded.message} />
         <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] p-5">
           <CheckCircle2 className="size-6 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
-          <p className="mt-3 font-semibold">The explicit confirmation crossed the write boundary.</p>
-          <p className="mt-2 text-sm text-muted">The page can now reload the canonical Stage and append-only history.</p>
+          <p className="mt-3 font-semibold">{changed ? "The explicit confirmation crossed the write boundary." : "No duplicate row or Stage change was written."}</p>
+          <p className="mt-2 text-sm text-muted">The page can reload the canonical Stage and append-only history.</p>
         </div>
         <div className="mt-7 flex justify-end border-t border-border pt-5">
           <Button type="button" className="min-h-11" onClick={() => onRecorded?.()}>Reload canonical history</Button>
@@ -200,7 +212,7 @@ export function ReportedEventCheckpoint({ opportunity: initial, contract, attemp
             </div>
           )}
           {proposal && (
-            <ProposalEditor proposal={proposal} opportunity={context} contract={contract} attempts={attempts} onChange={updateProposal} />
+            <ProposalEditor proposal={proposal} opportunity={context} contract={contract} attempts={attemptHistory} onChange={updateProposal} />
           )}
         </aside>
       </div>

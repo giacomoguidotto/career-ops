@@ -188,7 +188,15 @@ function primaryAction(stage, enabled = true, disabledReason = null) {
   return { kind: 'terminal', id: null, enabled: false, reason: 'terminal-stage' };
 }
 
-function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifactWarnings }) {
+function reportableSuccessorIds(stage, states) {
+  if (!stage || !['user', 'external'].includes(stage.owner)) return [];
+  return stage.nextStates.filter((id) => {
+    const successor = resolveState(id, states);
+    return successor && !successor.onDemand.includes('review_approach');
+  });
+}
+
+function baseCapabilities({ stage, states, contract, candidacy, mayRecordAttempt, artifactWarnings }) {
   const blockedActions = new Set(artifactWarnings.flatMap((warning) => warning.blocksActions ?? []));
   const generationBlocked = candidacy.state === 'suppressed'
     || candidacy.state === 'research-required'
@@ -203,7 +211,7 @@ function baseCapabilities({ stage, contract, candidacy, mayRecordAttempt, artifa
       && !generationBlocked,
     ),
     recordAttempt: Boolean(contract.capabilities.attemptRecording && mayRecordAttempt),
-    reportSuccessor: Boolean(stage && ['user', 'external'].includes(stage.owner) && stage.nextStates.length > 0),
+    reportSuccessor: reportableSuccessorIds(stage, states).length > 0,
     openArtifacts: true,
   };
 }
@@ -656,6 +664,7 @@ function opportunitySummary({ root, tracker, row, states, contract, attempts, ca
   );
   const capabilities = baseCapabilities({
     stage: stageRecord,
+    states,
     contract,
     candidacy: candidacyState,
     mayRecordAttempt: mayRecordAttempt && !row.unknownTrackerFormat,
@@ -1152,8 +1161,11 @@ export async function recordOpportunityAttempt(options = {}) {
         onMutationStep: options.onMutationStep,
       });
     } catch (error) {
-      const afterFailure = readOpportunity({ root, opportunity: expected.opportunity, now: options.now })?.opportunity ?? before;
-      const appended = afterFailure.attempts.latest && sameConfirmedAttempt(afterFailure.attempts.latest, attempt);
+      const failedDetail = readOpportunity({ root, opportunity: expected.opportunity, now: options.now });
+      const afterFailure = failedDetail?.opportunity ?? before;
+      const appended = Boolean(
+        failedDetail?.attempts.some((candidate) => sameConfirmedAttempt(candidate, attempt)),
+      );
       return commandOutcome({
         code: appended ? 'attempt-stage-repair-required' : 'attempt-write-failed',
         effect: 'unavailable',
@@ -1209,13 +1221,7 @@ export async function reportOpportunitySuccessor(options = {}) {
     const states = loadStates({ rootDir: root, force: true });
     const current = resolveState(before.rawStage, states);
     const successor = resolveState(options.successor, states);
-    if (
-      !before.capabilities.reportSuccessor
-      || !current
-      || !successor
-      || !current.nextStates.includes(successor.id)
-      || successor.onDemand.includes('review_approach')
-    ) {
+    if (!before.capabilities.reportSuccessor || !successor || !reportableSuccessorIds(current, states).includes(successor.id)) {
       return commandOutcome({
         code: 'successor-report-blocked', effect: 'blocked', retryable: false,
         message: 'That reported event is not an allowed successor of the current Stage.',
@@ -1704,11 +1710,8 @@ function parseCliArgs(argv) {
       const value = rest[++index];
       options.primary = value === 'none' ? null : value;
     } else if (argument === '--candidacy-override') options.candidacyOverride = true;
-    else if (argument === '--attempt-json') {
-      if (index + 1 >= rest.length || rest[index + 1].startsWith('--')) throw new Error('--attempt-json requires base64url JSON');
-      try { options.attempt = JSON.parse(Buffer.from(rest[++index], 'base64url').toString('utf8')); }
-      catch { throw new Error('--attempt-json must contain valid base64url JSON'); }
-    } else if (argument === '--successor') options.successor = rest[++index];
+    else if (argument === '--attempt-stdin') options.attempt = 'stdin';
+    else if (argument === '--successor') options.successor = rest[++index];
     else if (argument === '--now') options.now = rest[++index];
     else throw new Error(`unknown argument: ${argument}`);
   }
@@ -1722,7 +1725,7 @@ function parseCliArgs(argv) {
   if (action === 'primary' && options.primary === undefined) {
     throw new Error('primary requires --primary NUM|none');
   }
-  if (action === 'attempt' && options.attempt === undefined) throw new Error('attempt requires --attempt-json');
+  if (action === 'attempt' && options.attempt !== 'stdin') throw new Error('attempt requires --attempt-stdin');
   if (action === 'successor' && !options.successor) throw new Error('successor requires --successor ID');
   return options;
 }
@@ -1749,7 +1752,11 @@ async function runCli() {
       }
     } else if (options.action === 'request') result = await requestOpportunityWork(options);
     else if (options.action === 'primary') result = await setOpportunityPrimary(options);
-    else if (options.action === 'attempt') result = await recordOpportunityAttempt(options);
+    else if (options.action === 'attempt') {
+      try { options.attempt = JSON.parse(readFileSync(0, 'utf8')); }
+      catch { throw new Error('attempt stdin must contain valid JSON'); }
+      result = await recordOpportunityAttempt(options);
+    }
     else if (options.action === 'successor') result = await reportOpportunitySuccessor(options);
     else result = await reconcileOpportunityWork(options);
     process.stdout.write(`${JSON.stringify(result)}\n`);

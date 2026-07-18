@@ -70,6 +70,7 @@ function conflict(fresh: Awaited<ReturnType<typeof readOpportunityLifecycle>>) {
     artifacts: fresh.opportunity.artifacts,
     workOrder: null,
     consequences: null,
+    attempts: fresh.attempts,
   }, { status: 409 });
 }
 
@@ -98,10 +99,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     if (input.action === "interpret") {
-      const expectedKeys = ["action", "cliId", "expectedRevision", "expectedStage", "report", "route"].sort().join("\0");
+      const expectedKeys = ["action", "cliId", "expectedRevision", "expectedStage", "localDate", "report", "route"].sort().join("\0");
       if (
         Object.keys(input).sort().join("\0") !== expectedKeys
         || typeof input.cliId !== "string"
+        || typeof input.localDate !== "string"
+        || !/^\d{4}-\d{2}-\d{2}$/.test(input.localDate)
+        || !validOccurredAt(input.localDate)
         || typeof input.report !== "string"
         || !validRoute(input.route)
       ) {
@@ -111,10 +115,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         root,
         cliId: input.cliId,
         report: input.report,
+        today: input.localDate,
         route: input.route,
         detail: fresh,
       });
-      return Response.json({ interpretation, opportunity: fresh.opportunity });
+      return Response.json({ interpretation, opportunity: fresh.opportunity, attempts: fresh.attempts });
     }
 
     if (input.action === "confirm") {
@@ -143,7 +148,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (!outcome) {
         return Response.json({ error: { code: "invalid-request", message: "The typed proposal is invalid." } }, { status: 400 });
       }
-      return Response.json(outcome, { status: statusFor(outcome.effect) });
+      const refreshed = await readOpportunityLifecycle(root, opportunity);
+      return Response.json({ ...outcome, attempts: refreshed.attempts }, { status: statusFor(outcome.effect) });
     }
     return Response.json({ error: { code: "invalid-request", message: "The reported-event action is invalid." } }, { status: 400 });
   } catch (error) {

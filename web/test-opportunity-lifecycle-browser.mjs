@@ -315,6 +315,10 @@ const codex = join(binDir, 'codex');
 writeFileSync(codex, [
   '#!/bin/sh',
   'case "$*" in',
+  '  *"--sandbox read-only"*) prompt=$(cat) ;;',
+  '  *) prompt="$*" ;;',
+  'esac',
+  'case "$prompt" in',
   '  *"They replied."*)',
   `    printf '%s\\n' '${JSON.stringify({ kind: 'clarification', question: 'What exactly did the recruiter say, and when did the reply arrive?' })}'`,
   '    ;;',

@@ -176,11 +176,12 @@ function validateInterpretation(
 
 function promptFor(
   report: string,
+  today: string,
   route: ReportRouteContext | null,
   detail: OpportunityDetailResult,
 ): string {
   const context = {
-    today: new Date().toISOString().slice(0, 10),
+    today,
     opportunity: {
       id: detail.opportunity.opportunity,
       company: detail.opportunity.company,
@@ -205,40 +206,47 @@ function promptFor(
   return `CAREER_OPS_REPORTED_EVENT_INTERPRETATION\nYou are a read-only interpretation worker. You cannot write files, change Stage, or record an event.\n\nInterpret the user's natural-language report using only the supplied live Opportunity, selected route, Stage, revision, and Attempt history. Never guess a missing action, channel, recipient, time, result, follow-up relation, or hiring event. If one required fact is missing or ambiguous, ask one focused clarification.\n\nReturn exactly one JSON object and no markdown. Either:\n{"kind":"clarification","question":"one focused question"}\nor\n{"kind":"proposal","proposal":{"kind":"attempt","occurredAt":"ISO 8601 date or timestamp preserving stated precision","type":"one canonical type","channel":"...","recipient":"...","result":"...","followUpTo":null,"notes":""}}\nor\n{"kind":"proposal","proposal":{"kind":"successor","successor":"one live reportable successor id","occurredAt":"ISO 8601 date or timestamp preserving stated precision","result":"..."}}\n\nCanonical Attempt types: ${[...ATTEMPT_TYPES].join(", ")}. A follow_up must reference an existing same-Opportunity Attempt. A non-follow-up must use null. An action that reaches Approached must be an Attempt. A successor must be listed in reportableSuccessors. A typed proposal is only a not-recorded preview.\n\nLIVE CONTEXT\n${JSON.stringify(context)}`;
 }
 
-function readOnlyArgs(cliId: string, prompt: string, argsFor: (prompt: string) => string[]): string[] {
-  if (cliId === "codex") return ["exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", prompt];
+function readOnlyArgs(cliId: string): string[] | null {
+  if (cliId === "codex") return ["exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-"];
   if (cliId === "claude") {
     return [
-      "-p", prompt,
+      "-p",
       "--permission-mode", "plan",
       "--strict-mcp-config",
       "--allowedTools", "Read",
       "--disallowedTools", "Bash,Write,Edit,NotebookEdit,Task,WebFetch,WebSearch",
     ];
   }
-  return argsFor(prompt);
+  return null;
 }
 
-function runInterpreter(binPath: string, args: string[], cwd: string): Promise<string> {
+function runInterpreter(binPath: string, args: string[], cwd: string, prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binPath, args, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(binPath, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
+      timedOut = true;
       child.kill("SIGTERM");
-      reject(new ReportedEventError("interpreter-timeout", "The interpretation worker timed out.", 504));
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 2_000);
     }, 60_000);
     child.stdout.on("data", (chunk) => { if (stdout.length < 128_000) stdout += String(chunk); });
     child.stderr.on("data", (chunk) => { if (stderr.length < 16_000) stderr += String(chunk); });
     child.on("error", (error) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       reject(new ReportedEventError("interpreter-unavailable", error.message, 503));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve(stdout);
+      if (killTimer) clearTimeout(killTimer);
+      if (timedOut) reject(new ReportedEventError("interpreter-timeout", "The interpretation worker timed out.", 504));
+      else if (code === 0) resolve(stdout);
       else reject(new ReportedEventError("interpreter-failed", "The interpretation worker did not return a usable result.", 503));
     });
+    child.stdin.end(prompt);
   });
 }
 
@@ -246,6 +254,7 @@ export async function interpretReportedEvent(options: {
   root: string;
   cliId: string;
   report: string;
+  today: string;
   route: ReportRouteContext | null;
   detail: OpportunityDetailResult;
 }): Promise<ReportedEventInterpretation> {
@@ -257,13 +266,21 @@ export async function interpretReportedEvent(options: {
   if (!resolved) {
     throw new ReportedEventError("interpreter-unavailable", `CLI '${options.cliId}' is not available.`, 404);
   }
-  const prompt = promptFor(report, options.route, options.detail);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(options.today)) {
+    throw new ReportedEventError("invalid-local-date", "A client-local calendar date is required.", 400);
+  }
+  const prompt = promptFor(report, options.today, options.route, options.detail);
+  const args = readOnlyArgs(options.cliId);
+  if (!args) {
+    throw new ReportedEventError("interpreter-read-only-unsupported", "The selected CLI does not provide a guarded read-only interpretation mode.", 422);
+  }
   const isolatedRoot = mkdtempSync(join(tmpdir(), "career-ops-reported-event-"));
   try {
     const output = await runInterpreter(
       resolved.binPath,
-      readOnlyArgs(options.cliId, prompt, resolved.spec.args),
+      args,
       isolatedRoot,
+      prompt,
     );
     return validateInterpretation(extractJson(output), options.detail);
   } finally {
