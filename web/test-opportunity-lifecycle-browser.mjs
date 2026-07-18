@@ -248,7 +248,7 @@ try {
   const firstRow = page.locator('[data-opportunity-id="1"]:visible');
   const secondRow = page.locator('[data-opportunity-id="2"]:visible');
   await secondRow.hover();
-  await page.getByTestId('pipeline-preview').getByText('Fictional Company 2', { exact: true }).waitFor();
+  await page.getByTestId('pipeline-preview').getByText('Northstar Fictional', { exact: true }).waitFor();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
   await secondRow.focus();
   assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
@@ -270,7 +270,7 @@ try {
   await page.keyboard.press('/');
   const pipelineSearch = page.getByRole('textbox', { name: 'Search Pipeline' });
   assert.equal(await pipelineSearch.evaluate((element) => document.activeElement === element), true);
-  await pipelineSearch.fill('Fictional Company 2');
+  await pipelineSearch.fill('Northstar Fictional');
   await page.locator('[data-opportunity-id="2"]:visible').waitFor();
   assert.equal(await page.locator('[data-opportunity-id]:visible').count(), 1);
   await page.getByRole('button', { name: /Commands/ }).click();
@@ -399,6 +399,7 @@ try {
   await page.goto(`${baseUrl}/pipeline/1`);
   await page.reload();
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/pipeline/2`);
   await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
   const lifecycle = page.getByLabel(/Lifecycle: previous Evaluated, current Approach Ready/);
