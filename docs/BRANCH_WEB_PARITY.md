@@ -18,8 +18,8 @@ The final acceptance commands are:
 
 ```bash
 node test-all.mjs
-cd web && npm test && npm run typecheck && npm run build && npm run test:browser
-cd dashboard && go test ./...
+(cd web && npm test && npm run typecheck && npm run build && npm run test:browser)
+(cd dashboard && go test ./...)
 ```
 
 Rendered files are test artifacts rather than repository assets. They contain
