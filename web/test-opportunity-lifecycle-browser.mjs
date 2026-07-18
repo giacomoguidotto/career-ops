@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -108,11 +108,20 @@ const fixture = createFictionalOpportunityWorkspace({
       '',
     ].join('\n'),
   },
+  extraOpportunities: [{
+    num: 900,
+    company: 'Fictional International Research Cooperative With A Deliberately Long Name',
+    role: 'Principal Applied Artificial Intelligence Systems Researcher For Multilingual Public Interest Infrastructure',
+    stage: 'Evaluated',
+    score: '4.9/5',
+    notes: 'Long localized content must wrap without hiding any facts.',
+  }],
   files: {
     'cv.md': '# Fictional CV\n',
     'output/002-northstar-fictional.pdf': 'fictional pdf bytes',
     'modes/_profile.md': '# Fictional profile\n',
     'portals.yml': 'title_filter:\n  positive:\n    - researcher\n',
+    'data/pipeline.md': '- [ ] https://fictional.example/jobs/1 | Inbox Research | Research Engineer | Remote\n',
     'doctor.mjs': [
       "import { writeFileSync } from 'node:fs';",
       "import { join } from 'node:path';",
@@ -229,11 +238,178 @@ try {
   const unsafeId = await page.goto(`${baseUrl}/api/opportunities/9007199254740993`);
   assert.equal(unsafeId?.status(), 400);
 
-  await page.goto(`${baseUrl}/pipeline?tab=ALL`);
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto(`${baseUrl}/pipeline?selected=1`);
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
   await page.reload();
   await page.getByRole('heading', { name: 'Pipeline' }).waitFor();
-  const loadLogo = page.getByRole('button', { name: 'Load Fictional Company 1 logo' });
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+
+  const firstRow = page.locator('[data-opportunity-id="1"]:visible');
+  const secondRow = page.locator('[data-opportunity-id="2"]:visible');
+  assert.equal(await firstRow.evaluate((element) => element.tagName), 'A');
+  assert.equal(await firstRow.getAttribute('href'), '/pipeline/1');
+  assert.equal(await firstRow.locator('button').count(), 0);
+  await secondRow.hover();
+  await page.getByTestId('pipeline-preview').getByText('Northstar Fictional', { exact: true }).waitFor();
+  await page.getByTestId('pipeline-preview').getByRole('button', { name: 'Load Northstar Fictional logo' }).waitFor();
+  const previewLink = page.getByTestId('pipeline-preview').getByRole('link', { name: 'Open Opportunity' });
+  await previewLink.hover();
+  assert.equal(await previewLink.getAttribute('href'), '/pipeline/2');
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+  await secondRow.focus();
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+
+  await firstRow.focus();
+  await page.keyboard.press('Control+j');
+  await page.keyboard.press('Alt+k');
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+  await page.keyboard.press('j');
+  await page.waitForURL((url) => url.searchParams.get('selected') === '2');
+  assert.equal(await secondRow.getAttribute('data-selected'), 'true');
+  assert.equal(await secondRow.evaluate((element) => document.activeElement === element), true);
+  await page.keyboard.press('k');
+  await page.waitForURL((url) => url.searchParams.get('selected') === '1');
+  await firstRow.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForURL((url) => url.pathname === '/pipeline/1');
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname === '/pipeline' && url.searchParams.get('selected') === '1');
+
+  await firstRow.focus();
+  await page.keyboard.press('/');
+  const pipelineSearch = page.getByRole('textbox', { name: 'Search Pipeline' });
+  assert.equal(await pipelineSearch.evaluate((element) => document.activeElement === element), true);
+  await pipelineSearch.fill('Northstar Fictional');
+  await page.locator('[data-opportunity-id="2"]:visible').waitFor();
+  assert.equal(await page.locator('[data-opportunity-id]:visible').count(), 1);
+  await page.getByRole('button', { name: /Commands/ }).click();
+  const filteredCommands = page.getByRole('dialog', { name: 'Pipeline commands' });
+  await filteredCommands.waitFor();
+  assert.equal(await filteredCommands.getByText(/Selected: #002/).isVisible(), true);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'pipeline-commands-trigger');
+  await pipelineSearch.focus();
+  await page.keyboard.press('j');
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+  await pipelineSearch.fill('');
+
+  await firstRow.focus();
+  await page.keyboard.press('?');
+  await page.getByRole('dialog', { name: 'Keyboard navigation' }).waitFor();
+  await page.keyboard.press('j');
+  assert.equal(new URL(page.url()).searchParams.get('selected'), '1');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-opportunity-id') === '1');
+  assert.equal(await firstRow.evaluate((element) => document.activeElement === element), true);
+
+  const commandButton = page.getByRole('button', { name: /Commands/ });
+  await commandButton.focus();
+  await page.keyboard.press('Enter');
+  const commandDialog = page.getByRole('dialog', { name: 'Pipeline commands' });
+  await commandDialog.waitFor();
+  const commandSearch = commandDialog.getByRole('textbox', { name: 'Search commands' });
+  assert.equal(await commandSearch.evaluate((element) => document.activeElement === element), true);
+  await commandSearch.fill('prepare');
+  assert.equal(await commandDialog.getByRole('button', { name: /Prepare suggested artifact/ }).isVisible(), true);
+  assert.equal(new URL(page.url()).pathname, '/pipeline');
+  await commandDialog.getByRole('button', { name: /Prepare suggested artifact/ }).click();
+  await page.getByRole('dialog', { name: 'Review preparation' }).waitFor();
+  assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
+  assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'pipeline-commands-trigger');
+  assert.equal(await commandButton.evaluate((element) => document.activeElement === element), true);
+
+  await page.getByRole('button', { name: /in inbox/ }).click();
+  await page.getByRole('heading', { name: 'Inbox' }).waitFor();
+  assert.equal(await page.getByText('Upstream triage, outside lifecycle Stages').isVisible(), true);
+  const inboxUrl = page.url();
+  await page.keyboard.press('j');
+  await page.keyboard.press('k');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+k');
+  assert.equal(await page.getByRole('dialog', { name: 'Pipeline commands' }).count(), 0);
+  assert.equal(page.url(), inboxUrl);
+  await page.getByRole('button', { name: /Return to Stage ledger/ }).click();
+
+  const stage = fixture.stages[1];
+  await page.getByRole('button', { name: new RegExp(`^${stage.label}`) }).click();
+  await page.waitForURL((url) => url.searchParams.get('stage') === stage.id && url.searchParams.has('selected'));
+  const stageUrl = page.url();
+  await page.reload();
+  assert.equal(page.url(), stageUrl);
+  assert.equal(await page.getByRole('button', { name: new RegExp(`^${stage.label}`) }).getAttribute('aria-pressed'), 'true');
+
+  const offerOpportunityIds = fixture.stages
+    .map((candidate, index) => ({ candidate, opportunity: index + 1 }))
+    .filter(({ candidate }) => candidate.dashboard_group === 'offer')
+    .map(({ opportunity }) => opportunity);
+  assert.equal(offerOpportunityIds.length, 2);
+  await page.goto(`${baseUrl}/pipeline?tab=OFFER`);
+  await page.waitForURL((url) => url.searchParams.get('tab') === 'OFFER' && url.searchParams.has('selected'));
+  assert.equal(new URL(page.url()).searchParams.has('stage'), false);
+  for (const opportunity of offerOpportunityIds) {
+    await page.locator(`[data-opportunity-id="${opportunity}"]:visible`).waitFor();
+  }
+  for (const offerStage of fixture.stages.filter((candidate) => candidate.dashboard_group === 'offer')) {
+    assert.equal(await page.getByRole('button', { name: new RegExp(`^${offerStage.label}(?: \\d+)?$`) }).getAttribute('aria-pressed'), 'true');
+  }
+  await page.getByRole('button', { name: /in inbox/ }).click();
+  await page.getByRole('heading', { name: 'Inbox' }).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'OFFER');
+  await page.getByRole('button', { name: /Return to Stage ledger/ }).click();
+  await page.waitForURL((url) => url.searchParams.get('tab') === 'OFFER' && !url.searchParams.has('view'));
+  for (const opportunity of offerOpportunityIds) {
+    await page.locator(`[data-opportunity-id="${opportunity}"]:visible`).waitFor();
+  }
+
+  await page.getByRole('button', { name: /^All / }).click();
+  await page.waitForURL((url) => !url.searchParams.has('stage') && !url.searchParams.has('tab') && url.searchParams.has('selected'));
+  const sortControl = page.getByRole('combobox', { name: 'Sort Opportunities' });
+  assert.deepEqual(await sortControl.locator('option').allTextContents(), ['Tracker order', 'Company', 'Role', 'Fit', 'Stage', 'Date']);
+  await sortControl.selectOption('score');
+  await page.waitForURL((url) => url.searchParams.get('sort') === 'score' && url.searchParams.get('dir') === '-1');
+  await page.waitForFunction(() => document.querySelector('tbody [data-opportunity-id]')?.getAttribute('data-opportunity-id') === '900');
+  assert.equal(await page.locator('tbody [data-opportunity-id]').first().getAttribute('data-opportunity-id'), '900');
+  await page.getByRole('button', { name: 'Sort descending' }).click();
+  await page.waitForURL((url) => url.searchParams.get('dir') === '1');
+  await page.goto(`${baseUrl}/pipeline?sort=score&dir=-1`);
+  await page.locator('[data-opportunity-id="900"]:visible').waitFor();
+  await page.waitForURL((url) => url.searchParams.get('selected') === '900');
+  assert.equal(await page.locator('tbody [data-opportunity-id]').first().getAttribute('data-opportunity-id'), '900');
+  assert.equal(await page.locator('[data-opportunity-id="900"]:visible').getAttribute('data-selected'), 'true');
+  await page.setViewportSize({ width: 320, height: 844 });
+  await pipelineSearch.fill('Fictional International Research Cooperative');
+  const longCard = page.locator('[data-opportunity-id="900"]:visible');
+  await longCard.waitFor();
+  assert.equal(await longCard.getByText(/Principal Applied Artificial Intelligence Systems Researcher/).isVisible(), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  assert.notEqual(await longCard.evaluate((element) => getComputedStyle(element).whiteSpace), 'nowrap');
+  await pipelineSearch.fill('');
+
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  const themeButton = page.getByRole('banner').getByRole('button', { name: /Switch to light mode|Switch to dark mode/ });
+  const initialTheme = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+  await themeButton.click();
+  assert.notEqual(await page.evaluate(() => document.documentElement.classList.contains('dark')), initialTheme);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  await themeButton.click();
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), initialTheme);
+  assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
+  assert.equal(await page.locator('.pipeline-ledger button').first().evaluate((element) => parseFloat(getComputedStyle(element).transitionDuration) <= 0.00001), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phoneCard = page.locator('[data-opportunity-id="1"]:visible');
+  assert.equal(await phoneCard.getAttribute('href'), '/pipeline/1');
+  await phoneCard.click();
+  await page.waitForURL((url) => url.pathname === '/pipeline/1');
+  await page.goBack();
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto(`${baseUrl}/pipeline?selected=1`);
+  const loadLogo = page.getByRole('button', { name: 'Load Fictional Company 1 logo' }).first();
   await loadLogo.waitFor();
   assert.equal(requests.some((request) => request.url.includes('/api/logo?') && request.url.includes('persist=1')), false);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), before);
@@ -261,6 +437,7 @@ try {
   await page.goto(`${baseUrl}/pipeline/1`);
   await page.reload();
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/pipeline/2`);
   await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
   const lifecycle = page.getByLabel(/Lifecycle: previous Evaluated, current Approach Ready/);
@@ -309,6 +486,18 @@ try {
     await reviewContext.close();
   }
 
+  const lifecycleScript = join(fixture.root, 'opportunity-lifecycle.mjs');
+  const unavailableLifecycleScript = `${lifecycleScript}.unavailable`;
+  renameSync(lifecycleScript, unavailableLifecycleScript);
+  try {
+    await page.goto(`${baseUrl}/pipeline?tab=INBOX`);
+    await page.getByRole('heading', { name: 'Inbox' }).waitFor();
+    assert.equal(await page.getByText('Lifecycle data is unavailable').isVisible(), true);
+    assert.equal(await page.getByText('Inbox Research').isVisible(), true);
+  } finally {
+    renameSync(unavailableLifecycleScript, lifecycleScript);
+  }
+
   await page.goto(`${baseUrl}/explore`);
   await page.getByRole('heading', { name: 'Explore' }).waitFor();
   await page.goto(`${baseUrl}/portals`);
@@ -343,7 +532,7 @@ try {
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
   await context.tracing.stop();
   traceStopped = true;
-  console.log('PASS passive lifecycle browser journey');
+  console.log('PASS passive lifecycle and Pipeline browser journeys');
 } catch (error) {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
   if (page) await page.screenshot({ path: join(ARTIFACT_DIR, 'failure.png'), fullPage: true });

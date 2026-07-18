@@ -15,10 +15,12 @@ export function CompanyLogo({
   name,
   size = 20,
   className,
+  retryable = true,
 }: {
   name: string;
   size?: number;
   className?: string;
+  retryable?: boolean;
 }) {
   const [enabled, setEnabled] = useState(false); // monogram-only until config known
   const [failed, setFailed] = useState(false);
@@ -77,7 +79,7 @@ export function CompanyLogo({
           style={{ opacity: loaded ? 1 : 0, padding: Math.max(1, Math.round(size * 0.1)) }}
         />
       )}
-      {enabled && domain && failed && (
+      {retryable && enabled && domain && failed && (
         <button
           type="button"
           aria-label={`Load ${name} logo`}
