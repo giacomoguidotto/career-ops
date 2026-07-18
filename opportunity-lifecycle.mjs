@@ -536,6 +536,8 @@ function candidacyForRow(row, candidacy) {
   }
   if (cluster) {
     const primary = cluster.effectivePrimary ?? cluster.storedPrimary ?? null;
+    const memberStage = resolveState(row.status, candidacy.states);
+    const maySelectPrimary = memberStage?.owner === 'agent' && !RELEASED_STAGE_IDS.has(memberStage.id);
     return {
       state: primary === row.num ? 'primary' : 'member',
       reason: null,
@@ -543,7 +545,7 @@ function candidacyForRow(row, candidacy) {
       primary,
       outreachAnchor: cluster.outreachAnchor ?? null,
       ...details,
-      canSelectPrimary: details.shared && cluster.storedPrimary !== row.num,
+      canSelectPrimary: details.shared && maySelectPrimary && cluster.storedPrimary !== row.num,
       canReleasePrimary: details.shared && cluster.storedPrimary === row.num,
     };
   }

@@ -720,6 +720,43 @@ test('a suppressed persisted Primary can release when an accepted sibling leads'
   }
 });
 
+test('released terminal cluster members cannot become Primary', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Terminal Co', role: 'Active Lead', stage: 'Evaluated' },
+      { num: 2, company: 'Terminal Co', role: 'Closed Sibling', stage: 'Rejected' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| terminal-surface | Terminal Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.stage.id, 'rejected');
+    assert.equal(before.candidacy.state, 'member');
+    assert.equal(before.candidacy.canSelectPrimary, false);
+
+    const blocked = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'primary-selection-blocked');
+    assert.equal(blocked.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
 test('evidence failures and drift block Primary changes before any registry write', async () => {
   const fixture = createFictionalOpportunityWorkspace({
     opportunities: [
