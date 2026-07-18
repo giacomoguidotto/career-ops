@@ -1453,6 +1453,8 @@ Options:
   const targets = [];
   let skippedCount = 0;
   let boardCount = 0;
+  let configuredCompanyCount = 0;
+  let configuredBoardCount = 0;
   const resolveErrors = [];
   const agentHandoff = [];
 
@@ -1471,6 +1473,8 @@ Options:
         continue;
       }
       if (filterCompany && !entry.name.toLowerCase().includes(filterCompany)) continue;
+      if (isBoard) configuredBoardCount++;
+      else configuredCompanyCount++;
 
       const resolved = resolveProvider(entry, providers);
       if (!resolved) {
@@ -1899,15 +1903,16 @@ Options:
         kind: 'configured-priority',
         configuredSources: targets.filter(t => parseScanPriority(t.scan_priority ?? t.scanPriority) !== 0).length,
       },
-      companiesAvailable: summaryCompanies,
+      companiesAvailable: configuredCompanyCount,
       companiesScanned: summaryCompanies,
-      jobBoardsAvailable: summaryBoards,
+      jobBoardsAvailable: configuredBoardCount,
       jobBoardsScanned: summaryBoards,
       runCap: { limit: maxNew, deferred: totalDeferredByRunCap },
       companyCap: { limit: maxPerCompany, deferred: totalDeferredByCompanyCap },
       unreachableTargets: unreachableTargets.length,
       networkErrors: networkTargets.length,
       otherErrors: otherErrors.length,
+      unhandledSources: skippedCount,
       saved: !dryRun && verifiedOffers.length > 0,
       offers: verifiedOffers.map(o => ({
         company: o.company,

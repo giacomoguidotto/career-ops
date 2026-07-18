@@ -51,6 +51,7 @@ type CompanyJson = {
   unreachableTargets?: unknown;
   networkErrors?: unknown;
   otherErrors?: unknown;
+  unhandledSources?: unknown;
   offers?: unknown;
 };
 
@@ -105,10 +106,13 @@ function normalizedOffer(raw: JsonOffer, filters: ExploreFilters): DiscoveredOff
   };
 }
 
-function normalizedOffers(value: unknown, filters: ExploreFilters): DiscoveredOffer[] | null {
+function normalizedOffers(value: unknown, filters: ExploreFilters): { offers: DiscoveredOffer[]; dropped: number } | null {
   if (!Array.isArray(value)) return null;
   const offers = value.map((offer) => normalizedOffer((offer ?? {}) as JsonOffer, filters));
-  return offers.every((offer): offer is DiscoveredOffer => offer !== null) ? offers : null;
+  return {
+    offers: offers.filter((offer): offer is DiscoveredOffer => offer !== null),
+    dropped: offers.filter((offer) => offer === null).length,
+  };
 }
 
 function safeDatasetStatus(value: unknown): Record<string, "ok" | "stale" | "empty"> | null {
@@ -272,8 +276,8 @@ function parseLegacyReverse(stdout: string, filters: ExploreFilters): PathResult
 }
 
 function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult | null {
-  const offers = normalizedOffers(raw.offers, filters);
-  if (!offers) return null;
+  const normalized = normalizedOffers(raw.offers, filters);
+  if (!normalized) return null;
   const searchedCompanies = safeInt(raw.companiesScanned);
   const searchedBoards = safeInt(raw.jobBoardsScanned);
   const availableCompanies = safeInt(raw.companiesAvailable);
@@ -285,6 +289,7 @@ function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult
   const unreachable = safeInt(raw.unreachableTargets);
   const network = safeInt(raw.networkErrors);
   const other = safeInt(raw.otherErrors);
+  const unhandled = safeInt(raw.unhandledSources);
   const configured = safeInt(raw.ordering?.configuredSources);
   const structured = raw.contract?.id === "career-ops.scanner.company-first"
     && raw.contract.version === 1
@@ -293,22 +298,24 @@ function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult
     && availableCompanies !== null && availableBoards !== null
     && runLimit !== undefined && companyLimit !== undefined
     && runDeferred !== null && companyDeferred !== null
-    && unreachable !== null && network !== null && other !== null && configured !== null;
+    && unreachable !== null && network !== null && other !== null && unhandled !== null && configured !== null;
   if (!structured) {
     return raw.contract === undefined
-      ? legacy("company-first", offers, searchedCompanies ?? 0, unreachable ?? 0)
+      ? legacy("company-first", normalized.offers, searchedCompanies ?? 0, unreachable ?? 0)
       : null;
   }
   const failures = unreachable + network + other;
   return {
-    offers,
+    offers: normalized.offers,
     summary: {
       path: "company-first",
       contract: "structured",
-      complete: runDeferred === 0 && companyDeferred === 0 && failures === 0,
+      complete: runDeferred === 0 && companyDeferred === 0 && failures === 0 && unhandled === 0 && normalized.dropped === 0,
       searched: searchedCompanies + searchedBoards,
       available: availableCompanies + availableBoards,
       unreachable: failures,
+      unhandled,
+      malformedRecords: normalized.dropped,
       ordering: "configured-priority",
       configuredPrioritySources: configured,
       runCap: { limit: runLimit, deferred: runDeferred },
@@ -318,8 +325,8 @@ function parseCompanyJson(raw: CompanyJson, filters: ExploreFilters): PathResult
 }
 
 function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult | null {
-  const offers = normalizedOffers(raw.offers, filters);
-  if (!offers) return null;
+  const normalized = normalizedOffers(raw.offers, filters);
+  if (!normalized) return null;
   const searched = safeInt(raw.companiesScanned);
   const available = safeInt(raw.companiesAvailable);
   const unreachable = safeInt(raw.unreachableBoards);
@@ -336,16 +343,16 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
     && datasetStatus !== null && companyLimit !== undefined;
   if (!structured) {
     return raw.contract === undefined
-      ? legacy("reverse-ats", offers, searched ?? 0, unreachable ?? 0)
+      ? legacy("reverse-ats", normalized.offers, searched ?? 0, unreachable ?? 0)
       : null;
   }
   const datasetIssue = Object.values(datasetStatus).some((status) => status !== "ok");
   return {
-    offers,
+    offers: normalized.offers,
     summary: {
       path: "reverse-ats",
       contract: "structured",
-      complete: !capHit && !datasetIssue && unreachable === 0 && dropped === 0,
+      complete: !capHit && !datasetIssue && unreachable === 0 && dropped === 0 && normalized.dropped === 0,
       searched,
       available,
       unreachable,
@@ -353,6 +360,7 @@ function parseReverseJson(raw: ReverseJson, filters: ExploreFilters): PathResult
       capHit,
       datasetStatus,
       droppedRecords: dropped,
+      malformedRecords: normalized.dropped,
       companyCap: { limit: companyLimit, deferred: Math.max(0, available - searched) },
     },
   };

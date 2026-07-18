@@ -61,6 +61,7 @@ function companyResult(overrides = {}) {
     unreachableTargets: 0,
     networkErrors: 0,
     otherErrors: 0,
+    unhandledSources: 0,
     offers: [],
     ...overrides,
   };
@@ -144,6 +145,35 @@ test("clean structured empty results are complete", async () => {
     assert.equal(result.summaries["company-first"].complete, true);
     assert.equal(result.summaries["reverse-ats"].complete, true);
     assert.equal(result.errors.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("unhandled sources and malformed offers degrade only their affected path", async () => {
+  const validCompany = { company: "Valid Company", title: "Platform Engineer", url: "https://jobs.example.test/valid-company", source: "ashby-api" };
+  const validReverse = { company: "Valid Reverse", title: "Data Engineer", url: "https://jobs.example.test/valid-reverse", source: "lever-full" };
+  const root = workspace({
+    "scan.mjs": script({
+      result: companyResult({
+        companiesAvailable: 5,
+        companiesScanned: 4,
+        unhandledSources: 1,
+        offers: [validCompany, { company: "Broken Company", title: "AI Engineer", url: "not-a-url" }],
+      }),
+    }),
+    "scan-ats-full.mjs": script({
+      result: reverseResult({ offers: [validReverse, { company: "Broken Reverse", title: "ML Engineer" }] }),
+    }),
+  });
+  try {
+    const result = await discover(root);
+    assert.deepEqual(result.offers.map((offer) => offer.url), [validCompany.url, validReverse.url]);
+    assert.equal(result.summaries["company-first"].unhandled, 1);
+    assert.equal(result.summaries["company-first"].malformedRecords, 1);
+    assert.equal(result.summaries["company-first"].complete, false);
+    assert.equal(result.summaries["reverse-ats"].malformedRecords, 1);
+    assert.equal(result.summaries["reverse-ats"].complete, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

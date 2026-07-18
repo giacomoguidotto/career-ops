@@ -92,6 +92,8 @@ export type ScannerPathSummary = {
   capHit?: boolean;
   datasetStatus?: Record<string, "ok" | "stale" | "empty">;
   droppedRecords?: number;
+  malformedRecords?: number;
+  unhandled?: number;
   diagnostic?: string;
 };
 

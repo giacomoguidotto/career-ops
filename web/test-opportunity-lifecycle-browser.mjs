@@ -128,7 +128,7 @@ const fixture = createFictionalOpportunityWorkspace({
       "  ordering: { kind: 'configured-priority', configuredSources: 1 },",
       "  companiesAvailable: 4, companiesScanned: 4, jobBoardsAvailable: 0, jobBoardsScanned: 0,",
       "  runCap: { limit: 30, deferred: 2 }, companyCap: { limit: 3, deferred: 1 },",
-      "  unreachableTargets: 0, networkErrors: 0, otherErrors: 0,",
+      "  unreachableTargets: 0, networkErrors: 0, otherErrors: 0, unhandledSources: 0,",
       "  offers: [{ company: 'Priority Fictional', title: 'Research Engineer', url: 'https://jobs.example.test/company', location: 'Remote', postedAt: '2026-07-18', source: 'ashby-api' }]",
       "}) + '\\n');",
       '',

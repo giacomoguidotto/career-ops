@@ -42,7 +42,7 @@ try {
   }
 
   const portals = join(temp, 'portals.yml');
-  writeFileSync(portals, 'tracked_companies: []\njob_boards: []\n');
+  writeFileSync(portals, 'tracked_companies:\n  - name: Manual Source\n    scan_method: websearch\njob_boards: []\ntitle_filter:\n  positive: [engineer]\n');
   const structured = spawnSync(NODE, [CLI, '--dry-run', '--max-new=30', '--max-per-company=3', '--json'], {
     cwd: temp,
     env: { ...process.env, CAREER_OPS_PORTALS: portals },
@@ -55,6 +55,9 @@ try {
       && result?.ordering?.kind === 'configured-priority'
       && result?.runCap?.limit === 30
       && result?.companyCap?.limit === 3
+      && result?.companiesAvailable === 1
+      && result?.companiesScanned === 0
+      && result?.unhandledSources === 1
       && Array.isArray(result?.offers)
       && !existsSync(join(temp, 'data', 'scan-history.tsv'))
       && !existsSync(join(temp, 'data', 'pipeline.md'))) {

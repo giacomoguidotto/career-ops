@@ -321,10 +321,10 @@ function completenessLine(summary: ScannerPathSummary): string {
     const priority = `${summary.configuredPrioritySources ?? 0} configured priority source${summary.configuredPrioritySources === 1 ? "" : "s"}`;
     const run = summary.runCap ? `run cap ${summary.runCap.limit ?? "off"}, ${summary.runCap.deferred} deferred` : "run cap unavailable";
     const company = summary.companyCap ? `company cap ${summary.companyCap.limit ?? "off"}, ${summary.companyCap.deferred} deferred` : "company cap unavailable";
-    return `${label}: configured-priority order (${priority}); ${scope}; ${run}; ${company}${summary.unreachable ? `; ${summary.unreachable} unreachable or failed` : ""}.`;
+    return `${label}: configured-priority order (${priority}); ${scope}; ${run}; ${company}${summary.unhandled ? `; ${summary.unhandled} unhandled configured sources` : ""}${summary.unreachable ? `; ${summary.unreachable} unreachable or failed` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}.`;
   }
   const degraded = summary.datasetStatus ? Object.entries(summary.datasetStatus).filter(([, status]) => status !== "ok").map(([source, status]) => `${source} ${status}`).join(", ") : "";
-  return `${label}: ${summary.sampling ?? "unknown"} sampling; ${scope}${summary.capHit ? "; capped slice" : "; cap not reached"}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}${degraded ? `; degraded datasets: ${degraded}` : ""}.`;
+  return `${label}: ${summary.sampling ?? "unknown"} sampling; ${scope}${summary.capHit ? "; capped slice" : "; cap not reached"}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}${summary.malformedRecords ? `; ${summary.malformedRecords} malformed records dropped` : ""}${degraded ? `; degraded datasets: ${degraded}` : ""}.`;
 }
 
 function FailedCard({ msg, onRetry }: { msg: string; onRetry: () => void }) {
