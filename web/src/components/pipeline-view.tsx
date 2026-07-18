@@ -333,7 +333,7 @@ export function PipelineView({
               </div>
               <button
                 type="button"
-                onClick={() => setParams({ view: null, tab: null })}
+                onClick={() => setParams({ view: null, tab: activeDashboardGroup ? legacyTab : null })}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-surface/70 px-4 text-sm font-medium transition hover:border-brand/35 hover:text-brand-text motion-reduce:transition-none"
               >
                 Return to Stage ledger <ArrowRight className="size-4" />

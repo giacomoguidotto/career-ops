@@ -333,6 +333,14 @@ try {
   for (const offerStage of fixture.stages.filter((candidate) => candidate.dashboard_group === 'offer')) {
     assert.equal(await page.getByRole('button', { name: new RegExp(`^${offerStage.label}(?: \\d+)?$`) }).getAttribute('aria-pressed'), 'true');
   }
+  await page.getByRole('button', { name: /in inbox/ }).click();
+  await page.getByRole('heading', { name: 'Inbox' }).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'OFFER');
+  await page.getByRole('button', { name: /Return to Stage ledger/ }).click();
+  await page.waitForURL((url) => url.searchParams.get('tab') === 'OFFER' && !url.searchParams.has('view'));
+  for (const opportunity of offerOpportunityIds) {
+    await page.locator(`[data-opportunity-id="${opportunity}"]:visible`).waitFor();
+  }
 
   await page.getByRole('button', { name: /^All / }).click();
   await page.waitForURL((url) => !url.searchParams.has('stage'));
