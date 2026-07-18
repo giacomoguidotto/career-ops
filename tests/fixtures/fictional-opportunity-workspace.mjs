@@ -207,6 +207,9 @@ export function createFictionalOpportunityWorkspace(options = {}) {
       stage: 'FUTURE_STAGE',
     });
   }
+  if (options.additionalOpportunities) {
+    opportunities.push(...options.additionalOpportunities);
+  }
 
   const tracker = trackerHeader(Boolean(options.legacyTracker), options.trackerHeaders);
   tracker.push(...opportunities.map((opportunity) => trackerRow(opportunity, options.trackerFields)));

@@ -17,11 +17,13 @@ import {
   readOpportunity,
   reconcileOpportunityWork,
   requestOpportunityWork,
+  setOpportunityPrimary,
 } from '../opportunity-lifecycle.mjs';
 import { loadStates, trackerLockDirFor } from '../tracker-utils.mjs';
 import { detectColumns, inspectColumns } from '../tracker-parse.mjs';
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const TODAY = new Date().toISOString().slice(0, 10);
 
 test('contract and list expose every canonical Stage and Owner without writes', () => {
   const fixture = createFictionalOpportunityWorkspace({ missingOptionalFiles: true });
@@ -190,6 +192,12 @@ test('passive summaries compose Attempt, cadence, artifact, and candidacy author
     );
     assert.equal(applied.candidacy.state, 'primary');
     assert.equal(applied.candidacy.clusterId, 'C-001');
+    assert.equal(applied.candidacy.shared, true);
+    assert.equal(applied.candidacy.surface, 'Shared research team');
+    assert.equal(applied.candidacy.evidence, 'tracker note');
+    assert.equal(applied.candidacy.recommendedLead, 1);
+    assert.equal(applied.candidacy.persistedPrimary, 1);
+    assert.deepEqual(applied.candidacy.members.map((member) => member.opportunity), [1, 2]);
     assert.equal(applied.capabilities.recordAttempt, true);
     assert.equal(sibling.candidacy.state, 'suppressed');
     assert.equal(sibling.candidacy.primary, 1);
@@ -584,6 +592,154 @@ test('explicit work requests cover every Agent-owned Stage without changing life
     } finally {
       removeFictionalOpportunityWorkspace(fixture.root);
     }
+  }
+});
+
+test('durable Primary selection and release preserve every Stage and the Outreach anchor', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Shared Co', role: 'Primary Researcher', stage: 'Evaluated', notes: 'APPLY: primary' },
+      { num: 2, company: 'Shared Co', role: 'Alternate Researcher', stage: 'Evaluated', notes: 'APPLY: alternate' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| shared-research | Shared Co | One recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const trackerBefore = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'suppressed');
+    assert.equal(before.candidacy.canSelectPrimary, true);
+    assert.equal(before.candidacy.persistedPrimary, 1);
+    assert.equal(before.candidacy.recommendedLead, 2);
+
+    const selected = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(selected.code, 'primary-selected');
+    assert.equal(selected.effect, 'changed');
+    assert.equal(selected.after.candidacy.persistedPrimary, 2);
+    assert.equal(selected.after.candidacy.outreachAnchor, 1);
+    assert.equal(selected.consequences.stagesUnchanged, true);
+    assert.deepEqual(
+      selected.before.candidacy.members.map((member) => [member.opportunity, member.stage]),
+      selected.after.candidacy.members.map((member) => [member.opportunity, member.stage]),
+    );
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+
+    const released = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: null,
+      expectedStage: selected.after.stage.id,
+      expectedRevision: selected.after.revision,
+    });
+    assert.equal(released.code, 'primary-released');
+    assert.equal(released.after.candidacy.persistedPrimary, null);
+    assert.equal(released.after.candidacy.outreachAnchor, 1);
+    assert.equal(readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8'), trackerBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('evidence failures and drift block Primary changes before any registry write', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    opportunities: [
+      { num: 1, company: 'Drift Co', role: 'Researcher', stage: 'Evaluated' },
+      { num: 2, company: 'Drift Co', role: 'Engineer', stage: 'Evaluated' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      '| drift-surface | Drift Co | Unknown | certain | #1 | #1 | #1 |  |  |',
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    assert.equal(before.candidacy.state, 'research-required');
+    assert.equal(before.candidacy.research.reason, 'invalid-classification');
+    assert.equal(before.candidacy.research.unclassified.includes(2), true);
+    const outcome = await setOpportunityPrimary({
+      root: fixture.root,
+      opportunity: 2,
+      primary: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(outcome.code, 'candidacy-evidence-required');
+    assert.equal(outcome.effect, 'blocked');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
+  }
+});
+
+test('one-generation exception is scoped to one suppressed Opportunity and never persists an override', async () => {
+  const fixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: 'Override Co', role: 'Lead', stage: 'Evaluated', notes: 'APPLY: lead' },
+      { num: 2, company: 'Override Co', role: 'Alternate', stage: 'Evaluated', notes: 'APPLY: alternate' },
+    ],
+    clusters: [
+      '# Candidacy clusters',
+      '',
+      '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+      '|---|---|---|---|---|---|---|---|---|',
+      `| override-surface | Override Co | Shared recruiting team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+      '',
+    ].join('\n'),
+  });
+  try {
+    const before = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    const registryBefore = readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8');
+    const blocked = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+    });
+    assert.equal(blocked.code, 'generation-blocked');
+
+    const accepted = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      candidacyOverride: true,
+    });
+    assert.equal(accepted.code, 'work-requested');
+    assert.equal(accepted.workOrder.authorization.kind, 'single-generation-exception');
+    assert.equal(accepted.workOrder.authorization.opportunity, 2);
+    assert.equal(accepted.consequences.stagesUnchanged, true);
+    assert.equal(readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity.stage.id, 'evaluated');
+    assert.equal(readFileSync(join(fixture.root, 'data', 'candidacy-clusters.md'), 'utf8'), registryBefore);
+
+    const repeated = await requestOpportunityWork({
+      root: fixture.root,
+      opportunity: 2,
+      expectedStage: before.stage.id,
+      expectedRevision: before.revision,
+      candidacyOverride: true,
+    });
+    assert.equal(repeated.code, 'already-running');
+  } finally {
+    removeFictionalOpportunityWorkspace(fixture.root);
   }
 });
 

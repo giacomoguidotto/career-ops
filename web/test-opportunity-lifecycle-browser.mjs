@@ -13,6 +13,8 @@ import {
 } from '../tests/fixtures/fictional-opportunity-workspace.mjs';
 
 const WEB_ROOT = import.meta.dirname;
+const TODAY = new Date().toISOString().slice(0, 10);
+const STALE_REVIEW = new Date(Date.now() - 91 * 86_400_000).toISOString().slice(0, 10);
 const DIST_DIR = process.env.BUILD_DIST ?? '.next';
 const ARTIFACT_DIR = join(WEB_ROOT, '.lifecycle-browser-artifacts');
 rmSync(ARTIFACT_DIR, { recursive: true, force: true });
@@ -63,6 +65,20 @@ const fixture = createFictionalOpportunityWorkspace({
       stage: 'Approach Ready',
     },
   },
+  additionalOpportunities: [
+    { num: 100, company: 'Shared Surface Co', role: 'Primary Researcher', stage: 'Evaluated', notes: 'APPLY: primary' },
+    { num: 101, company: 'Shared Surface Co', role: 'Alternate Researcher', stage: 'Evaluated', notes: 'APPLY: alternate' },
+    { num: 102, company: 'Independent Co', role: 'Platform Researcher', stage: 'Evaluated', notes: 'APPLY: platform' },
+    { num: 103, company: 'Independent Co', role: 'Product Researcher', stage: 'Evaluated', notes: 'APPLY: product' },
+    { num: 104, company: 'Drift Co', role: 'Known Researcher', stage: 'Evaluated' },
+    { num: 105, company: 'Drift Co', role: 'New Researcher', stage: 'Evaluated' },
+    { num: 106, company: 'Invalid Evidence Co', role: 'Researcher', stage: 'Evaluated' },
+    { num: 107, company: 'Invalid Evidence Co', role: 'Engineer', stage: 'Evaluated' },
+    { num: 108, company: 'Foreign Membership Co', role: 'Researcher', stage: 'Evaluated' },
+    { num: 109, company: 'Another Fictional Co', role: 'Engineer', stage: 'Evaluated' },
+    { num: 110, company: 'Stale Evidence Co', role: 'Researcher', stage: 'Evaluated' },
+    { num: 111, company: 'Stale Evidence Co', role: 'Engineer', stage: 'Evaluated' },
+  ],
   attempts: [{
     id: 'A001',
     opportunity: 3,
@@ -166,6 +182,20 @@ const fixture = createFictionalOpportunityWorkspace({
       '',
     ].join('\n'),
   },
+  clusters: [
+    '# Candidacy clusters',
+    '',
+    '| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |',
+    '|---|---|---|---|---|---|---|---|---|',
+    `| shared-surface | Shared Surface Co | One research recruiting team | high | #100, #101 | #100 | #100 | [team](https://example.invalid/shared-team) | ${TODAY} |`,
+    `| independent-platform | Independent Co | Platform recruiting team | high | #102 |  |  | [platform](https://example.invalid/platform) | ${TODAY} |`,
+    `| independent-product | Independent Co | Product recruiting team | high | #103 |  |  | [product](https://example.invalid/product) | ${TODAY} |`,
+    `| drift-known | Drift Co | Known recruiting team | high | #104 | #104 | #104 | [team](https://example.invalid/drift) | ${TODAY} |`,
+    '| invalid-evidence | Invalid Evidence Co | Unknown | certain | #106, #107 | #106 | #106 |  |  |',
+    `| foreign-membership | Foreign Membership Co | Shared team | high | #108, #109 | #108 | #108 | [team](https://example.invalid/foreign) | ${TODAY} |`,
+    `| stale-evidence | Stale Evidence Co | Shared team | high | #110, #111 | #110 | #110 | [team](https://example.invalid/stale) | ${STALE_REVIEW} |`,
+    '',
+  ].join('\n'),
   reports: {
     '002-northstar-fictional.md': [
       '# Evaluation: Northstar Fictional',
@@ -312,7 +342,7 @@ try {
   const list = JSON.parse(await page.locator('body').innerText());
   assert.equal(list.contract.id, 'career-ops.opportunity-lifecycle');
   assert.equal(list.opportunities.length > fixture.stages.length, true);
-  assert.equal(list.opportunities.at(-1).rawStage, 'FUTURE_STAGE');
+  assert.equal(list.opportunities.some((opportunity) => opportunity.rawStage === 'FUTURE_STAGE'), true);
   await page.reload();
   const refreshedList = JSON.parse(await page.locator('body').innerText());
   assert.equal(refreshedList.revision, list.revision);
@@ -686,6 +716,73 @@ try {
   assert.equal(await page.locator('[data-history-type="attempt"]').count(), 1);
   assert.equal(await page.locator('[data-history-type="confirmed-attempt"]').count(), 1);
 
+  await page.goto(`${baseUrl}/pipeline/102`);
+  await page.getByRole('heading', { name: 'Independent Co', exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Shared Hiring surface' }).count(), 0);
+
+  await page.goto(`${baseUrl}/pipeline/105`);
+  await page.getByRole('heading', { name: 'Hiring-surface research required' }).waitFor();
+  assert.equal(await page.getByText('Membership Drift', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Research and rerun' }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Primary|Generate once/ }).count(), 0);
+
+  await page.goto(`${baseUrl}/pipeline/106`);
+  await page.getByRole('heading', { name: 'Hiring-surface research required' }).waitFor();
+  assert.equal(await page.getByText(/missing-evidence/).isVisible(), true);
+
+  await page.goto(`${baseUrl}/pipeline/108`);
+  await page.getByRole('heading', { name: 'Hiring-surface research required' }).waitFor();
+  assert.equal(await page.getByText(/company-mismatch:#109/).isVisible(), true);
+
+  await page.goto(`${baseUrl}/pipeline/110`);
+  await page.getByRole('heading', { name: 'Hiring-surface research required' }).waitFor();
+  assert.equal(await page.getByText(/stale-reviewed-date/).isVisible(), true);
+
+  await page.goto(`${baseUrl}/pipeline/101`);
+  await page.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
+  assert.equal(await page.getByText('Opportunity #100', { exact: true }).count() >= 2, true);
+  assert.equal(await page.getByText('One research recruiting team').isVisible(), true);
+  const beforeCoordination = await page.evaluate(async () => (await fetch('/api/opportunities/101')).json());
+  const stageSnapshot = beforeCoordination.opportunity.candidacy.members.map((member) => [member.opportunity, member.stage]);
+
+  await page.getByRole('button', { name: 'Generate once' }).click();
+  const generationReview = page.getByRole('dialog', { name: 'Generate once for Opportunity #101?' });
+  await generationReview.waitFor();
+  assert.equal(await generationReview.getByText('no factual Stage changes', { exact: false }).isVisible(), true);
+  const generationResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  await generationReview.getByRole('button', { name: 'Generate once' }).click();
+  const generation = await (await generationResponse).json();
+  assert.equal(generation.code, 'work-requested');
+  assert.equal(generation.workOrder.authorization.kind, 'single-generation-exception');
+  assert.equal(generation.before.candidacy.persistedPrimary, 100);
+  assert.equal(generation.after.stage.id, generation.before.stage.id);
+
+  await page.getByRole('button', { name: 'Make this Primary' }).click();
+  const primaryReview = page.getByRole('dialog', { name: 'Make Opportunity #101 Primary?' });
+  await primaryReview.waitFor();
+  assert.equal(await primaryReview.getByText('#100, preserved').isVisible(), true);
+  assert.equal(await primaryReview.getByText(/#100 Eligible → Suppressed/).isVisible(), true);
+  assert.equal(await primaryReview.getByText(/#101 Suppressed → Eligible/).isVisible(), true);
+  const primaryResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  await primaryReview.getByRole('button', { name: 'Confirm Primary change' }).click();
+  const primary = await (await primaryResponse).json();
+  assert.equal(primary.code, 'primary-selected');
+  assert.equal(primary.after.candidacy.persistedPrimary, 101);
+  assert.equal(primary.after.candidacy.outreachAnchor, 100);
+  assert.deepEqual(primary.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
+
+  await page.getByRole('button', { name: 'Release Primary' }).waitFor();
+  await page.getByRole('button', { name: 'Release Primary' }).click();
+  const releaseReview = page.getByRole('dialog', { name: 'Release Opportunity #101 as Primary?' });
+  const releaseResponse = page.waitForResponse((response) => response.url().endsWith('/api/opportunities/101') && response.request().method() === 'POST');
+  await releaseReview.getByRole('button', { name: 'Confirm release' }).click();
+  const released = await (await releaseResponse).json();
+  assert.equal(released.code, 'primary-released');
+  assert.equal(released.after.candidacy.persistedPrimary, null);
+  assert.equal(released.after.candidacy.outreachAnchor, 100);
+  assert.deepEqual(released.after.candidacy.members.map((member) => [member.opportunity, member.stage]), stageSnapshot);
+  passiveBaseline = fingerprintFictionalWorkspace(fixture.root);
+
   mkdirSync(ARTIFACT_DIR, { recursive: true });
   for (const review of [
     { name: 'desktop-light', viewport: { width: 1440, height: 960 }, colorScheme: 'light' },
@@ -707,6 +804,11 @@ try {
     const smallestControl = await reviewPage.getByRole('dialog').getByRole('button').evaluateAll((nodes) => Math.min(...nodes.map((node) => node.getBoundingClientRect().height)));
     assert.equal(review.viewport.width > 390 || smallestControl >= 44, true);
     await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `guided-approach-${review.name}.png`), fullPage: true });
+    await reviewPage.goto(`${baseUrl}/pipeline/101`);
+    await reviewPage.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
+    assert.equal(await reviewPage.getByRole('heading', { name: 'Shared Hiring surface' }).isVisible(), true);
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `candidacy-${review.name}.png`), fullPage: true });
     await reviewContext.close();
   }
 
@@ -727,7 +829,12 @@ try {
   await page.goto(`${baseUrl}/portals`);
   await page.getByRole('heading', { name: 'Portals' }).waitFor();
 
-  assert.equal(requests.some((request) => request.method !== 'GET' && request.method !== 'HEAD'), false);
+  const writes = requests.filter((request) => request.method !== 'GET' && request.method !== 'HEAD');
+  assert.deepEqual(writes.map((request) => [request.method, new URL(request.url).pathname]), [
+    ['POST', '/api/opportunities/101'],
+    ['POST', '/api/opportunities/101'],
+    ['POST', '/api/opportunities/101'],
+  ]);
   assert.equal(requests.some((request) => request.url.includes('/api/run')), false);
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
 

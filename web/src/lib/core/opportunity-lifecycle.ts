@@ -107,6 +107,32 @@ export type OpportunitySummary = {
     clusterId: string | null;
     primary: number | null;
     outreachAnchor: number | null;
+    shared: boolean;
+    surface: string | null;
+    confidence: string | null;
+    evidence: string | null;
+    reviewed: string | null;
+    recommendedLead: number | null;
+    persistedPrimary: number | null;
+    members: Array<{
+      opportunity: number;
+      role: string;
+      stage: string | null;
+      stageLabel: string;
+      owner: LifecycleOwner | null;
+      selection: string;
+      reason: string | null;
+    }>;
+    research: {
+      reason: string;
+      applications: number[];
+      unclassified: number[];
+      multiplyClassified: number[];
+      invalidClusters: Array<Record<string, unknown>>;
+    } | null;
+    canSelectPrimary: boolean;
+    canReleasePrimary: boolean;
+    canGenerateOnce: boolean;
   };
   warnings: Array<Record<string, unknown>>;
   provenance: Array<Record<string, unknown>>;
@@ -143,6 +169,11 @@ export type LifecycleWorkOrder = {
   source: { stage: string; revision: string };
   artifact: { kind: string; directory: "output/next-packs" };
   consequence: { stage: string; label: string };
+  authorization?: {
+    kind: "single-generation-exception";
+    clusterId: string;
+    opportunity: number;
+  };
 };
 
 export type LifecycleCommandOutcome = {
@@ -154,6 +185,7 @@ export type LifecycleCommandOutcome = {
   after: OpportunitySummary | null;
   artifacts: OpportunitySummary["artifacts"];
   workOrder: LifecycleWorkOrder | null;
+  consequences: Record<string, unknown> | null;
 };
 
 export class LifecycleAdapterError extends Error {
@@ -310,7 +342,13 @@ function isLifecycleWorkOrder(value: unknown): value is LifecycleWorkOrder {
     && isRecord(value.consequence)
     && typeof value.consequence.stage === "string"
     && /^[a-z][a-z0-9_]*$/.test(value.consequence.stage)
-    && typeof value.consequence.label === "string";
+    && typeof value.consequence.label === "string"
+    && (value.authorization === undefined || (
+      isRecord(value.authorization)
+      && value.authorization.kind === "single-generation-exception"
+      && typeof value.authorization.clusterId === "string"
+      && value.authorization.opportunity === value.opportunity
+    ));
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
@@ -323,7 +361,37 @@ function isCandidacy(value: unknown): value is OpportunitySummary["candidacy"] {
     && isNullableString(value.reason)
     && isNullableString(value.clusterId)
     && isNullablePositiveInteger(value.primary)
-    && isNullablePositiveInteger(value.outreachAnchor);
+    && isNullablePositiveInteger(value.outreachAnchor)
+    && typeof value.shared === "boolean"
+    && isNullableString(value.surface)
+    && isNullableString(value.confidence)
+    && isNullableString(value.evidence)
+    && isNullableString(value.reviewed)
+    && isNullablePositiveInteger(value.recommendedLead)
+    && isNullablePositiveInteger(value.persistedPrimary)
+    && Array.isArray(value.members)
+    && value.members.every((member) => isRecord(member)
+      && typeof member.opportunity === "number"
+      && Number.isSafeInteger(member.opportunity)
+      && member.opportunity > 0
+      && typeof member.role === "string"
+      && isNullableString(member.stage)
+      && typeof member.stageLabel === "string"
+      && (member.owner === null || isOneOf(member.owner, LIFECYCLE_OWNERS))
+      && typeof member.selection === "string"
+      && isNullableString(member.reason))
+    && (value.research === null || (isRecord(value.research)
+      && typeof value.research.reason === "string"
+      && Array.isArray(value.research.applications)
+      && value.research.applications.every((item) => Number.isSafeInteger(item) && item > 0)
+      && Array.isArray(value.research.unclassified)
+      && value.research.unclassified.every((item) => Number.isSafeInteger(item) && item > 0)
+      && Array.isArray(value.research.multiplyClassified)
+      && value.research.multiplyClassified.every((item) => Number.isSafeInteger(item) && item > 0)
+      && isRecordArray(value.research.invalidClusters)))
+    && typeof value.canSelectPrimary === "boolean"
+    && typeof value.canReleasePrimary === "boolean"
+    && typeof value.canGenerateOnce === "boolean";
 }
 
 function validateContract(value: unknown): asserts value is LifecycleContract {
@@ -384,7 +452,11 @@ function lifecycleScript(root: string): string {
   return script;
 }
 
-async function run(root: string, action: "contract" | "list" | "read" | "request", extra: string[] = []): Promise<unknown> {
+async function run(
+  root: string,
+  action: "contract" | "list" | "read" | "request" | "reconcile" | "primary",
+  extra: string[] = [],
+): Promise<unknown> {
   const resolvedRoot = path.resolve(root);
   if (!fs.existsSync(resolvedRoot)) {
     throw new LifecycleAdapterError("checkout-unavailable", "The career-ops checkout is unavailable.", 503);
@@ -419,6 +491,69 @@ async function run(root: string, action: "contract" | "list" | "read" | "request
     if (error instanceof LifecycleAdapterError) throw error;
     throw new LifecycleAdapterError("lifecycle-read-failed", "The passive lifecycle read could not be completed.", 503);
   }
+}
+
+function validateCommandOutcome(value: unknown): asserts value is LifecycleCommandOutcome {
+  if (
+    !isRecord(value)
+    || typeof value.code !== "string"
+    || !isOneOf(value.effect, ["accepted", "changed", "unchanged", "blocked", "conflict", "unavailable"] as const)
+    || typeof value.retryable !== "boolean"
+    || typeof value.message !== "string"
+    || (value.before !== null && !isRecord(value.before))
+    || (value.after !== null && !isRecord(value.after))
+    || !Array.isArray(value.artifacts)
+    || !value.artifacts.every(isArtifact)
+    || (value.workOrder !== null && !isLifecycleWorkOrder(value.workOrder))
+    || (value.consequences !== null && !isRecord(value.consequences))
+  ) {
+    throw new LifecycleAdapterError("invalid-lifecycle-command", "The lifecycle command response is incompatible.", 503);
+  }
+  if (value.before !== null) validateOpportunity(value.before);
+  if (value.after !== null) validateOpportunity(value.after);
+}
+
+function commandArguments(opportunity: number, expectedStage: string, expectedRevision: string): string[] {
+  if (!Number.isSafeInteger(opportunity) || opportunity <= 0) {
+    throw new LifecycleAdapterError("invalid-opportunity", "Opportunity must be a positive tracker number.", 400);
+  }
+  if (!/^[a-z][a-z0-9_]*$/.test(expectedStage) || !/^[a-f0-9]{64}$/.test(expectedRevision)) {
+    throw new LifecycleAdapterError("invalid-lifecycle-expectation", "The lifecycle expectation is invalid.", 400);
+  }
+  return [
+    "--opportunity", String(opportunity),
+    "--expected-stage", expectedStage,
+    "--expected-revision", expectedRevision,
+  ];
+}
+
+export async function setOpportunityPrimaryLifecycle(
+  root: string,
+  opportunity: number,
+  expectedStage: string,
+  expectedRevision: string,
+  primary: number | null,
+): Promise<LifecycleCommandOutcome> {
+  const result = await run(root, "primary", [
+    ...commandArguments(opportunity, expectedStage, expectedRevision),
+    "--primary", primary == null ? "none" : String(primary),
+  ]);
+  validateCommandOutcome(result);
+  return result;
+}
+
+export async function requestOneGenerationLifecycle(
+  root: string,
+  opportunity: number,
+  expectedStage: string,
+  expectedRevision: string,
+): Promise<LifecycleCommandOutcome> {
+  const result = await run(root, "request", [
+    ...commandArguments(opportunity, expectedStage, expectedRevision),
+    "--candidacy-override",
+  ]);
+  validateCommandOutcome(result);
+  return result;
 }
 
 export async function readLifecycleContract(root: string): Promise<LifecycleContract> {

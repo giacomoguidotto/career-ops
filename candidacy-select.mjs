@@ -21,6 +21,7 @@ import { loadStates, resolveState } from './tracker-utils.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RELEASED_STAGE_IDS = new Set(['rejected', 'discarded', 'skip']);
+export const CANDIDACY_REVIEW_MAX_AGE_DAYS = 90;
 export const CANDIDACY_SUPPRESSION_REASONS = Object.freeze({
   RESEARCH_REQUIRED: 'research-required',
   ACCEPTED_PRIMARY: 'accepted-primary',
@@ -156,6 +157,16 @@ function validReviewedDate(value) {
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === raw;
 }
 
+function reviewedDateIssue(value, now = new Date()) {
+  if (!validReviewedDate(value)) return 'invalid-reviewed-date';
+  const reviewed = new Date(`${value}T00:00:00Z`);
+  const reference = now instanceof Date ? now : new Date(`${String(now).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(reference.valueOf())) throw new Error('now must be a valid date');
+  const ageDays = Math.floor((reference.valueOf() - reviewed.valueOf()) / 86_400_000);
+  if (ageDays < 0) return 'future-reviewed-date';
+  return ageDays > CANDIDACY_REVIEW_MAX_AGE_DAYS ? 'stale-reviewed-date' : null;
+}
+
 function hasAuditableEvidence(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return false;
@@ -169,7 +180,9 @@ function hasAuditableEvidence(value) {
  * auto selection. A company in `researchRequired` contributes no implicit
  * candidate until its active rows are classified and the selector is rerun.
  */
-export function selectCandidacyCandidates({ rows, clusters = [], states = loadStates(), decisionByNum = new Map() }) {
+export function selectCandidacyCandidates({
+  rows, clusters = [], states = loadStates(), decisionByNum = new Map(), now = new Date(),
+}) {
   const warnings = [];
   const stateRankById = new Map(states.records.map((record, index) => [record.id, index]));
   const entryAgentRank = Math.min(
@@ -219,7 +232,8 @@ export function selectCandidacyCandidates({ rows, clusters = [], states = loadSt
     if (!String(item.evidence ?? '').trim()) issues.push('missing-evidence');
     else if (!hasAuditableEvidence(item.evidence)) issues.push('unsupported-evidence-reference');
     if (!/^(?:high|medium|low)$/i.test(String(item.confidence ?? '').trim())) issues.push('invalid-confidence');
-    if (!validReviewedDate(item.reviewed)) issues.push('invalid-reviewed-date');
+    const reviewIssue = reviewedDateIssue(item.reviewed, now);
+    if (reviewIssue) issues.push(reviewIssue);
     if (item.members.length === 0) issues.push('missing-members');
     if (new Set(item.members).size !== item.members.length) issues.push('duplicate-members');
     if ((clusterIdCounts.get(item.id) ?? 0) > 1) issues.push('duplicate-cluster-id');
@@ -316,6 +330,7 @@ export function selectCandidacyCandidates({ rows, clusters = [], states = loadSt
         members: item.members,
         storedPrimary: item.primary,
         effectivePrimary: null,
+        recommendedLead: null,
         outreachAnchor: item.outreachAnchor,
         reserved: false,
         blockedByResearch: true,
@@ -333,6 +348,10 @@ export function selectCandidacyCandidates({ rows, clusters = [], states = loadSt
       .sort(compareCandidates);
 
     let effectivePrimary = null;
+    const recommendedLead = acceptedRows[0]
+      ?? progressedRows[0]
+      ?? [...agentRows].sort(compareCandidates)[0]
+      ?? null;
     let reserved = false;
     let suppressionReason = CANDIDACY_SUPPRESSION_REASONS.CLUSTER_CHOICE;
 
@@ -379,6 +398,7 @@ export function selectCandidacyCandidates({ rows, clusters = [], states = loadSt
       members: item.members,
       storedPrimary: item.primary,
       effectivePrimary: effectivePrimary?.num ?? null,
+      recommendedLead: recommendedLead?.num ?? null,
       outreachAnchor: item.outreachAnchor,
       reserved,
       blockedByResearch: false,

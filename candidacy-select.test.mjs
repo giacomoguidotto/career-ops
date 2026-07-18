@@ -23,6 +23,8 @@ function eq(label, actual, expected) {
 }
 
 const states = loadStates();
+const today = new Date().toISOString().slice(0, 10);
+const staleReview = new Date(Date.now() - 91 * 86_400_000).toISOString().slice(0, 10);
 const row = (num, company, status, score, role = `Role ${num}`) => ({
   num,
   company,
@@ -41,13 +43,28 @@ const cluster = (id, company, members, primary = null) => ({
   primary,
   outreachAnchor: null,
   evidence: '[fixture](https://example.com/source)',
-  reviewed: '2026-07-10',
+  reviewed: today,
 });
 const decisions = (entries) => new Map(entries);
 const nums = (items) => items.map((item) => item.num).sort((a, b) => a - b);
 
 eq('Machine Summary report decision is canonical', decisionFromReport('final_decision: "Apply"'), 'apply');
 eq('Decision Snapshot report header normalizes quietly', decisionFromReport('## Decision Snapshot\n\n**Decision:** Research first'), 'research_first');
+
+// Evidence has an explicit freshness window; an old but otherwise valid row
+// cannot silently continue suppressing a sibling.
+{
+  const stale = cluster('stale-engineering', 'StaleCo', [90, 91], 90);
+  stale.reviewed = staleReview;
+  const result = selectCandidacyCandidates({
+    rows: [row(90, 'StaleCo', 'Evaluated', 4.4), row(91, 'StaleCo', 'Evaluated', 4.3)],
+    clusters: [stale],
+    states,
+    now: today,
+  });
+  eq('stale reviewed evidence blocks implicit selection', nums(result.eligible), []);
+  eq('stale reviewed evidence is named', result.researchRequired[0].invalidClusters[0].issues, ['stale-reviewed-date']);
+}
 
 // A progressed Primary reserves the surface and suppresses its agent-owned siblings.
 {

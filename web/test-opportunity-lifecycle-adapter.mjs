@@ -11,8 +11,12 @@ import {
   listOpportunityLifecycle,
   readOpportunityLifecycle,
   requestOpportunityWork,
+  requestOneGenerationLifecycle,
+  setOpportunityPrimaryLifecycle,
   tryListOpportunityLifecycle,
 } from "./src/lib/core/opportunity-lifecycle.ts";
+
+const TODAY = new Date().toISOString().slice(0, 10);
 
 function clone(value) {
   return structuredClone(value);
@@ -54,6 +58,8 @@ test("adapter rejects future versions and malformed domain values", async () => 
     [(result) => { result.contract.capabilities.passiveRead = "yes"; }, "invalid-lifecycle-contract"],
     [(result) => { result.contract.stages[0].owner = "browser"; }, "invalid-lifecycle-contract"],
     [(result) => { result.opportunities[0].primaryAction.kind = "invented"; }, "invalid-opportunity-summary"],
+    [(result) => { result.opportunities[0].candidacy.shared = "yes"; }, "invalid-opportunity-summary"],
+    [(result) => { result.opportunities[0].candidacy.members = [{ opportunity: -1 }]; }, "invalid-opportunity-summary"],
   ];
   for (const [mutate, code] of cases) {
     const fixture = createFictionalOpportunityWorkspace({ materializeCore: true, missingOptionalFiles: true });
@@ -62,6 +68,53 @@ test("adapter rejects future versions and malformed domain values", async () => 
     } finally {
       removeFictionalOpportunityWorkspace(fixture.root);
     }
+  }
+});
+
+test("adapter transports guarded candidacy commands through the canonical seam", async () => {
+  const clusters = [
+    "# Candidacy clusters",
+    "",
+    "| Cluster ID | Company | Hiring surface | Confidence | Members | Primary | Outreach anchor | Evidence | Reviewed |",
+    "|---|---|---|---|---|---|---|---|---|",
+    `| shared | Fictional | Shared team | high | #1, #2 | #1 | #1 | [team](https://example.invalid/team) | ${TODAY} |`,
+    "",
+  ].join("\n");
+  const primaryFixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: "Fictional", role: "Lead", stage: "Evaluated", notes: "APPLY: lead" },
+      { num: 2, company: "Fictional", role: "Alternate", stage: "Evaluated", notes: "APPLY: alternate" },
+    ],
+    clusters,
+  });
+  const overrideFixture = createFictionalOpportunityWorkspace({
+    materializeCore: true,
+    opportunities: [
+      { num: 1, company: "Fictional", role: "Lead", stage: "Evaluated", notes: "APPLY: lead" },
+      { num: 2, company: "Fictional", role: "Alternate", stage: "Evaluated", notes: "APPLY: alternate" },
+    ],
+    clusters,
+  });
+  try {
+    const target = (await readOpportunityLifecycle(primaryFixture.root, 2)).opportunity;
+    const selected = await setOpportunityPrimaryLifecycle(
+      primaryFixture.root, 2, target.stage.id, target.revision, 2,
+    );
+    assert.equal(selected.code, "primary-selected");
+    assert.equal(selected.after.candidacy.persistedPrimary, 2);
+    assert.equal(selected.after.stage.id, target.stage.id);
+
+    const alternate = (await readOpportunityLifecycle(overrideFixture.root, 2)).opportunity;
+    const generated = await requestOneGenerationLifecycle(
+      overrideFixture.root, 2, alternate.stage.id, alternate.revision,
+    );
+    assert.equal(generated.code, "work-requested");
+    assert.equal(generated.workOrder.authorization.kind, "single-generation-exception");
+    assert.equal(generated.before.stage.id, generated.after.stage.id);
+  } finally {
+    removeFictionalOpportunityWorkspace(primaryFixture.root);
+    removeFictionalOpportunityWorkspace(overrideFixture.root);
   }
 });
 
