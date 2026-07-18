@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { CompanyLogo } from "@/components/company-logo";
 import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
+import { GuidedApproach } from "@/components/guided-approach";
 import { parseReport, scoreNum, scoreTone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -130,8 +131,8 @@ function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title:
         eyebrow: "Your next step",
         title: action || "Act outside career-ops",
         detail: "Review the prepared material, act outside career-ops, then report exactly what happened. Viewing or copying records nothing.",
-        href: "#approach-plan",
-        cta: "Review preparation",
+        href: "#guided-approach",
+        cta: "Start guided approach",
       };
     case "wait":
       return {
@@ -392,6 +393,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
             {approachPlan ? (
               <>
                 <p className="mt-3 text-sm text-muted">Reviewing this plan is passive. Acting outside career-ops and reporting the result are separate steps.</p>
+                <GuidedApproach plan={approachPlan.content} opportunity={opportunity.opportunity} />
                 <article className="report-prose mt-5 rounded-2xl border border-border bg-surface/35 p-5" aria-label="Approach Plan artifact">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{approachPlan.content}</ReactMarkdown>
                 </article>

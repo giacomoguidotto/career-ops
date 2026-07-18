@@ -76,9 +76,72 @@ const fixture = createFictionalOpportunityWorkspace({
       '**Owner:** user',
       '**Suggests:** generate_approach_plan',
       '',
-      '## Recommended route',
+      '## Ranked Approaches',
       '',
-      'Review the fictional application route before acting elsewhere.',
+      '### 1. Best: Warm peer introduction',
+      '- **Route:** peer outreach',
+      '- **To:** Maya Chen | https://example.invalid/maya',
+      '- **Channel:** LinkedIn connection note',
+      '- **Timing:** now',
+      '- **Why first:** A warm conversation is the highest-signal first step.',
+      '',
+      '### 2. Complete the official application',
+      '- **Route:** formal application',
+      '- **To:** Northstar careers | https://example.invalid/apply',
+      '- **Channel:** ATS',
+      '- **Timing:** before 19 July',
+      '',
+      '### 3. Ask the employment gating question',
+      '- **Route:** qualifying question',
+      '- **To:** Recipient not found',
+      '- **Channel:** Email or LinkedIn',
+      '- **Timing:** before applying',
+      '',
+      '### 4. Continue the recruiter thread',
+      '- **Route:** follow-up',
+      '- **To:** Elena Rossi | mailto:elena@example.invalid',
+      '- **Channel:** Email',
+      '- **Timing:** due today',
+      '- **Follows:** A014',
+      '',
+      '### Send the Outreach Message',
+      '- **When:** before applying',
+      '- **To:** Maya Chen | https://example.invalid/maya',
+      '- **Channel:** LinkedIn connection note',
+      '- **Connection note:** yes, 116/300 chars',
+      '- **Instruction:** Open Maya\'s profile, review the note in context, then send it yourself.',
+      '',
+      'Hi Maya, Northstar\'s traceable decision support caught my eye. I would enjoy comparing notes on operator control.',
+      '',
+      '### Fill the Application Form',
+      '- **When:** after reviewing every answer',
+      '- **To:** Northstar careers | https://example.invalid/apply',
+      '- **Channel:** ATS',
+      '- **Instruction:** Copy answers into matching fields and submit the form yourself.',
+      '',
+      '| Question | Answer | Notes |',
+      '|---|---|---|',
+      '| Why this role? | Northstar builds the operator-facing AI systems I care about. | Source: fictional CV |',
+      '| Example of a production workflow | A supervised workflow with explicit human review. | Source: fictional CV |',
+      '| Desired salary | TBD | Missing personal fact blocker |',
+      '| What would you teach the team? | How to expose uncertainty before it becomes an operational surprise. | Explicit JD instruction: answer in one concrete sentence. |',
+      '',
+      '### Send the Gating Question',
+      '- **When:** before applying',
+      '- **To:** Recipient not found',
+      '- **Channel:** Email or LinkedIn',
+      '- **Instruction:** Find and verify a recruiting contact before using this draft.',
+      '',
+      'Can this role employ someone through an EU entity or employer of record?',
+      '',
+      '### Send the Follow-up Message',
+      '- **When:** in the existing thread',
+      '- **To:** Elena Rossi | mailto:elena@example.invalid',
+      '- **Channel:** Email',
+      '- **Follows:** A014',
+      '- **Instruction:** Reply in the existing thread. Do not start a new conversation.',
+      '',
+      'Hi Elena, I wanted to add one useful detail to my application. Happy to share the short case study if useful.',
       '',
     ].join('\n'),
   },
@@ -204,6 +267,12 @@ try {
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   page = await context.newPage();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => { throw new Error('fictional clipboard denial'); } },
+    });
+  });
   const requests = [];
   page.on('request', (request) => requests.push({ method: request.method(), url: request.url() }));
 
@@ -461,6 +530,89 @@ try {
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.equal(horizontalOverflow <= 0, true);
 
+  const guidedTrigger = page.getByRole('button', { name: 'Start guided approach' });
+  await guidedTrigger.click();
+  const guidedDialog = page.getByRole('dialog', { name: 'Guided approach preparation' });
+  await guidedDialog.waitFor();
+  const guidedClose = page.getByRole('button', { name: 'Close guided approach' });
+  assert.equal(await guidedClose.evaluate((node) => node === document.activeElement), true);
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await guidedDialog.evaluate((dialog) => dialog.contains(document.activeElement)), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await guidedClose.evaluate((node) => node === document.activeElement), true);
+  assert.equal(await page.locator('[data-route-type]').count(), 4);
+  assert.deepEqual(await page.locator('[data-route-type]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-route-type'))), [
+    'outreach',
+    'application',
+    'qualifying',
+    'followup',
+  ]);
+  await page.getByRole('button', { name: /Prepare this route/ }).click();
+  assert.equal(await page.getByText('300 characters', { exact: true }).isVisible(), true);
+  const message = page.getByRole('textbox', { name: 'Prepared message' });
+  await message.fill('x'.repeat(301));
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
+  assert.equal(await page.getByText(/trim before copying/).isVisible(), true);
+  await message.fill('Reviewed note for Maya.');
+  await page.getByRole('button', { name: 'Protect edit' }).click();
+  assert.equal(await page.locator('[data-answer-state="protected"]').isVisible(), true);
+  await page.getByRole('button', { name: 'Copy draft' }).click();
+  assert.equal(await page.locator('[data-copy-fallback="manual"]').isVisible(), true);
+  assert.equal(await page.getByText(/Nothing was sent or recorded/).isVisible(), true);
+  await page.getByRole('button', { name: /Ready to act/ }).click();
+  assert.equal(await page.getByText(/career-ops sent or submitted nothing/).isVisible(), true);
+  assert.equal(await page.getByText(/None is an Attempt/).isVisible(), true);
+  await page.getByRole('button', { name: /Edit preparation/ }).click();
+  await page.getByRole('button', { name: /Routes/ }).click();
+
+  await page.locator('[data-route-type="application"]').click();
+  await page.getByRole('button', { name: /Prepare this route/ }).click();
+  const answerCards = page.locator('[data-answer-id]');
+  assert.deepEqual(await answerCards.locator('label').allTextContents(), [
+    '01Why this role?',
+    '02Example of a production workflow',
+    '03Desired salary',
+    '04What would you teach the team?',
+  ]);
+  assert.equal(await page.locator('[data-jd-instruction]').getByText(/one concrete sentence/).isVisible(), true);
+  assert.equal(await page.locator('[data-answer-state="generated"]').count(), 3);
+  assert.equal(await page.locator('[data-answer-state="blocked"]').count(), 1);
+  const firstAnswer = answerCards.nth(0);
+  const firstAnswerBox = firstAnswer.getByRole('textbox');
+  await firstAnswerBox.fill('My reviewed and supported answer.');
+  assert.equal(await firstAnswer.locator('[data-answer-state="user-edited"]').isVisible(), true);
+  await firstAnswer.getByRole('button', { name: 'Protect edit' }).click();
+  const protectedValue = await firstAnswerBox.inputValue();
+  await firstAnswer.getByRole('button', { name: 'Regenerate item' }).click();
+  assert.equal(await firstAnswerBox.inputValue(), protectedValue);
+  assert.equal(await firstAnswer.locator('[data-rerun-proposal]').isVisible(), true);
+  await page.getByRole('button', { name: 'Rerun all' }).click();
+  assert.equal(await firstAnswerBox.inputValue(), protectedValue);
+  assert.equal(await firstAnswer.locator('[data-rerun-proposal]').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
+  const salaryAnswer = answerCards.nth(2);
+  assert.equal(await salaryAnswer.getByRole('textbox').inputValue(), '');
+  await salaryAnswer.getByRole('textbox').fill('Candidate-provided fictional amount');
+  assert.equal(await salaryAnswer.locator('[data-answer-state="user-edited"]').isVisible(), true);
+  await salaryAnswer.getByRole('button', { name: 'Protect edit' }).click();
+  assert.equal(await salaryAnswer.locator('[data-answer-state="protected"]').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isEnabled(), true);
+  await page.getByRole('button', { name: /Routes/ }).click();
+
+  await page.locator('[data-route-type="qualifying"]').click();
+  await page.getByRole('button', { name: /Prepare this route/ }).click();
+  assert.equal(await page.getByText(/verified destination is missing/).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: /Ready to act/ }).isDisabled(), true);
+  await page.getByRole('button', { name: /Routes/ }).click();
+
+  await page.locator('[data-route-type="followup"]').click();
+  await page.getByRole('button', { name: /Prepare this route/ }).click();
+  assert.equal(await page.getByText(/Continues confirmed Attempt A014/).isVisible(), true);
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor({ state: 'detached' });
+  assert.equal(await guidedTrigger.evaluate((node) => node === document.activeElement), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+
   await page.goto(`${baseUrl}/pipeline/3`);
   await page.getByRole('heading', { name: 'Attempts' }).waitFor();
   assert.equal(await page.locator('[data-history-type="attempt"]').count(), 1);
@@ -481,8 +633,12 @@ try {
     const reviewPage = await reviewContext.newPage();
     await reviewPage.goto(`${baseUrl}/pipeline/2`);
     await reviewPage.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
+    await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
+    await reviewPage.getByRole('dialog', { name: 'Guided approach preparation' }).waitFor();
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `opportunity-${review.name}.png`), fullPage: true });
+    const smallestControl = await reviewPage.getByRole('dialog').getByRole('button').evaluateAll((nodes) => Math.min(...nodes.map((node) => node.getBoundingClientRect().height)));
+    assert.equal(review.viewport.width > 390 || smallestControl >= 44, true);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `guided-approach-${review.name}.png`), fullPage: true });
     await reviewContext.close();
   }
 
