@@ -47,9 +47,16 @@ Open http://localhost:3000. The app reads the career-ops checkout it lives in
 
 ```bash
 npm run dev          # dev server (Turbopack)
+npm test             # unit, adapter, and branch-parity ledger contracts
 npx tsc --noEmit     # typecheck
 npm run build        # production build
+npm run test:browser # production-shaped fictional-workspace journeys
 ```
 
 Set `CAREER_OPS_ROOT=/path/to/checkout` in `web/.env.local` to point the app at
 a different career-ops directory (useful for testing against sample data).
+
+The final branch-capability inventory and CI evidence contract live in
+[`branch-parity-ledger.json`](branch-parity-ledger.json). See
+[`docs/BRANCH_WEB_PARITY.md`](../docs/BRANCH_WEB_PARITY.md) for the acceptance
+commands and artifact policy.
