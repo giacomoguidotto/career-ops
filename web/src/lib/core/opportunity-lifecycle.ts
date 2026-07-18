@@ -100,6 +100,14 @@ export type OpportunitySummary = {
     format: ArtifactFormat;
     path: string | null;
     revision: string | null;
+    acceptance?: {
+      status: "accepted" | "needs-review";
+      actualPages: number;
+      budget: number;
+      trimGuidance: string;
+      acceptedBy: "within-budget" | "explicit-overflow" | null;
+      reviewRevision: string;
+    };
   }>;
   candidacy: {
     state: CandidacyState;
@@ -167,7 +175,8 @@ export type LifecycleWorkOrder = {
   opportunity: number;
   action: string;
   source: { stage: string; revision: string };
-  artifact: { kind: string; directory: "output/next-packs" };
+  workflow?: "lifecycle" | "pdf";
+  artifact: { kind: string; directory: "output/next-packs" | "output" };
   consequence: { stage: string; label: string };
   authorization?: {
     kind: "single-generation-exception";
@@ -310,6 +319,7 @@ function isAttemptAggregate(value: unknown): value is OpportunitySummary["attemp
 }
 
 function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][number] {
+  const acceptance = isRecord(value) ? value.acceptance : undefined;
   return isRecord(value)
     && typeof value.kind === "string"
     && /^[a-z][a-z0-9-]*$/.test(value.kind)
@@ -318,7 +328,16 @@ function isArtifact(value: unknown): value is OpportunitySummary["artifacts"][nu
     && isOneOf(value.state, ARTIFACT_STATES)
     && isOneOf(value.format, ARTIFACT_FORMATS)
     && isNullableString(value.path)
-    && isNullableString(value.revision);
+    && isNullableString(value.revision)
+    && (acceptance === undefined || (
+      isRecord(acceptance)
+      && isOneOf(acceptance.status, ["accepted", "needs-review"] as const)
+      && isNonNegativeSafeInteger(acceptance.actualPages) && acceptance.actualPages > 0
+      && isNonNegativeSafeInteger(acceptance.budget)
+      && typeof acceptance.trimGuidance === "string"
+      && (acceptance.acceptedBy === null || isOneOf(acceptance.acceptedBy, ["within-budget", "explicit-overflow"] as const))
+      && typeof acceptance.reviewRevision === "string" && /^[a-f0-9]{64}$/.test(acceptance.reviewRevision)
+    ));
 }
 
 function isLifecycleWorkOrder(value: unknown): value is LifecycleWorkOrder {
@@ -338,7 +357,8 @@ function isLifecycleWorkOrder(value: unknown): value is LifecycleWorkOrder {
     && isRecord(value.artifact)
     && typeof value.artifact.kind === "string"
     && /^[a-z][a-z0-9-]*$/.test(value.artifact.kind)
-    && value.artifact.directory === "output/next-packs"
+    && (value.workflow === undefined || isOneOf(value.workflow, ["lifecycle", "pdf"] as const))
+    && isOneOf(value.artifact.directory, ["output/next-packs", "output"] as const)
     && isRecord(value.consequence)
     && typeof value.consequence.stage === "string"
     && /^[a-z][a-z0-9_]*$/.test(value.consequence.stage)
@@ -757,4 +777,54 @@ export async function reconcileOpportunityWork(
   )));
   validateCommandOutcome(result);
   return result;
+}
+
+export async function allowPdfOverflow(
+  root: string,
+  expectation: { opportunity: number; expectedRevision: string; pages: number },
+): Promise<Record<string, unknown>> {
+  if (!Number.isSafeInteger(expectation.opportunity) || expectation.opportunity <= 0) {
+    throw new LifecycleAdapterError("invalid-opportunity", "Opportunity must be a positive tracker number.", 400);
+  }
+  if (!/^[a-f0-9]{64}$/.test(expectation.expectedRevision)) {
+    throw new LifecycleAdapterError("invalid-pdf-revision", "Expected revision must identify the reviewed PDF.", 400);
+  }
+  if (!Number.isSafeInteger(expectation.pages) || expectation.pages <= 0) {
+    throw new LifecycleAdapterError("invalid-page-count", "Allowed pages must match the reviewed PDF page count.", 400);
+  }
+  const resolvedRoot = path.resolve(root);
+  const script = path.join(resolvedRoot, "pdf-artifact.mjs");
+  if (!fs.existsSync(script)) throw new LifecycleAdapterError("pdf-contract-unavailable", "The PDF acceptance contract is unavailable.", 503);
+  let stdout: string;
+  try {
+    stdout = await new Promise<string>((resolve, reject) => execFile(
+      process.execPath,
+      [
+        script,
+        "allow",
+        `--opportunity=${expectation.opportunity}`,
+        `--expected-revision=${expectation.expectedRevision}`,
+        `--pages=${expectation.pages}`,
+        `--root=${resolvedRoot}`,
+      ],
+      { cwd: resolvedRoot, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024, env: { ...process.env, CAREER_OPS_PDF_ARTIFACT_CLI: "1" } },
+      (error, output) => error ? reject(Object.assign(error, { output })) : resolve(output),
+    ));
+  } catch (error) {
+    const output = typeof (error as { output?: unknown })?.output === "string" ? (error as { output: string }).output : "";
+    try {
+      const parsed = JSON.parse(output) as Record<string, unknown>;
+      if (parsed.effect === "conflict") return parsed;
+      if (parsed.effect === "blocked" || parsed.effect === "unavailable") return parsed;
+    } catch {
+      /* fall through to the stable adapter error */
+    }
+    throw new LifecycleAdapterError("pdf-allowance-failed", "The PDF page allowance could not be recorded.", 503);
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(stdout); } catch { parsed = null; }
+  if (!isRecord(parsed) || typeof parsed.code !== "string" || !isOneOf(parsed.effect, ["changed", "unchanged", "conflict", "blocked", "unavailable"] as const)) {
+    throw new LifecycleAdapterError("invalid-pdf-command", "The PDF acceptance result is incompatible.", 503);
+  }
+  return parsed;
 }

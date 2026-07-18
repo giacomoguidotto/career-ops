@@ -9,6 +9,7 @@ on:
     paths:
       - 'web/**'
       - 'opportunity-lifecycle.mjs'
+      - 'pdf-artifact.mjs'
       - 'tracker-utils.mjs'
       - 'tracker-parse.mjs'
       - 'tracker-aliases.json'
@@ -19,12 +20,14 @@ on:
       - 'advance-stage.mjs'
       - 'tests/fixtures/fictional-opportunity-workspace.mjs'
       - 'tests/opportunity-lifecycle.test.mjs'
+      - 'web/test-pdf-artifact.mjs'
       - 'doctor.mjs'
   push:
     branches: [main]
     paths:
       - 'web/**'
       - 'opportunity-lifecycle.mjs'
+      - 'pdf-artifact.mjs'
       - 'tracker-utils.mjs'
       - 'tracker-parse.mjs'
       - 'tracker-aliases.json'
@@ -35,6 +38,7 @@ on:
       - 'advance-stage.mjs'
       - 'tests/fixtures/fictional-opportunity-workspace.mjs'
       - 'tests/opportunity-lifecycle.test.mjs'
+      - 'web/test-pdf-artifact.mjs'
       - 'doctor.mjs'
 
 permissions:

@@ -12,7 +12,7 @@ import { isWorkGroupId } from "@/lib/core/work-group";
 
 export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { jobs, actOnJob, acknowledgeJob } = useJobs();
+  const { jobs, actOnJob, allowPdfOverflow, acknowledgeJob } = useJobs();
   const job = jobs.find((j) => j.id === id);
 
   if (!job) {
@@ -39,7 +39,9 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         {job.status === "running" && <HeroGlow />}
         <div className="relative z-10">
           <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] text-faint">
-            {job.status === "running" ? (
+            {job.recovery?.pdfReview ? (
+              <><AlertTriangle className="size-3 text-amber-500" /> needs review</>
+            ) : job.status === "running" ? (
               <><Loader2 className="size-3 animate-spin text-brand" /> working</>
             ) : job.status === "done" ? (
               <><Check className="size-3 text-emerald-500" /> done</>
@@ -71,10 +73,25 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
                 {job.recovery.artifact && (
                   <p className="mt-2 break-all text-xs text-muted">Artifact: <code>{job.recovery.artifact.path}</code></p>
                 )}
+                {job.recovery.pdfReview && (
+                  <div className="mt-3 rounded-lg bg-amber-500/[0.08] p-3 text-sm">
+                    <p className="font-semibold">Actual: {job.recovery.pdfReview.actualPages} pages · Budget: {job.recovery.pdfReview.budget}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted">{job.recovery.pdfReview.trimGuidance}</p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:min-w-48">
-              {job.recovery.nextAction.href ? (
+              {job.recovery.pdfReview ? (
+                <>
+                  <button type="button" onClick={() => actOnJob(job.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-200">
+                    <RotateCcw className="size-4" /> Regenerate after trimming
+                  </button>
+                  <button type="button" onClick={() => allowPdfOverflow(job.id)} className="inline-flex min-h-11 items-center justify-center rounded-md border border-amber-500/40 px-4 text-sm font-semibold text-amber-800 hover:bg-amber-500/10 dark:text-amber-200">
+                    Allow this {job.recovery.pdfReview.actualPages}-page count
+                  </button>
+                </>
+              ) : job.recovery.nextAction.href ? (
                 <Link href={job.recovery.nextAction.href} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-foreground hover:bg-brand-200">
                   {job.recovery.nextAction.label} <ExternalLink className="size-4" />
                 </Link>

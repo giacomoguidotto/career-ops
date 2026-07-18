@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { delimiter, join } from 'node:path';
 import { chromium } from 'playwright';
+import { recordPdfArtifact } from '../pdf-artifact.mjs';
 import {
   createFictionalOpportunityWorkspace,
   fingerprintFictionalWorkspace,
@@ -82,6 +83,7 @@ const fixture = createFictionalOpportunityWorkspace({
     { num: 113, company: 'Repair Attempt Co', role: 'Engineer', stage: 'Approach Ready' },
     { num: 114, company: 'Review Flow Co', role: 'Engineer', stage: 'Approach Ready' },
     { num: 115, company: 'Stranded Artifact Co', role: 'Engineer', stage: 'Evaluated' },
+    { num: 116, company: 'Overflow Review Co', role: 'PDF Researcher', stage: 'Evaluated', report: '[116](../reports/116-overflow-review.md)' },
   ],
   attempts: [
     {
@@ -230,6 +232,9 @@ const fixture = createFictionalOpportunityWorkspace({
       'Fictional canonical work waiting for reconciliation.',
     ].join('\n'),
   },
+  reports: {
+    '116-overflow-review.md': '# Overflow Review Co\n\n**URL:** https://example.invalid/jobs/overflow-review\n\n## Machine Summary\n\nfinal_decision: apply\n',
+  },
   clusters: [
     '# Candidacy clusters',
     '',
@@ -281,6 +286,8 @@ const fixture = createFictionalOpportunityWorkspace({
   files: {
     'cv.md': '# Fictional CV\n',
     'output/002-northstar-fictional.pdf': 'fictional pdf bytes',
+    'output/116-overflow-review.html': '<html>fictional overflow</html>',
+    'output/116-overflow-review.pdf': 'fictional overflow pdf bytes',
     'modes/_profile.md': '# Fictional profile\n',
     'modes/next.md': '# Fictional next mode\n',
     'portals.yml': 'title_filter:\n  positive:\n    - researcher\n',
@@ -319,6 +326,16 @@ const fixture = createFictionalOpportunityWorkspace({
     ].join('\n'),
   },
 });
+const overflowRecord = recordPdfArtifact({
+  root: fixture.root,
+  report: '116',
+  pdfPath: join(fixture.root, 'output', '116-overflow-review.pdf'),
+  htmlPath: join(fixture.root, 'output', '116-overflow-review.html'),
+  format: 'a4',
+  pageCount: 2,
+  maxPages: 1,
+});
+assert.equal(overflowRecord.artifact.acceptance.status, 'needs-review');
 const binDir = join(fixture.root, 'fixture-bin');
 mkdirSync(binDir, { recursive: true });
 const codex = join(binDir, 'codex');
@@ -662,6 +679,54 @@ try {
   assert.equal(Boolean(mobileActionBox && mobileActionBox.height >= 44), true);
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.equal(horizontalOverflow <= 0, true);
+
+  await page.goto(`${baseUrl}/pipeline/116`);
+  await page.getByRole('heading', { name: 'Overflow Review Co', exact: true }).waitFor();
+  const overflowReview = page.getByRole('status', { name: 'PDF needs review' });
+  assert.equal(await overflowReview.getByText('Written, not accepted').isVisible(), true);
+  assert.equal(await overflowReview.getByText('Actual: 2 pages · Budget: 1 page').isVisible(), true);
+  assert.equal(await overflowReview.getByRole('link', { name: 'Inspect overflow PDF' }).isVisible(), true);
+  assert.equal(await overflowReview.getByRole('button', { name: 'Regenerate after trimming' }).isVisible(), true);
+  assert.equal(await overflowReview.getByRole('button', { name: 'Allow this 2-page count' }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Apply' }).isDisabled(), true);
+
+  const reviewJobId = 'pdf-overflow-browser';
+  await page.evaluate(({ jobId, reviewRevision, trimGuidance }) => {
+    const occurredAt = new Date().toISOString();
+    localStorage.setItem('career-ops:jobs', JSON.stringify([{
+      id: jobId,
+      title: 'CV PDF · Overflow Review Co',
+      subtitle: 'tailored for this role',
+      page: '/pipeline/116',
+      input: '116',
+      kind: 'pdf',
+      status: 'error',
+      steps: [],
+      text: '',
+      startedAt: Date.now(),
+      recovery: {
+        outcome: 'resumable',
+        message: 'The 2-page PDF exceeds its 1-page budget and needs review.',
+        occurredAt,
+        artifact: { kind: 'pdf', path: 'output/116-overflow-review.pdf', revision: 'a'.repeat(64) },
+        nextAction: { kind: 'retry', label: 'Regenerate after trimming', href: null },
+        pdfReview: { actualPages: 2, budget: 1, trimGuidance, reviewRevision },
+        diagnostic: {
+          trigger: 'non-zero-exit', contract: { id: 'career-ops.opportunity-lifecycle', version: 1 },
+          stage: 'evaluated', revision: 'b'.repeat(64), exitCode: 1, signal: null,
+          parserCode: null, lifecycleCode: 'pdf-needs-review', artifacts: [],
+        },
+      },
+    }]));
+  }, { jobId: reviewJobId, reviewRevision: overflowRecord.record.revision, trimGuidance: overflowRecord.record.trimGuidance });
+  await page.goto(`${baseUrl}/jobs/${reviewJobId}`);
+  await page.getByText('needs review', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Actual: 2 pages · Budget: 1').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Regenerate after trimming' }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Allow this 2-page count' }).isVisible(), true);
+
+  await page.goto(`${baseUrl}/pipeline/2`);
+  await page.getByRole('heading', { name: 'Northstar Fictional', exact: true }).waitFor();
 
   const guidedTrigger = page.getByRole('button', { name: 'Start guided approach' });
   await guidedTrigger.click();

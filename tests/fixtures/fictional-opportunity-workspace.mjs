@@ -22,6 +22,7 @@ const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const PASSIVE_CORE_FILES = [
   'DATA_CONTRACT.md',
   'opportunity-lifecycle.mjs',
+  'pdf-artifact.mjs',
   'tracker-utils.mjs',
   'tracker-parse.mjs',
   'tracker-aliases.json',

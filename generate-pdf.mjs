@@ -35,6 +35,12 @@ import { readFile } from 'fs/promises';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
+import {
+  PDF_TRIM_GUIDANCE,
+  opportunityForReport,
+  recordPdfArtifact,
+  reconcilePdfArtifact,
+} from './pdf-artifact.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PDF_PAGE_MARGIN = '0.6in';
@@ -233,9 +239,8 @@ export function enforcePageBudget(pageCount, { maxPages = 2, allowOverflow = fal
   const pageWord = maxPages === 1 ? 'page' : 'pages';
   const message =
     `CV is ${pageCount} pages, over the ${maxPages}-${pageWord} budget. ` +
-    `Trim the weakest content (extra bullets, older roles, the competencies ` +
-    `strip, secondary projects) and regenerate — or pass --max-pages=${pageCount} ` +
-    `/ --allow-overflow if this role genuinely needs the longer form.`;
+    `${PDF_TRIM_GUIDANCE} Regenerate, or explicitly allow this ${pageCount}-page count ` +
+    `with --max-pages=${pageCount} / --allow-overflow when the longer form is intentional.`;
 
   if (allowOverflow) {
     console.warn(`⚠️  ${message} (proceeding — --allow-overflow set)`);
@@ -414,10 +419,41 @@ async function generatePDF() {
 
   const result = await renderHtmlToPdf(html, outputPath, { format, baseDir: dirname(inputPath), reportNum, inputPath });
 
+  // Persist the render decision before enforcing the budget. A written
+  // overflow must survive the non-zero exit as an inspectable needs-review
+  // artifact, while an accepted render can be reconciled idempotently.
+  const recorded = recordPdfArtifact({
+    root: __dirname,
+    report: reportNum,
+    pdfPath: result.outputPath,
+    htmlPath: inputPath,
+    format,
+    pageCount: result.pageCount,
+    maxPages,
+    allowOverflow,
+  });
+
   // Length is only known after render. The PDF is already on disk (so an
   // overflowing draft can be inspected and trimmed from); this decides whether
   // to accept it. Throws on breach unless --allow-overflow / --max-pages=0.
   enforcePageBudget(result.pageCount, { maxPages, allowOverflow });
+
+  if (recorded) {
+    const opportunity = opportunityForReport({ root: __dirname, report: reportNum });
+    if (opportunity) {
+      const reconciled = await reconcilePdfArtifact({
+        root: __dirname,
+        opportunity,
+        expectedRevision: recorded.record.revision,
+      });
+      if (!['changed', 'unchanged'].includes(reconciled.effect)) {
+        throw new Error(`PDF was accepted but tracker reconciliation failed: ${reconciled.message}`);
+      }
+      console.log(`🔒 PDF acceptance: ${reconciled.message}`);
+    } else {
+      console.warn(`⚠️  PDF accepted, but report ${reportNum} does not resolve to one tracker Opportunity.`);
+    }
+  }
 
   return result;
 }

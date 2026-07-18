@@ -51,6 +51,7 @@ import {
   trackerLockDirFor,
   writeFileAtomic,
 } from './tracker-utils.mjs';
+import { inspectPdfArtifact } from './pdf-artifact.mjs';
 
 const MODULE_ROOT = dirname(fileURLToPath(import.meta.url));
 export const OPPORTUNITY_LIFECYCLE_CONTRACT_ID = 'career-ops.opportunity-lifecycle';
@@ -383,7 +384,22 @@ function readArtifacts({ root, tracker, row, stage, states }) {
       revision: null,
     });
   }
-  for (const [kind, cell] of [['pdf', row.pdf], ['report', row.report]]) {
+  const canonicalPdf = inspectPdfArtifact({ root, row });
+  if (canonicalPdf) {
+    artifacts.push(canonicalPdf.artifact);
+    if (canonicalPdf.artifact.path && canonicalPdf.artifact.state === 'available') {
+      provenance.push({ kind: 'artifact', path: canonicalPdf.artifact.path, fields: ['artifacts'] });
+    }
+    if (canonicalPdf.artifact.state !== 'available') {
+      warnings.push({
+        code: 'pdf-artifact-unavailable',
+        source: canonicalPdf.artifact.path,
+        disables: [],
+        blocksActions: [],
+      });
+    }
+  }
+  for (const [kind, cell] of [['pdf', canonicalPdf ? '' : row.pdf], ['report', row.report]]) {
     const inspected = resolveDeclaredArtifact({ root, tracker, kind, cell });
     if (!inspected) continue;
     if (kind === 'report' && inspected.content) {
@@ -883,8 +899,9 @@ function expectationConflict(summary, expected) {
 }
 
 function commandArtifacts(summary) {
-  return summary?.artifacts?.map(({ kind, action, expectedAction, state, format, path, revision }) => ({
+  return summary?.artifacts?.map(({ kind, action, expectedAction, state, format, path, revision, acceptance }) => ({
     kind, action, expectedAction, state, format, path, revision,
+    ...(acceptance ? { acceptance } : {}),
   })) ?? [];
 }
 
