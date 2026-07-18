@@ -132,7 +132,9 @@ function missingDestination(value) {
   const text = clean(value);
   if (!text) return true;
   if (/(?:https?:\/\/|mailto:)/i.test(text)) return false;
-  return /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
+  return /\{[^{}]+\}/.test(text)
+    || /\burl\b/i.test(text)
+    || /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
 }
 
 function destinationToken(value) {

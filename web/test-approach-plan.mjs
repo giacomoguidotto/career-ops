@@ -185,3 +185,21 @@ test("a concrete URL keeps names containing placeholder words verified", () => {
   ].join("\n");
   assert.equal(parseApproachPlan(verified)[0].blockedReason, null);
 });
+
+test("unresolved destination templates stay blocked", () => {
+  const unresolved = [
+    "### 1. Official form",
+    "- **Route:** formal application",
+    "- **To:** {ATS/form URL}",
+    "- **Channel:** ATS",
+    "",
+    "### Fill the Application Form",
+    "- **To:** {ATS/form URL}",
+    "- **Channel:** ATS",
+    "",
+    "| Question | Answer | Notes |",
+    "|---|---|---|",
+    "| Name | Candidate-provided name | Source: fictional CV. |",
+  ].join("\n");
+  assert.match(parseApproachPlan(unresolved)[0].blockedReason, /verified destination is missing/);
+});
