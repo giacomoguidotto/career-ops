@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // is already known). Keeps the stream itself pure text/plain.
 export async function GET() {
   try {
-    const { urls } = assembleDedupContext();
+    const { urls } = await assembleDedupContext();
     return Response.json({ urls: [...urls] });
   } catch {
     return Response.json({ urls: [] });

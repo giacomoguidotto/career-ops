@@ -18,6 +18,7 @@ const targetIdx = argv.indexOf('--target');
 const projectRoot =
   targetIdx !== -1 && argv[targetIdx + 1] ? argv[targetIdx + 1] : __dirname;
 const JSON_OUT = argv.includes('--json');
+const READ_ONLY = argv.includes('--read-only');
 // --strict adds a live ATS-slug probe of portals.yml (network). Opt-in so the
 // default `npm run doctor` stays fast and fully offline.
 const STRICT = argv.includes('--strict');
@@ -385,13 +386,13 @@ async function main() {
 // prerequisites that AGENTS.md "First Run" lists. `--json` turns the trigger into
 // a deterministic mechanism the agent runs (instead of re-deriving it from prose),
 // and `--target <dir>` lets the test suite point it at a simulated virgin env.
-function onboardingState(root) {
+function onboardingState(root, { autoCopy = true } = {}) {
   const autoCopied = [];
   const templates = [
     { target: 'modes/_profile.md', template: 'modes/_profile.template.md' },
     { target: 'modes/_custom.md', template: 'modes/_custom.template.md' },
   ];
-  for (const { target, template } of templates) {
+  for (const { target, template } of autoCopy ? templates : []) {
     const targetPath = join(root, ...target.split('/'));
     const templatePath = join(root, ...template.split('/'));
     if (!existsSync(targetPath) && existsSync(templatePath)) {
@@ -420,7 +421,7 @@ function onboardingState(root) {
 }
 
 if (JSON_OUT) {
-  console.log(JSON.stringify(onboardingState(projectRoot)));
+  console.log(JSON.stringify(onboardingState(projectRoot, { autoCopy: !READ_ONLY })));
   process.exit(0);
 } else {
   main().catch((err) => {

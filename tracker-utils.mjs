@@ -33,15 +33,15 @@ const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
  *
  * @returns {string|null} Absolute path to states.yml, or null when absent.
  */
-function locateStatesFile() {
-  const templated = join(CAREER_OPS, 'templates/states.yml');
+function locateStatesFile(rootDir = CAREER_OPS) {
+  const templated = join(rootDir, 'templates/states.yml');
   if (existsSync(templated)) return templated;
-  const flat = join(CAREER_OPS, 'states.yml');
+  const flat = join(rootDir, 'states.yml');
   if (existsSync(flat)) return flat;
   return null;
 }
 
-let _statesCache = null;
+const statesCache = new Map();
 
 /**
  * @typedef {object} StateRecord
@@ -69,14 +69,18 @@ let _statesCache = null;
  *
  * @param {object} [options]
  * @param {boolean} [options.force] - Re-read the file, bypassing the cache.
- * @returns {{ byKey: Map<string,string>, labels: string[], groupByKey: Map<string,string>, records: StateRecord[], byId: Map<string,StateRecord>, recordByKey: Map<string,StateRecord> }}
+ * @param {string} [options.rootDir] - Alternate checkout root for isolated readers and tests.
+ * @param {string} [options.statesPath] - Explicit states.yml path. Takes precedence over rootDir.
+ * @returns {{ version: number|null, path: string, byKey: Map<string,string>, labels: string[], groupByKey: Map<string,string>, records: StateRecord[], byId: Map<string,StateRecord>, recordByKey: Map<string,StateRecord> }}
  */
 export function loadStates(options = {}) {
-  if (_statesCache && !options.force) return _statesCache;
-  const path = locateStatesFile();
+  const path = options.statesPath
+    ? resolve(options.statesPath)
+    : locateStatesFile(options.rootDir ? resolve(options.rootDir) : CAREER_OPS);
   if (!path) {
     throw new Error('states.yml not found (looked for templates/states.yml and states.yml).');
   }
+  if (statesCache.has(path) && !options.force) return statesCache.get(path);
   const doc = yaml.load(readFileSync(path, 'utf-8'));
   const byKey = new Map(); // lowercased label/id/alias → canonical label
   const groupByKey = new Map(); // same keys → dashboard_group
@@ -98,6 +102,8 @@ export function loadStates(options = {}) {
       onDemand: (s.on_demand || []).map((v) => String(v)),
       nextStates: (s.next_states || []).map((v) => String(v)),
       group,
+      aliases: (s.aliases || []).map((v) => String(v)),
+      description: s.description ? String(s.description).trim() : '',
     };
     records.push(record);
     if (record.id) byId.set(record.id.toLowerCase(), record);
@@ -111,8 +117,24 @@ export function loadStates(options = {}) {
     if (s.id) register(s.id);
     for (const alias of s.aliases || []) register(alias);
   }
-  _statesCache = { byKey, labels, groupByKey, records, byId, recordByKey };
-  return _statesCache;
+  const rawVersion = doc?.version;
+  const versionCandidate = typeof rawVersion === 'number'
+    ? rawVersion
+    : typeof rawVersion === 'string' && rawVersion.trim() !== ''
+      ? Number(rawVersion)
+      : Number.NaN;
+  const parsed = {
+    version: Number.isSafeInteger(versionCandidate) && versionCandidate > 0 ? versionCandidate : null,
+    path,
+    byKey,
+    labels,
+    groupByKey,
+    records,
+    byId,
+    recordByKey,
+  };
+  statesCache.set(path, parsed);
+  return parsed;
 }
 
 /**

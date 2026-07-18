@@ -15,7 +15,7 @@ export async function GET() {
     return Response.json({ available: false, onboardingNeeded: false, missing: [], warnings: [] });
   }
   const stdout = await new Promise<string>((resolve) => {
-    execFile("node", [doctor, "--json"], { cwd: root, timeout: 10_000 }, (_err, out) => resolve(out || ""));
+    execFile(process.execPath, [doctor, "--json", "--read-only"], { cwd: root, timeout: 10_000 }, (_err, out) => resolve(out || ""));
   });
   try {
     const last = stdout.trim().split("\n").pop() || "{}";

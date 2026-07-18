@@ -250,20 +250,20 @@ export function resolveReportPath(reportField, appsFile = APPS_FILE, repoRoot = 
 }
 
 // --- Compute urgency ---
-export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount) {
+export function computeUrgency(status, daysSinceApp, daysSinceLastFollowup, followupCount, cadence = CADENCE) {
   if (status === 'approached' || status === 'applied') {
-    if (followupCount >= CADENCE.applied_max_followups) return 'cold';
-    if (followupCount === 0 && daysSinceApp >= CADENCE.applied_first) return 'overdue';
-    if (followupCount > 0 && daysSinceLastFollowup !== null && daysSinceLastFollowup >= CADENCE.applied_subsequent) return 'overdue';
+    if (followupCount >= cadence.applied_max_followups) return 'cold';
+    if (followupCount === 0 && daysSinceApp >= cadence.applied_first) return 'overdue';
+    if (followupCount > 0 && daysSinceLastFollowup !== null && daysSinceLastFollowup >= cadence.applied_subsequent) return 'overdue';
     return 'waiting';
   }
   if (status === 'responded') {
-    if (daysSinceApp < CADENCE.responded_initial) return 'urgent';
-    if (daysSinceApp >= CADENCE.responded_subsequent) return 'overdue';
+    if (daysSinceApp < cadence.responded_initial) return 'urgent';
+    if (daysSinceApp >= cadence.responded_subsequent) return 'overdue';
     return 'waiting';
   }
   if (status === 'interview') {
-    if (daysSinceApp >= CADENCE.interview_thankyou) return 'overdue';
+    if (daysSinceApp >= cadence.interview_thankyou) return 'overdue';
     return 'waiting';
   }
   return 'waiting';
@@ -278,19 +278,19 @@ export function computeQualifyingUrgency(daysSinceSent, cadence = CADENCE) {
 }
 
 // --- Compute next follow-up date ---
-export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount) {
+export function computeNextFollowupDate(status, appDate, lastFollowupDate, followupCount, cadence = CADENCE) {
   if (status === 'approached' || status === 'applied') {
-    if (followupCount >= CADENCE.applied_max_followups) return null; // cold
-    if (followupCount === 0) return addDays(parseDate(appDate), CADENCE.applied_first);
-    if (lastFollowupDate) return addDays(parseDate(lastFollowupDate), CADENCE.applied_subsequent);
-    return addDays(parseDate(appDate), CADENCE.applied_first);
+    if (followupCount >= cadence.applied_max_followups) return null; // cold
+    if (followupCount === 0) return addDays(parseDate(appDate), cadence.applied_first);
+    if (lastFollowupDate) return addDays(parseDate(lastFollowupDate), cadence.applied_subsequent);
+    return addDays(parseDate(appDate), cadence.applied_first);
   }
   if (status === 'responded') {
-    if (lastFollowupDate) return addDays(parseDate(lastFollowupDate), CADENCE.responded_subsequent);
-    return addDays(parseDate(appDate), CADENCE.responded_initial);
+    if (lastFollowupDate) return addDays(parseDate(lastFollowupDate), cadence.responded_subsequent);
+    return addDays(parseDate(appDate), cadence.responded_initial);
   }
   if (status === 'interview') {
-    return addDays(parseDate(appDate), CADENCE.interview_thankyou);
+    return addDays(parseDate(appDate), cadence.interview_thankyou);
   }
   return null;
 }

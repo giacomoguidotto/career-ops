@@ -32,8 +32,7 @@ export const LEGACY_COLMAP = {
  * (The web loader degrades to the legacy fixed order instead because it reads
  * the file from a user-configured root at request time.)
  */
-export const HEADER_ALIASES = (() => {
-  const src = new URL('./tracker-aliases.json', import.meta.url);
+export function loadTrackerHeaderAliases(src = new URL('./tracker-aliases.json', import.meta.url)) {
   try {
     return JSON.parse(readFileSync(src, 'utf-8'));
   } catch (e) {
@@ -43,7 +42,9 @@ export const HEADER_ALIASES = (() => {
       'from the repo or re-run: node update-system.mjs apply',
     );
   }
-})();
+}
+
+export const HEADER_ALIASES = loadTrackerHeaderAliases();
 
 /**
  * A score cell in the tracker: `N/5` or `N.N/5` (any precision), or the
@@ -93,16 +94,58 @@ export function resolveScoreStatus(a, b) {
  * @param {string[]} lines - All lines of applications.md.
  * @returns {Object<string,number>|null}
  */
-export function detectColumns(lines) {
+export function detectColumns(lines, aliases = HEADER_ALIASES) {
   for (const line of lines) {
     if (!line.startsWith('|')) continue;
-    const cells = line.split('|').map(s => s.trim().toLowerCase());
-    if (!cells.includes('company') || !cells.includes('role')) continue;
+    const cells = line.split('|').map((cell) => cell.trim().toLowerCase());
     const map = {};
-    cells.forEach((c, i) => { if (HEADER_ALIASES[c] != null) map[HEADER_ALIASES[c]] = i; });
-    if (['num', 'company', 'role', 'score', 'status'].every(k => map[k] != null)) return map;
+    const duplicates = new Set();
+    cells.forEach((cell, index) => {
+      const canonical = aliases[cell];
+      if (canonical == null) return;
+      if (map[canonical] != null) duplicates.add(canonical);
+      else map[canonical] = index;
+    });
+    if (duplicates.size === 0 && ['num', 'company', 'role', 'score', 'status'].every((key) => map[key] != null)) return map;
   }
   return null;
+}
+
+/**
+ * Inspect the declared table layout without turning an unfamiliar header into
+ * the legacy fixed layout. A real header is paired with the following markdown
+ * separator row. This lets passive readers keep partial fields viewable while
+ * warning that lifecycle actions are unsafe for an unknown layout.
+ *
+ * @returns {{format:'declared'|'unknown'|'legacy',columns:Object<string,number>,headers:string[],headerIndex:number|null}}
+ */
+export function inspectColumns(lines, aliases = HEADER_ALIASES) {
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index];
+    const separator = lines[index + 1];
+    if (!line.startsWith('|') || !separator?.startsWith('|')) continue;
+    const separatorCells = separator.split('|').slice(1, -1).map((cell) => cell.trim());
+    if (!separatorCells.length || !separatorCells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+
+    const cells = line.split('|').map((cell) => cell.trim());
+    const headers = cells.slice(1, line.trimEnd().endsWith('|') ? -1 : undefined);
+    const map = {};
+    const duplicates = new Set();
+    cells.forEach((cell, cellIndex) => {
+      const canonical = aliases[String(cell).trim().toLowerCase()];
+      if (canonical == null) return;
+      if (map[canonical] != null) duplicates.add(canonical);
+      else map[canonical] = cellIndex;
+    });
+    const essential = ['num', 'company', 'role', 'score', 'status'];
+    return {
+      format: duplicates.size === 0 && essential.every((key) => map[key] != null) ? 'declared' : 'unknown',
+      columns: map,
+      headers,
+      headerIndex: index,
+    };
+  }
+  return { format: 'legacy', columns: LEGACY_COLMAP, headers: [], headerIndex: null };
 }
 
 /**
@@ -110,8 +153,8 @@ export function detectColumns(lines) {
  * @param {string[]} lines
  * @returns {Object<string,number>}
  */
-export function resolveColumns(lines) {
-  return detectColumns(lines) || LEGACY_COLMAP;
+export function resolveColumns(lines, aliases = HEADER_ALIASES) {
+  return detectColumns(lines, aliases) || LEGACY_COLMAP;
 }
 
 /**

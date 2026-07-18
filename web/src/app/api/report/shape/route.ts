@@ -31,7 +31,9 @@ function dirCount(rel: string, ext: string): number {
 }
 
 export async function GET() {
-  const doctor = doctorState();
+  const applications = await readApplications();
+  const inbox = readInbox();
+  const doctor = await doctorState({ applications, inbox });
   // "candidate" = a line that LOOKS like a row; parsed = what the tolerant
   // reader accepted. A gap between the two is the data-contract fingerprint.
   const inboxCandidates = lineCount("data/pipeline.md", (l) => /^\s*-\s*\[[ xX]\]/.test(l));
@@ -48,8 +50,8 @@ export async function GET() {
       hasData: doctor.hasData,
     },
     data: {
-      inbox: { candidates: inboxCandidates, parsed: readInbox().length },
-      tracker: { candidates: trackerCandidates, parsed: readApplications().length },
+      inbox: { candidates: inboxCandidates, parsed: inbox.length },
+      tracker: { candidates: trackerCandidates, parsed: applications.length },
       reports: dirCount("reports", ".md"),
       pdfs: dirCount("output", ".pdf"),
       followupsFile: fs.existsSync(path.join(careerOpsRoot(), "data", "follow-ups.md")),

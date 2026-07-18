@@ -39,8 +39,9 @@ Open http://localhost:3000. The app reads the career-ops checkout it lives in
   no account needed. Your CV and data stay in your own files.
 - **Never auto-submits:** the apply flow drafts and prefills; submitting is
   always a human action.
-- **Additive:** the web is isolated from the core's packaging, CI and release
-  automation. The CLI works exactly the same without it.
+- **Additive:** the web is isolated from the core's packaging and release
+  automation. The CLI works exactly the same without it. Web CI also exercises
+  the public passive lifecycle seam when that shared contract changes.
 
 ## Development
 

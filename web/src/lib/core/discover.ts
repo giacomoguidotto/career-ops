@@ -10,7 +10,7 @@ import { canon } from "@/lib/explore-ai";
  * token-cheap — not thousands of raw URLs) so it skips known employers, AND a
  * canonicalized URL set the client uses as a silent backstop on the stream.
  */
-export function assembleDedupContext(): { urls: Set<string>; lines: string[] } {
+export async function assembleDedupContext(): Promise<{ urls: Set<string>; lines: string[] }> {
   const urls = new Set<string>();
   const companies = new Set<string>();
   const roles = new Set<string>();
@@ -31,7 +31,7 @@ export function assembleDedupContext(): { urls: Set<string>; lines: string[] } {
     if (j.url && /^https?:\/\//i.test(j.url)) urls.add(canon(j.url));
     if (j.company) companies.add(j.company.trim());
   }
-  for (const a of readApplications()) {
+  for (const a of await readApplications()) {
     if (a.company) companies.add(a.company.trim());
     if (a.role) roles.add(a.role.trim());
   }

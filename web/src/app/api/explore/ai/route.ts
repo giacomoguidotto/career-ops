@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     return Response.json({ code: "MODE_MISSING", error: "AI search needs a newer career-ops — update to enable it." }, { status: 400 });
   }
 
-  const { lines } = assembleDedupContext();
+  const { lines } = await assembleDedupContext();
   const memory = readMemory();
   const memoryLine = memory.trim() ? `\n\nWHAT YOU KNOW ABOUT THE USER (persistent memory):\n${memory.trim()}` : "";
   const knownBlock = lines.length ? `\n\n--- ALREADY KNOWN (dedup — do NOT propose these) ---\n${lines.join("\n")}` : "";

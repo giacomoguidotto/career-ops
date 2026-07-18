@@ -19,6 +19,7 @@
     "approach:migrate": "node migrate-approaches.mjs",
     "approach:evidence": "node approach-evidence.mjs",
     "select:next": "node candidacy-select.mjs",
+    "lifecycle": "node opportunity-lifecycle.mjs",
     "integration:preflight": "node integration-preflight.mjs",
     "reconcile": "node reconcile-pipeline.mjs",
     "pdf": "node generate-pdf.mjs",

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   }
 
   // Companies already evaluated → don't resurface as "new".
-  const evaluated = new Set(readApplications().map((a) => norm(a.company)).filter(Boolean));
+  const evaluated = new Set((await readApplications()).map((a) => norm(a.company)).filter(Boolean));
 
   const toOffer = (c: string[]): DiscoveredOffer | null => {
     const [url, firstSeen, portal, title, company, status, location] = c;

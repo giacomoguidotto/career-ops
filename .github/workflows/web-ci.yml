@@ -1,17 +1,41 @@
 name: Web CI
 
-# CI for the experimental web UI (web/). Informative by design: it is NOT a
-# required check for the core — a red here never blocks a core merge, and core
-# changes never trigger it. The web/ tree versions and releases as its own
-# release-please component.
+# CI for the experimental web UI (web/). The general web job remains
+# informative. Passive lifecycle changes also trigger the browser contract job
+# because that core seam is consumed directly by the web adapter. The web/ tree
+# versions and releases as its own release-please component.
 on:
   pull_request:
     paths:
       - 'web/**'
+      - 'opportunity-lifecycle.mjs'
+      - 'tracker-utils.mjs'
+      - 'tracker-parse.mjs'
+      - 'tracker-aliases.json'
+      - 'templates/states.yml'
+      - 'followup-cadence.mjs'
+      - 'approach-attempts.mjs'
+      - 'candidacy-select.mjs'
+      - 'advance-stage.mjs'
+      - 'tests/fixtures/fictional-opportunity-workspace.mjs'
+      - 'tests/opportunity-lifecycle.test.mjs'
+      - 'doctor.mjs'
   push:
     branches: [main]
     paths:
       - 'web/**'
+      - 'opportunity-lifecycle.mjs'
+      - 'tracker-utils.mjs'
+      - 'tracker-parse.mjs'
+      - 'tracker-aliases.json'
+      - 'templates/states.yml'
+      - 'followup-cadence.mjs'
+      - 'approach-attempts.mjs'
+      - 'candidacy-select.mjs'
+      - 'advance-stage.mjs'
+      - 'tests/fixtures/fictional-opportunity-workspace.mjs'
+      - 'tests/opportunity-lifecycle.test.mjs'
+      - 'doctor.mjs'
 
 permissions:
   contents: read
@@ -30,6 +54,41 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Install core test dependencies
+        run: npm install --ignore-scripts --no-package-lock
+        working-directory: ${{ github.workspace }}
       - run: npm ci
+      - run: npm test
       - run: npx tsc --noEmit
       - run: npm run build
+
+  passive-lifecycle-browser:
+    name: passive lifecycle browser
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install core test dependencies
+        run: npm install --ignore-scripts --no-package-lock
+        working-directory: ${{ github.workspace }}
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ${{ github.workspace }}
+      - run: npm run build
+      - run: npm run test:browser
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: passive-lifecycle-browser-failure
+          path: web/.lifecycle-browser-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

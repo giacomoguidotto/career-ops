@@ -8,7 +8,7 @@ import { DEFAULT_FILTERS } from "@/lib/explore";
 // CAREER_OPS_ROOT) never fails — discovery seeds are best-effort.
 export const dynamic = "force-dynamic";
 
-export default function ExplorePage() {
+export default async function ExplorePage() {
   let seed: { filters: typeof DEFAULT_FILTERS; seededFrom: string[] } = { filters: DEFAULT_FILTERS, seededFrom: [] };
   try {
     seed = seedExploreFilters();
@@ -22,6 +22,6 @@ export default function ExplorePage() {
     /* ignore */
   }
   return (
-    <ExplorerView seed={seed} inboxSnapshot={readInbox()} appsSnapshot={readApplications()} rootExists={rootExists} />
+    <ExplorerView seed={seed} inboxSnapshot={readInbox()} appsSnapshot={await readApplications()} rootExists={rootExists} />
   );
 }

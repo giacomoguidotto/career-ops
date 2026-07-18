@@ -101,8 +101,11 @@ export function decisionFromTrackerNotes(notes) {
 }
 
 export function decisionFromReport(content) {
-  const match = String(content ?? '').match(/^\s*final_decision:\s*["']?([^"'\n]+?)["']?\s*$/im);
-  return match ? normalizeDecision(match[1]) : 'unknown';
+  const raw = String(content ?? '');
+  const machineSummary = raw.match(/^\s*final_decision:\s*["']?([^"'\n]+?)["']?\s*$/im);
+  if (machineSummary) return normalizeDecision(machineSummary[1]);
+  const decisionSnapshot = raw.match(/^\s*\*\*Decision:\*\*\s*([^\n]+?)\s*$/im);
+  return decisionSnapshot ? normalizeDecision(decisionSnapshot[1]) : 'unknown';
 }
 
 function decisionPriority(decision) {

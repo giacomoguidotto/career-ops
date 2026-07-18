@@ -1,6 +1,7 @@
 {
   "#": "num",
   "num": "num",
+  "opportunity": "num",
   "date": "date",
   "company": "company",
   "empresa": "company",
@@ -10,6 +11,7 @@
   "location": "location",
   "score": "score",
   "status": "status",
+  "stage": "status",
   "pdf": "pdf",
   "report": "report",
   "notes": "notes"
