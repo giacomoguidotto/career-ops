@@ -133,6 +133,17 @@ function missingDestination(value) {
   return !text || /\b(?:missing|unknown|not found|unverified|tbd|find a contact)\b/i.test(text);
 }
 
+function destinationToken(value) {
+  const text = clean(value);
+  const url = text.match(/(?:https?:\/\/|mailto:)[^\s|)]+/i)?.[0]?.replace(/[.,;:]+$/, "");
+  return clean(url || text).toLowerCase();
+}
+
+function materialDestination(material) {
+  if (clean(material.fields.to)) return clean(material.fields.to);
+  return material.section.lines.find((line) => /(?:https?:\/\/|mailto:)/i.test(line)) ?? "";
+}
+
 /** Parse only declared Approach Plan content. No route, destination, limit, or answer is inferred. */
 export function parseApproachPlan(markdown) {
   const allSections = sections(markdown);
@@ -147,7 +158,9 @@ export function parseApproachPlan(markdown) {
     if (candidates.length === 0) return null;
     const rankedCandidates = candidates.map((material) => {
       let score = 0;
-      const destinationMatches = clean(fields.to) && clean(fields.to) === clean(material.fields.to);
+      const rankedDestination = destinationToken(fields.to);
+      const candidateDestination = destinationToken(materialDestination(material));
+      const destinationMatches = rankedDestination && rankedDestination === candidateDestination;
       if (destinationMatches) score += 4;
       if (clean(fields.channel) && clean(fields.channel) === clean(material.fields.channel)) score += 2;
       return { material, score, destinationMatches };

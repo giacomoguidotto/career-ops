@@ -129,3 +129,23 @@ test("preserves escaped pipes inside application table cells", () => {
   assert.equal(answer.value, "Both are source-backed.");
   assert.deepEqual(answer.regenerationCandidates, ["TypeScript and JavaScript are both source-backed."]);
 });
+
+test("matches canonical application sections that declare the destination in prose", () => {
+  const canonical = [
+    "### 1. Official form",
+    "- **Route:** formal application",
+    "- **To:** Northstar careers | https://example.invalid/apply",
+    "- **Channel:** ATS",
+    "",
+    "### Fill the Application Form",
+    "Press `o` to open and fill the form: https://example.invalid/apply",
+    "",
+    "| Question | Answer | Notes |",
+    "|---|---|---|",
+    "| Why this role? | Traceable systems matter to me. | Source: fictional CV. |",
+  ].join("\n");
+  const application = parseApproachPlan(canonical)[0];
+  assert.equal(application.destination, "Northstar careers | https://example.invalid/apply");
+  assert.deepEqual(application.answers.map((answer) => answer.label), ["Why this role?"]);
+  assert.equal(application.blockedReason, null);
+});
