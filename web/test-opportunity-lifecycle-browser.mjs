@@ -629,6 +629,14 @@ try {
   assert.equal(await guidedTrigger.evaluate((node) => node === document.activeElement), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
+  for (const opportunity of [5, 7]) {
+    await page.goto(`${baseUrl}/pipeline/${opportunity}`);
+    const preparedMaterialsLink = page.getByRole('link', { name: /Review prepared materials/ }).first();
+    await preparedMaterialsLink.waitFor();
+    assert.equal(await preparedMaterialsLink.getAttribute('href'), '#materials');
+    assert.equal(await page.getByRole('link', { name: /Start guided approach/ }).count(), 0);
+  }
+
   await page.goto(`${baseUrl}/pipeline/3`);
   await page.getByRole('heading', { name: 'Attempts' }).waitFor();
   assert.equal(await page.locator('[data-history-type="attempt"]').count(), 1);

@@ -127,6 +127,15 @@ function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title:
         cta: "Open Today",
       };
     case "act-outside":
+      if (opportunity.primaryAction.id !== "execute_approach") {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "Review the prepared material, act outside career-ops, then report exactly what happened. Viewing the artifact records nothing.",
+          href: "#materials",
+          cta: "Review prepared materials",
+        };
+      }
       return {
         eyebrow: "Your next step",
         title: action || "Act outside career-ops",
