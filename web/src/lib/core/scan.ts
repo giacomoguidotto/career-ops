@@ -493,21 +493,23 @@ async function runReverseAts(filters: ExploreFilters, onEvent: (event: ScanEvent
  * scanner never disables the other, and all visible completeness claims come
  * from the exact command's structured fields rather than a product version. */
 export async function runDiscovery(filters: ExploreFilters, onEvent: (event: ScanEvent) => void): Promise<DiscoveredOffer[]> {
-  const [company, reverse] = await Promise.all([
-    runCompanyFirst(filters, onEvent),
-    runReverseAts(filters, onEvent),
-  ]);
-  onEvent({ kind: "pathSummary", summary: company.summary });
-  onEvent({ kind: "pathSummary", summary: reverse.summary });
-
   const offers: DiscoveredOffer[] = [];
   const seen = new Set<string>();
-  for (const offer of [...company.offers, ...reverse.offers]) {
-    if (seen.has(offer.url)) continue;
-    seen.add(offer.url);
-    offers.push(offer);
-    onEvent({ kind: "offer", offer });
-  }
+  const publish = async (pending: Promise<PathResult>): Promise<PathResult> => {
+    const result = await pending;
+    onEvent({ kind: "pathSummary", summary: result.summary });
+    for (const offer of result.offers) {
+      if (seen.has(offer.url)) continue;
+      seen.add(offer.url);
+      offers.push(offer);
+      onEvent({ kind: "offer", offer });
+    }
+    return result;
+  };
+  const [company, reverse] = await Promise.all([
+    publish(runCompanyFirst(filters, onEvent)),
+    publish(runReverseAts(filters, onEvent)),
+  ]);
   if (company.summary.contract === "unavailable" && reverse.summary.contract === "unavailable") {
     onEvent({ kind: "error", message: "No compatible discovery scanner is available in this checkout." });
   }

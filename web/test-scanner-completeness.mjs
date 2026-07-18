@@ -9,7 +9,7 @@ import { runDiscovery } from "./src/lib/core/scan.ts";
 
 const ORIGINAL_ROOT = process.env.CAREER_OPS_ROOT;
 
-function script({ help = "--json", result = {}, legacy = "", requireArgs = [], helpMarker = "", structuredWithoutHelp = false } = {}) {
+function script({ help = "--json", result = {}, legacy = "", requireArgs = [], helpMarker = "", structuredWithoutHelp = false, delayMs = 0 } = {}) {
   return [
     `import { appendFileSync } from "node:fs";`,
     structuredWithoutHelp ? `// Supports --json with capHit fields, but legacy help omits the flag.` : "",
@@ -17,6 +17,7 @@ function script({ help = "--json", result = {}, legacy = "", requireArgs = [], h
     `if (args.includes("--help")) { ${helpMarker ? `appendFileSync(${JSON.stringify(helpMarker)}, "probe\\n");` : ""} process.stdout.write(${JSON.stringify(`${help}\n`)}); process.exit(0); }`,
     `const required = ${JSON.stringify(requireArgs)};`,
     `if (required.some((arg) => !args.includes(arg))) process.exit(9);`,
+    delayMs ? `await new Promise((resolve) => setTimeout(resolve, ${delayMs}));` : "",
     help.includes("--json") || structuredWithoutHelp
       ? `process.stdout.write(${JSON.stringify(`${JSON.stringify(result)}\n`)});`
       : `process.stdout.write(${JSON.stringify(legacy)});`,
@@ -46,6 +47,7 @@ async function discover(root, filterOverrides = {}) {
   const offers = await runDiscovery({ ...DEFAULT_FILTERS, ats: [...DEFAULT_FILTERS.ats], ...filterOverrides }, (event) => events.push(event));
   return {
     offers,
+    events,
     summaries: Object.fromEntries(events.filter((event) => event.kind === "pathSummary").map((event) => [event.summary.path, event.summary])),
     errors: events.filter((event) => event.kind === "error"),
   };
@@ -152,11 +154,11 @@ test("reports company priority and caps plus reverse sampling and degradation", 
   });
   try {
     const result = await discover(root, { shuffleAts: true });
-    assert.deepEqual(result.offers.map((offer) => offer.url), [
+    assert.deepEqual(new Set(result.offers.map((offer) => offer.url)), new Set([
       "https://jobs.example.test/shared",
       "https://jobs.example.test/company",
       "https://jobs.example.test/reverse",
-    ]);
+    ]));
     assert.equal(result.summaries["company-first"].ordering, "configured-priority");
     assert.deepEqual(result.summaries["company-first"].runCap, { limit: 30, deferred: 4 });
     assert.deepEqual(result.summaries["company-first"].companyCap, { limit: 3, deferred: 2 });
@@ -166,6 +168,26 @@ test("reports company priority and caps plus reverse sampling and degradation", 
     assert.equal(result.summaries["reverse-ats"].datasetStatus.lever, "stale");
     assert.equal(result.summaries["reverse-ats"].unreachable, 2);
     assert.equal(result.summaries["reverse-ats"].droppedRecords, 3);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("publishes each discovery path as soon as it settles", async () => {
+  const companyOffer = { company: "Fast Fictional", title: "Platform Engineer", url: "https://jobs.example.test/fast", source: "ashby-api" };
+  const reverseOffer = { company: "Slow Fictional", title: "Data Engineer", url: "https://jobs.example.test/slow", source: "lever-full" };
+  const root = workspace({
+    "scan.mjs": script({ result: companyResult({ offers: [companyOffer] }) }),
+    "scan-ats-full.mjs": script({ delayMs: 150, result: reverseResult({ offers: [reverseOffer] }) }),
+  });
+  try {
+    const result = await discover(root);
+    const companySummary = result.events.findIndex((event) => event.kind === "pathSummary" && event.summary.path === "company-first");
+    const reverseSummary = result.events.findIndex((event) => event.kind === "pathSummary" && event.summary.path === "reverse-ats");
+    const companyPublished = result.events.findIndex((event) => event.kind === "offer" && event.offer.url === companyOffer.url);
+    const reversePublished = result.events.findIndex((event) => event.kind === "offer" && event.offer.url === reverseOffer.url);
+    assert.ok(companySummary >= 0 && companySummary < reverseSummary);
+    assert.ok(companyPublished >= 0 && companyPublished < reversePublished);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -205,7 +227,7 @@ test("unhandled sources and malformed offers degrade only their affected path", 
   });
   try {
     const result = await discover(root);
-    assert.deepEqual(result.offers.map((offer) => offer.url), [validCompany.url, validReverse.url]);
+    assert.deepEqual(new Set(result.offers.map((offer) => offer.url)), new Set([validCompany.url, validReverse.url]));
     assert.equal(result.summaries["company-first"].unhandled, 1);
     assert.equal(result.summaries["company-first"].malformedRecords, 1);
     assert.equal(result.summaries["company-first"].complete, false);
