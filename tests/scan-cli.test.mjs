@@ -5,6 +5,7 @@ import { join } from 'path';
 import { fail, pass, NODE, ROOT } from './helpers.mjs';
 
 const CLI = join(ROOT, 'scan.mjs');
+const REVERSE_CLI = join(ROOT, 'scan-ats-full.mjs');
 
 console.log('\nscan.mjs CLI safety');
 
@@ -23,6 +24,21 @@ try {
     pass('scan.mjs --help exits without running a scan');
   } else {
     fail(`scan.mjs --help was not side-effect free: status=${help.status} stdout=${JSON.stringify(help.stdout)} stderr=${JSON.stringify(help.stderr)}`);
+  }
+
+  const reverseHelp = spawnSync(NODE, [REVERSE_CLI, '--help'], {
+    cwd: temp,
+    encoding: 'utf8',
+  });
+
+  if (reverseHelp.status === 0
+      && reverseHelp.stdout.includes('Usage:')
+      && reverseHelp.stdout.includes('--json')
+      && !reverseHelp.stdout.includes('Reverse ATS Scan')
+      && readdirSync(temp).length === 0) {
+    pass('scan-ats-full.mjs advertises its structured output capability');
+  } else {
+    fail(`scan-ats-full.mjs --help omitted --json or caused side effects: status=${reverseHelp.status} stdout=${JSON.stringify(reverseHelp.stdout)} stderr=${JSON.stringify(reverseHelp.stderr)}`);
   }
 
   const portals = join(temp, 'portals.yml');

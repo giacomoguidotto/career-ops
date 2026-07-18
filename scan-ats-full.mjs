@@ -134,6 +134,7 @@ const USAGE = `Usage:
   node scan-ats-full.mjs --liveness           # Playwright-verify matches before writing
   node scan-ats-full.mjs --verbose            # log per-board fetch failures
   node scan-ats-full.mjs --md-out <dir>       # also write a dated markdown digest to <dir>
+  node scan-ats-full.mjs --json               # emit one machine-readable result on stdout
   node scan-ats-full.mjs --help               # print this usage block and exit`;
 
 function parseArgs(argv) {
