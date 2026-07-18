@@ -194,6 +194,21 @@ try {
   const retried = await waitForTerminalWorker(phone.request, baseUrl, 2);
   assert.equal(retried.id, terminalWorker.id, "retry preserves one durable worker identity");
   assert.equal(retried.recoveryHistory.length, 2, "retry appends typed recovery history");
+  const partialDir = join(fixture.root, "output", "next-packs");
+  mkdirSync(partialDir, { recursive: true });
+  writeFileSync(join(partialDir, "007-partial.md"), "# Preserved partial checkpoint\n");
+  const partialRecoveryResponse = await phone.request.post(`${baseUrl}/api/workers/${terminalWorker.id}`, {
+    data: { action: "recover", trigger: "reload" },
+  });
+  assert.equal(partialRecoveryResponse.ok(), true);
+  assert.equal((await partialRecoveryResponse.json()).recovery.outcome, "resumable");
+  await phone.reload();
+  await phone.getByRole("button", { name: "Resume work" }).click();
+  await phone.getByText("Resuming preserved work", { exact: true }).waitFor();
+  const resumed = await waitForTerminalWorker(phone.request, baseUrl, 4);
+  assert.equal(resumed.id, terminalWorker.id, "resume preserves one durable worker identity");
+  assert.equal(resumed.recoveryHistory.at(-1).outcome, "resumable", "partial work remains resumable without regeneration");
+  rmSync(join(partialDir, "007-partial.md"));
   replaceStage(fixture.root, 7, leader.stage.label, "Discarded");
   const staleResume = await phone.request.post(`${baseUrl}/api/run`, {
     data: {
@@ -201,7 +216,7 @@ try {
       cliId: "codex",
       input: "",
       workerId: terminalWorker.id,
-      continuation: "retry",
+      continuation: "resume",
     },
   });
   assert.equal(staleResume.status(), 409, "retry rechecks current canonical Stage before launching work");

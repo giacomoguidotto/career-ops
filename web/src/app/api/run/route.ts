@@ -199,21 +199,31 @@ export async function POST(req: Request) {
         if (current.stage.id !== existing.workOrder.source.stage) {
           return Response.json({ error: "The Opportunity changed after this worker stopped.", code: "opportunity-conflict" }, { status: 409 });
         }
-        const refreshed = await requestOpportunityWork(careerOpsRoot(), {
-          opportunity: existing.workOrder.opportunity,
-          expectedStage: current.stage.id,
-          expectedRevision: current.revision,
-        });
-        if (!refreshed.workOrder || !["work-requested", "already-running"].includes(refreshed.code)) {
-          return Response.json({ error: refreshed.message, code: refreshed.code, outcome: refreshed }, { status: refreshed.effect === "conflict" ? 409 : 422 });
-        }
-        if (refreshed.workOrder.id !== existing.workOrder.id || refreshed.workOrder.action !== existing.workOrder.action) {
+        if (current.stage.suggests !== existing.workOrder.action) {
           return Response.json({ error: "The canonical work action changed after this worker stopped.", code: "work-action-conflict" }, { status: 409 });
         }
-        lifecycleWorkOrder = {
-          ...refreshed.workOrder,
-          source: { stage: current.stage.id, revision: current.revision },
-        };
+        if (continuation === "resume") {
+          lifecycleWorkOrder = {
+            ...existing.workOrder,
+            source: { stage: current.stage.id, revision: current.revision },
+          };
+        } else {
+          const refreshed = await requestOpportunityWork(careerOpsRoot(), {
+            opportunity: existing.workOrder.opportunity,
+            expectedStage: current.stage.id,
+            expectedRevision: current.revision,
+          });
+          if (!refreshed.workOrder || !["work-requested", "already-running"].includes(refreshed.code)) {
+            return Response.json({ error: refreshed.message, code: refreshed.code, outcome: refreshed }, { status: refreshed.effect === "conflict" ? 409 : 422 });
+          }
+          if (refreshed.workOrder.id !== existing.workOrder.id || refreshed.workOrder.action !== existing.workOrder.action) {
+            return Response.json({ error: "The canonical work action changed after this worker stopped.", code: "work-action-conflict" }, { status: 409 });
+          }
+          lifecycleWorkOrder = {
+            ...refreshed.workOrder,
+            source: { stage: current.stage.id, revision: current.revision },
+          };
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Lifecycle work could not be refreshed.";
         return Response.json(
