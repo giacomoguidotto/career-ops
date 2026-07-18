@@ -48,7 +48,7 @@ import { normalizeCompany } from './tracker-utils.mjs';
 
 try {
   const { config } = await import('dotenv');
-  config();
+  config({ quiet: process.argv.includes('--json') });
 } catch {
   // dotenv is optional — fall back to process.env if not installed
 }
@@ -1348,7 +1348,7 @@ async function main() {
   const args = process.argv.slice(2);
   const knownOptions = new Set([
     '--help', '--dry-run', '--company', '--verify', '--headed-fallback',
-    '--throttle', '--rediscover-404', '--max-new', '--max-per-company',
+    '--throttle', '--rediscover-404', '--max-new', '--max-per-company', '--json',
   ]);
   const unknownOption = args.find((arg) => arg.startsWith('-')
     && !knownOptions.has(arg)
@@ -1371,6 +1371,7 @@ Options:
   --rediscover-404          Search for moved postings during verification
   --max-new=<count>         Limit new offers added in this run
   --max-per-company=<count> Limit new offers added per company
+  --json                    Emit one machine-readable result on stdout
   --help                    Show this help`);
     return;
   }
@@ -1379,6 +1380,10 @@ Options:
   mkdirSync('data', { recursive: true });
   const dryRun = args.includes('--dry-run');
   const verify = args.includes('--verify');
+  const json = args.includes('--json');
+  // Machine callers require stdout to contain exactly one JSON object. Preserve
+  // all existing human diagnostics on stderr for structured invocations.
+  if (json) console.log = console.error;
   const maxNew = parsePositiveIntFlag(args, 'max-new');
   const maxPerCompany = parsePositiveIntFlag(args, 'max-per-company');
   // Opt-in: on an anti-bot challenge (e.g. pracuj.pl Cloudflare wall), retry the
@@ -1884,6 +1889,37 @@ Options:
       dupes: totalDupes, newAdded: verifiedOffers.length, errors: errors.length,
       filteredBlacklist: totalFilteredBlacklist,
     });
+  }
+
+  if (json) {
+    process.stdout.write(JSON.stringify({
+      contract: { id: 'career-ops.scanner.company-first', version: 1 },
+      date,
+      ordering: {
+        kind: 'configured-priority',
+        configuredSources: targets.filter(t => parseScanPriority(t.scan_priority ?? t.scanPriority) !== 0).length,
+      },
+      companiesAvailable: summaryCompanies,
+      companiesScanned: summaryCompanies,
+      jobBoardsAvailable: summaryBoards,
+      jobBoardsScanned: summaryBoards,
+      runCap: { limit: maxNew, deferred: totalDeferredByRunCap },
+      companyCap: { limit: maxPerCompany, deferred: totalDeferredByCompanyCap },
+      unreachableTargets: unreachableTargets.length,
+      networkErrors: networkTargets.length,
+      otherErrors: otherErrors.length,
+      saved: !dryRun && verifiedOffers.length > 0,
+      offers: verifiedOffers.map(o => ({
+        company: o.company,
+        title: o.title,
+        url: o.url,
+        location: o.location || null,
+        postedAt: postedAtIsoDate(o.postedAt) || null,
+        source: o.source,
+        priority: parseScanPriority(o.scanPriority),
+      })),
+    }) + '\n');
+    return;
   }
 
   console.log(`\n→ Run /career-ops pipeline to evaluate new offers.`);

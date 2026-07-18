@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test-clean-chips.mjs test-logo-cache.mjs test-opportunity-lifecycle-adapter.mjs test-today-runway.mjs",
+    "test": "node --test test-clean-chips.mjs test-logo-cache.mjs test-opportunity-lifecycle-adapter.mjs test-scanner-completeness.mjs test-today-runway.mjs",
     "test:browser": "node test-opportunity-lifecycle-browser.mjs && node test-today-supervision-browser.mjs"
   },
   "dependencies": {

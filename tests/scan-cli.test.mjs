@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { mkdtempSync, readdirSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fail, pass, NODE, ROOT } from './helpers.mjs';
@@ -17,11 +17,34 @@ try {
 
   if (help.status === 0
       && help.stdout.includes('Usage:')
+      && help.stdout.includes('--json')
       && !help.stdout.includes('Portal Scan')
       && readdirSync(temp).length === 0) {
     pass('scan.mjs --help exits without running a scan');
   } else {
     fail(`scan.mjs --help was not side-effect free: status=${help.status} stdout=${JSON.stringify(help.stdout)} stderr=${JSON.stringify(help.stderr)}`);
+  }
+
+  const portals = join(temp, 'portals.yml');
+  writeFileSync(portals, 'tracked_companies: []\njob_boards: []\n');
+  const structured = spawnSync(NODE, [CLI, '--dry-run', '--max-new=30', '--max-per-company=3', '--json'], {
+    cwd: temp,
+    env: { ...process.env, CAREER_OPS_PORTALS: portals },
+    encoding: 'utf8',
+  });
+  let result = null;
+  try { result = JSON.parse(structured.stdout); } catch { /* asserted below */ }
+  if (structured.status === 0
+      && result?.contract?.id === 'career-ops.scanner.company-first'
+      && result?.ordering?.kind === 'configured-priority'
+      && result?.runCap?.limit === 30
+      && result?.companyCap?.limit === 3
+      && Array.isArray(result?.offers)
+      && !existsSync(join(temp, 'data', 'scan-history.tsv'))
+      && !existsSync(join(temp, 'data', 'pipeline.md'))) {
+    pass('scan.mjs --json emits the company-first completeness contract without dry-run writes');
+  } else {
+    fail(`scan.mjs --json contract failed: status=${structured.status} stdout=${JSON.stringify(structured.stdout)} stderr=${JSON.stringify(structured.stderr)}`);
   }
 
   const unknown = spawnSync(NODE, [CLI, '--definitely-unknown'], {

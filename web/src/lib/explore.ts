@@ -25,6 +25,9 @@ export type ExploreFilters = {
   sinceDays: number;
   ats: AtsSource[];
   limitPerAts: number;
+  shuffleAts: boolean;
+  companyRunLimit: number;
+  companyOfferLimit: number;
 };
 
 export const DEFAULT_FILTERS: ExploreFilters = {
@@ -36,6 +39,9 @@ export const DEFAULT_FILTERS: ExploreFilters = {
   sinceDays: 7,
   ats: [...ATS_SOURCES],
   limitPerAts: 150,
+  shuffleAts: false,
+  companyRunLimit: 30,
+  companyOfferLimit: 3,
 };
 
 export type DiscoveredOffer = {
@@ -68,10 +74,33 @@ export type DiscoveredOffer = {
 /** The two discovery surfaces: free deterministic Scan vs token-spending AI search. */
 export type ExploreMode = "scan" | "ai";
 
+export type DiscoveryPath = "company-first" | "reverse-ats";
+
+/** Canonical completeness facts reported by one exact scanner invocation. */
+export type ScannerPathSummary = {
+  path: DiscoveryPath;
+  contract: "structured" | "legacy" | "unavailable";
+  complete: boolean;
+  searched: number;
+  available?: number;
+  unreachable: number;
+  ordering?: "configured-priority";
+  configuredPrioritySources?: number;
+  runCap?: { limit: number | null; deferred: number };
+  companyCap?: { limit: number | null; deferred: number };
+  sampling?: "alphabetical" | "shuffled";
+  capHit?: boolean;
+  datasetStatus?: Record<string, "ok" | "stale" | "empty">;
+  droppedRecords?: number;
+  diagnostic?: string;
+};
+
 /** Stream event grammar (NDJSON). `kind` discriminates. Discovery is FREE — the
  *  terminal `done` always carries cost {tokens:0, usd:0}. */
 export type ScanEvent =
-  | { kind: "start"; ats: string[]; sinceDays: number; limit: number; free: true }
+  | { kind: "start"; paths: DiscoveryPath[]; ats: string[]; sinceDays: number; limit: number; free: true }
+  | { kind: "pathStart"; path: DiscoveryPath }
+  | { kind: "pathSummary"; summary: ScannerPathSummary }
   | { kind: "atsStart"; ats: string; companies: number }
   | { kind: "progress"; ats: string; scanned: number; total: number; matches: number }
   | { kind: "atsDone"; ats: string; unreachable: number }
@@ -138,6 +167,9 @@ export function parseExplorePatch(
   if (raw.sinceDays !== undefined) next.sinceDays = clampNum(raw.sinceDays, 1, 60, base.sinceDays);
   if (raw.limit !== undefined) next.limitPerAts = clampNum(raw.limit, 50, 500, base.limitPerAts);
   if (raw.limitPerAts !== undefined) next.limitPerAts = clampNum(raw.limitPerAts, 50, 500, base.limitPerAts);
+  if (typeof raw.shuffleAts === "boolean") next.shuffleAts = raw.shuffleAts;
+  if (raw.companyRunLimit !== undefined) next.companyRunLimit = clampNum(raw.companyRunLimit, 1, 500, base.companyRunLimit);
+  if (raw.companyOfferLimit !== undefined) next.companyOfferLimit = clampNum(raw.companyOfferLimit, 1, 50, base.companyOfferLimit);
   if (raw.ats !== undefined) next.ats = cleanAts(raw.ats);
   return next;
 }
@@ -153,6 +185,9 @@ export function filtersToParams(f: ExploreFilters): string {
   if (f.sinceDays !== DEFAULT_FILTERS.sinceDays) sp.set("since", String(f.sinceDays));
   if (f.ats.length !== ATS_SOURCES.length) sp.set("ats", f.ats.join(","));
   if (f.limitPerAts !== DEFAULT_FILTERS.limitPerAts) sp.set("limit", String(f.limitPerAts));
+  if (f.shuffleAts) sp.set("shuffle", "1");
+  if (f.companyRunLimit !== DEFAULT_FILTERS.companyRunLimit) sp.set("runCap", String(f.companyRunLimit));
+  if (f.companyOfferLimit !== DEFAULT_FILTERS.companyOfferLimit) sp.set("companyCap", String(f.companyOfferLimit));
   return sp.toString();
 }
 
@@ -168,6 +203,9 @@ export function paramsToFilters(sp: URLSearchParams, base: ExploreFilters = DEFA
       since: sp.get("since") ?? undefined,
       ats: split(sp.get("ats")),
       limit: sp.get("limit") ?? undefined,
+      shuffleAts: sp.get("shuffle") === "1",
+      companyRunLimit: sp.get("runCap") ?? undefined,
+      companyOfferLimit: sp.get("companyCap") ?? undefined,
     },
     base,
   );

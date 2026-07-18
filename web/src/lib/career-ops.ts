@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { atomicWrite } from "@/lib/core/safe-write";
+import { atomicWrite } from "./core/safe-write.ts";
 import {
   LifecycleAdapterError,
   readOpportunityLifecycle,
@@ -8,7 +8,7 @@ import {
   type OpportunityDetailResult,
   type OpportunityListResult,
   type OpportunitySummary,
-} from "@/lib/core/opportunity-lifecycle";
+} from "./core/opportunity-lifecycle.ts";
 
 /**
  * Resolve the career-ops "home" — the directory holding the user's sibling

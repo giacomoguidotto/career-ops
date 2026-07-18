@@ -6,7 +6,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { instrumentSerif } from "@/lib/fonts";
 import type { Application, InboxJob } from "@/lib/career-ops";
-import { paramsToFilters, paramsToAi, type ExploreFilters } from "@/lib/explore";
+import { paramsToFilters, paramsToAi, type DiscoveryPath, type ExploreFilters, type ScannerPathSummary } from "@/lib/explore";
 import { FilterBuilder } from "./filter-builder";
 import { DiscoveringState } from "./discovering-state";
 import { AiHuntView } from "./ai-hunt-view";
@@ -37,10 +37,10 @@ export function ExplorerView({
   appsSnapshot: Application[];
   rootExists: boolean;
 }) {
-  const { filters, setFilters, initFilters, phase, running, offers, discover, status, error, mode, setMode, aiIntent, setAiIntent, discoverAI, companiesScanned, companiesAvailable, capHit, droppedNoDate, partial } = useExplore();
+  const { filters, setFilters, initFilters, phase, running, offers, discover, status, error, mode, setMode, aiIntent, setAiIntent, discoverAI, companiesScanned, companiesAvailable, pathSummaries, partial } = useExplore();
   const scanNote =
     companiesScanned > 0
-      ? `Scanned ${companiesScanned.toLocaleString()}${companiesAvailable > companiesScanned ? ` of ${companiesAvailable.toLocaleString()}` : ""} compan${companiesScanned === 1 ? "y" : "ies"}${partial ? " · some sources were unreachable" : ""}.`
+      ? `Scanned ${companiesScanned.toLocaleString()}${companiesAvailable > companiesScanned ? ` of ${companiesAvailable.toLocaleString()}` : ""} target${companiesScanned === 1 ? "" : "s"}${partial ? " · coverage was incomplete" : ""}.`
       : undefined;
   const inited = useRef(false);
   const [refineOpen, setRefineOpen] = useState(false);
@@ -187,8 +187,8 @@ export function ExplorerView({
             </div>
           )}
 
-          {isResults && capHit && (
-            <CappedBanner companiesScanned={companiesScanned} companiesAvailable={companiesAvailable} onRefine={() => setRefineOpen(true)} />
+          {(isResults || phase === "empty-current" || phase === "empty-loose" || phase === "degraded") && (
+            <CompletenessPanel summaries={pathSummaries} onRefine={() => setRefineOpen(true)} />
           )}
           {isResults && <ResultsList offers={enriched} />}
 
@@ -222,10 +222,6 @@ export function ExplorerView({
             <DegradedCard
               onRetry={() => void discover()}
               companiesScanned={companiesScanned}
-              companiesAvailable={companiesAvailable}
-              capHit={capHit}
-              droppedNoDate={droppedNoDate}
-              partial={partial}
             />
           )}
           {phase === "failed" && <FailedCard msg={error || status} onRetry={() => void discover()} />}
@@ -273,17 +269,9 @@ function EmptyState({ tone, title, body, note, onRerun, rerunLabel }: { tone: "g
 function DegradedCard({
   onRetry,
   companiesScanned,
-  companiesAvailable,
-  capHit,
-  droppedNoDate,
-  partial,
 }: {
   onRetry: () => void;
   companiesScanned: number;
-  companiesAvailable: number;
-  capHit: boolean;
-  droppedNoDate: number;
-  partial: boolean;
 }) {
   // 0 results, but the scan was NOT a clean full search → never "all caught up".
   // Pick the most informative reason (authoritative when the scanner's --json mode
@@ -291,15 +279,9 @@ function DegradedCard({
   let title = "The scan ran, but couldn’t reach any sources.";
   let body =
     "The public ATS directories didn’t respond — usually a transient network hiccup or rate-limit, so nothing could be searched. This isn’t “all caught up”; a retry in a moment usually clears it.";
-  if (companiesScanned > 0 && capHit) {
-    title = "No matches in the slice we searched.";
-    body = `The scan is capped, so it only searched ${companiesScanned.toLocaleString()}${companiesAvailable > companiesScanned ? ` of ${companiesAvailable.toLocaleString()}` : ""} companies — not the whole network. Raise scan depth (Refine search) or narrow your roles, then re-cast to look deeper.`;
-  } else if (companiesScanned > 0 && droppedNoDate > 0) {
-    title = "Fresh-looking roles were skipped for missing dates.";
-    body = `${droppedNoDate.toLocaleString()} posting${droppedNoDate === 1 ? "" : "s"} matched but had no clear publish date, so the freshness filter dropped them. Widening the time window often brings dated equivalents back.`;
-  } else if (companiesScanned > 0 && partial) {
-    title = "Some job boards were unreachable.";
-    body = `The scan searched ${companiesScanned.toLocaleString()} companies, but one or more sources didn’t respond — so this is a partial result, not “all caught up”. A retry usually clears it.`;
+  if (companiesScanned > 0) {
+    title = "No matches in the coverage available.";
+    body = `The scan searched ${companiesScanned.toLocaleString()} targets, but at least one path was capped, unavailable, degraded, or using a legacy contract. This is a partial result, not “all caught up”. The coverage details above identify the exact reason.`;
   }
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
@@ -313,20 +295,36 @@ function DegradedCard({
   );
 }
 
-function CappedBanner({ companiesScanned, companiesAvailable, onRefine }: { companiesScanned: number; companiesAvailable: number; onRefine: () => void }) {
-  // Results ARE present, but the scan was capped — tell the user there's more, so a
-  // partial list never reads as "everything there is".
+function CompletenessPanel({ summaries, onRefine }: { summaries: Partial<Record<DiscoveryPath, ScannerPathSummary>>; onRefine: () => void }) {
+  const ordered = (["company-first", "reverse-ats"] as const).map((path) => summaries[path]).filter((summary): summary is ScannerPathSummary => Boolean(summary));
+  if (ordered.length === 0) return null;
+  const incomplete = ordered.some((summary) => !summary.complete);
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-2.5 text-[13px]">
-      <span className="text-foreground">
-        Showing a capped slice — searched {companiesScanned.toLocaleString()}
-        {companiesAvailable > companiesScanned ? ` of ${companiesAvailable.toLocaleString()}` : ""} companies.
-      </span>
-      <button onClick={onRefine} className="font-medium text-brand hover:underline">
-        Raise scan depth to search deeper
-      </button>
+    <div className={cn("mb-4 rounded-xl border px-4 py-3 text-[13px]", incomplete ? "border-amber-500/25 bg-amber-500/[0.07]" : "border-emerald-500/25 bg-emerald-500/[0.06]")} aria-label="Scanner completeness">
+      <p className="font-medium text-foreground">Discovery coverage</p>
+      <ul className="mt-1.5 space-y-1 text-muted">
+        {ordered.map((summary) => <li key={summary.path}>{completenessLine(summary)}</li>)}
+      </ul>
+      {ordered.some((summary) => summary.capHit || (summary.runCap?.deferred ?? 0) > 0 || (summary.companyCap?.deferred ?? 0) > 0) && (
+        <button onClick={onRefine} className="mt-2 font-medium text-brand hover:underline">Adjust scan caps</button>
+      )}
     </div>
   );
+}
+
+function completenessLine(summary: ScannerPathSummary): string {
+  const label = summary.path === "company-first" ? "Tracked companies" : "Reverse ATS";
+  if (summary.contract === "unavailable") return `${label}: unavailable. ${summary.diagnostic ?? "This path was not run."}`;
+  if (summary.contract === "legacy") return `${label}: results may be shown, but completeness details are unavailable. This slice is not exhaustive.`;
+  const scope = `${summary.searched.toLocaleString()}${typeof summary.available === "number" && summary.available !== summary.searched ? ` of ${summary.available.toLocaleString()}` : ""} targets searched`;
+  if (summary.path === "company-first") {
+    const priority = `${summary.configuredPrioritySources ?? 0} configured priority source${summary.configuredPrioritySources === 1 ? "" : "s"}`;
+    const run = summary.runCap ? `run cap ${summary.runCap.limit ?? "off"}, ${summary.runCap.deferred} deferred` : "run cap unavailable";
+    const company = summary.companyCap ? `company cap ${summary.companyCap.limit ?? "off"}, ${summary.companyCap.deferred} deferred` : "company cap unavailable";
+    return `${label}: configured-priority order (${priority}); ${scope}; ${run}; ${company}${summary.unreachable ? `; ${summary.unreachable} unreachable or failed` : ""}.`;
+  }
+  const degraded = summary.datasetStatus ? Object.entries(summary.datasetStatus).filter(([, status]) => status !== "ok").map(([source, status]) => `${source} ${status}`).join(", ") : "";
+  return `${label}: ${summary.sampling ?? "unknown"} sampling; ${scope}${summary.capHit ? "; capped slice" : "; cap not reached"}${summary.unreachable ? `; ${summary.unreachable} unreachable boards` : ""}${summary.droppedRecords ? `; ${summary.droppedRecords} records dropped for missing dates` : ""}${degraded ? `; degraded datasets: ${degraded}` : ""}.`;
 }
 
 function FailedCard({ msg, onRetry }: { msg: string; onRetry: () => void }) {

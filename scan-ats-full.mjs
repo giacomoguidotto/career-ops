@@ -570,9 +570,12 @@ async function main() {
   // from a genuinely *empty* one. In --json mode stdout carries ONLY this.
   if (opts.json) {
     process.stdout.write(JSON.stringify({
+      contract: { id: 'career-ops.scanner.reverse-ats', version: 1 },
       date,
       sources: opts.ats,
       sinceDays: opts.sinceDays,
+      sampling: opts.shuffle ? 'shuffled' : 'alphabetical',
+      companyLimit: Number.isFinite(opts.limit) ? opts.limit : null,
       companiesAvailable: totalCompaniesAvailable,
       companiesScanned: totalCompaniesScanned,
       capHit,

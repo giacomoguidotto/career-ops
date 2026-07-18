@@ -11,9 +11,11 @@ import {
   parseExplorePatch,
   type AtsSource,
   type DiscoveredOffer,
+  type DiscoveryPath,
   type ExploreFilters,
   type ExploreMode,
   type ScanEvent,
+  type ScannerPathSummary,
 } from "@/lib/explore";
 import { makeAiStreamParser, type AiTraceChunk } from "@/lib/explore-ai";
 
@@ -54,6 +56,7 @@ type ExploreCtx = {
   companiesAvailable: number;
   capHit: boolean;
   droppedNoDate: number;
+  pathSummaries: Partial<Record<DiscoveryPath, ScannerPathSummary>>;
   status: string;
   partial: boolean;
   error: string;
@@ -94,6 +97,7 @@ type ResultSnapshot = {
   companiesAvailable: number;
   capHit: boolean;
   droppedNoDate: number;
+  pathSummaries: Partial<Record<DiscoveryPath, ScannerPathSummary>>;
   sources: Partial<Record<AtsSource, SourceState>>;
   partial: boolean;
   status: string;
@@ -118,6 +122,7 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
   const [companiesAvailable, setCompaniesAvailable] = useState(0);
   const [capHit, setCapHit] = useState(false);
   const [droppedNoDate, setDroppedNoDate] = useState(0);
+  const [pathSummaries, setPathSummaries] = useState<Partial<Record<DiscoveryPath, ScannerPathSummary>>>({});
   const [status, setStatus] = useState("");
   const [partial, setPartial] = useState(false);
   const [error, setError] = useState("");
@@ -155,6 +160,7 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
     setCompaniesAvailable(0);
     setCapHit(false);
     setDroppedNoDate(0);
+    setPathSummaries({});
     setPartial(false);
     setError("");
     setStatus("Casting the net across the ATS network…");
@@ -172,6 +178,7 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
     let capHitAcc = false; // scan was capped (only a slice of the universe searched)
     let datasetIssueAcc = false; // some ATS dataset was stale/empty/unreachable
     let droppedNoDateAcc = 0; // postings dropped for lacking a publish date
+    const pathSummariesAcc: Partial<Record<DiscoveryPath, ScannerPathSummary>> = {};
     try {
       const r = await fetch("/api/explore", {
         method: "POST",
@@ -203,6 +210,10 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
               continue;
             }
             switch (ev.kind) {
+              case "pathStart":
+                setPhase("scanning");
+                setStatus(ev.path === "company-first" ? "Checking your configured companies…" : "Walking the public ATS directories…");
+                break;
               case "atsStart":
                 setPhase("scanning");
                 setStatus(`Walking ${ATS_LABEL[ev.ats as AtsSource] ?? ev.ats} — ${ev.companies.toLocaleString()} companies`);
@@ -238,6 +249,28 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
                 if (ev.unreachable > 0 || datasetIssue) setPartial(true);
                 break;
               }
+              case "pathSummary": {
+                pathSummariesAcc[ev.summary.path] = ev.summary;
+                setPathSummaries((current) => ({ ...current, [ev.summary.path]: ev.summary }));
+                const summaries = Object.values(pathSummariesAcc);
+                companiesScannedAcc = summaries.reduce((sum, summary) => sum + summary.searched, 0);
+                setCompaniesScanned(companiesScannedAcc);
+                const available = summaries.reduce((sum, summary) => sum + (summary.available ?? summary.searched), 0);
+                setCompaniesAvailable(available);
+                if (ev.summary.capHit || (ev.summary.runCap?.deferred ?? 0) > 0 || (ev.summary.companyCap?.deferred ?? 0) > 0) {
+                  capHitAcc = true;
+                  setCapHit(true);
+                }
+                if ((ev.summary.droppedRecords ?? 0) > 0) {
+                  droppedNoDateAcc += ev.summary.droppedRecords ?? 0;
+                  setDroppedNoDate(droppedNoDateAcc);
+                }
+                if (!ev.summary.complete) {
+                  datasetIssueAcc = true;
+                  setPartial(true);
+                }
+                break;
+              }
               case "error":
                 sawError = ev.message;
                 break;
@@ -264,7 +297,7 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
       setPhase("revealing");
       setStatus(`${acc.length} fresh role${acc.length === 1 ? "" : "s"} found — free.`);
       window.setTimeout(() => setPhase("results"), 850);
-    } else if (sawError) {
+    } else if (sawError && Object.values(pathSummariesAcc).every((summary) => summary.contract === "unavailable")) {
       setError(sawError);
       setPhase("failed");
     } else if (capHitAcc || datasetIssueAcc || droppedNoDateAcc > 0 || companiesScannedAcc === 0) {
@@ -326,6 +359,10 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
     setSources({});
     setMatchCount(0);
     setCompaniesScanned(0);
+    setCompaniesAvailable(0);
+    setCapHit(false);
+    setDroppedNoDate(0);
+    setPathSummaries({});
     setStatus("");
     setPartial(false);
     setError("");
@@ -465,6 +502,7 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
     setCompaniesAvailable(snap.companiesAvailable ?? 0);
     setCapHit(!!snap.capHit);
     setDroppedNoDate(snap.droppedNoDate ?? 0);
+    setPathSummaries(snap.pathSummaries ?? {});
     setSources(snap.sources ?? {});
     setPartial(!!snap.partial);
     setStatus(typeof snap.status === "string" ? snap.status : "");
@@ -484,24 +522,24 @@ export function ExploreProvider({ children }: { children: React.ReactNode }) {
     if (!SETTLED.has(phase)) return;
     try {
       const snap: ResultSnapshot = {
-        v: 1, mode, phase, offers, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, sources,
+        v: 1, mode, phase, offers, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, pathSummaries, sources,
         partial, status, error, added: [...added], aiTrace, aiCost, aiIntent,
       };
       sessionStorage.setItem(RESULTS_KEY, JSON.stringify(snap));
     } catch {
       /* sessionStorage full/unavailable — non-fatal */
     }
-  }, [phase, mode, offers, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, sources, partial, status, error, added, aiTrace, aiCost, aiIntent]);
+  }, [phase, mode, offers, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, pathSummaries, sources, partial, status, error, added, aiTrace, aiCost, aiIntent]);
 
   const value = useMemo(
     () => ({
       filters, setFilters, initFilters, phase,
       running: phase === "casting" || phase === "scanning" || phase === "revealing" || phase === "hunting",
-      offers, sources, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, status, partial, error, added, adding,
+      offers, sources, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, pathSummaries, status, partial, error, added, adding,
       discover, addToPipeline, applyPatch, reset,
       mode, setMode, aiIntent, setAiIntent, discoverAI, aiTrace, aiCost,
     }),
-    [filters, setFilters, initFilters, phase, offers, sources, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, status, partial, error, added, adding, discover, addToPipeline, applyPatch, reset, mode, setMode, aiIntent, discoverAI, aiTrace, aiCost],
+    [filters, setFilters, initFilters, phase, offers, sources, matchCount, companiesScanned, companiesAvailable, capHit, droppedNoDate, pathSummaries, status, partial, error, added, adding, discover, addToPipeline, applyPatch, reset, mode, setMode, aiIntent, discoverAI, aiTrace, aiCost],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

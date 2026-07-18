@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import yaml from "js-yaml";
-import { careerOpsRoot } from "@/lib/career-ops";
-import { DEFAULT_FILTERS, cleanChips, type ExploreFilters } from "@/lib/explore";
+import { careerOpsRoot } from "../career-ops.ts";
+import { DEFAULT_FILTERS, cleanChips, type ExploreFilters } from "../explore.ts";
 
 /**
  * ACL for portals.yml — the core's scan-filter config (a CONTRACT entry-point,
@@ -51,6 +51,28 @@ export function serializePortals(f: FilterLists): string {
 export function writeTempPortals(f: FilterLists): string {
   const file = path.join(os.tmpdir(), `career-ops-explore-${randomUUID()}.yml`);
   fs.writeFileSync(file, serializePortals(f), "utf8");
+  return file;
+}
+
+/** Preserve the user's configured discovery targets while applying only the
+ * current Explore filters in an ephemeral copy. The real portals.yml is never
+ * mutated, and scan.mjs still owns target resolution and ordering semantics. */
+export function writeTempCompanyPortals(f: FilterLists): string | null {
+  const config = loadYaml("portals.yml");
+  if (!config) return null;
+  const title = (config.title_filter && typeof config.title_filter === "object")
+    ? { ...(config.title_filter as Record<string, unknown>) }
+    : {};
+  const location = (config.location_filter && typeof config.location_filter === "object")
+    ? { ...(config.location_filter as Record<string, unknown>) }
+    : {};
+  title.positive = [...f.positive];
+  title.negative = [...f.negative];
+  location.allow = [...f.allow];
+  location.block = [...f.block];
+  location.always_allow = [...f.alwaysAllow];
+  const file = path.join(os.tmpdir(), `career-ops-explore-company-${randomUUID()}.yml`);
+  fs.writeFileSync(file, yaml.dump({ ...config, title_filter: title, location_filter: location }, { noRefs: true }), "utf8");
   return file;
 }
 
