@@ -1,0 +1,174 @@
+{
+  "contractVersion": 1,
+  "parentIssue": 35,
+  "closureIssue": 55,
+  "renderMatrix": [
+    { "id": "desktop-light", "width": 1440, "height": 960, "colorScheme": "light" },
+    { "id": "desktop-dark", "width": 1440, "height": 960, "colorScheme": "dark" },
+    { "id": "mobile-light", "width": 390, "height": 844, "colorScheme": "light" },
+    { "id": "mobile-dark", "width": 390, "height": 844, "colorScheme": "dark" }
+  ],
+  "requiredStates": [
+    "populated",
+    "empty",
+    "loading",
+    "running",
+    "success",
+    "warning",
+    "error",
+    "disabled",
+    "conflict",
+    "recovery"
+  ],
+  "safetyProofs": [
+    "passive load spends no tokens",
+    "unconfirmed action records no reality",
+    "unknown state is never guessed",
+    "legacy reads never rewrite user data"
+  ],
+  "accessibilityProofs": [
+    "390px layouts have no unintended horizontal overflow",
+    "320px reflow remains usable",
+    "phone product controls are at least 44 CSS pixels",
+    "WCAG 2.2 AA contrast",
+    "visible focus and deterministic restoration",
+    "dialog containment and topmost Escape",
+    "terminal changes use non-disruptive live announcements",
+    "long factual content reflows without clipping",
+    "reduced motion preserves meaning"
+  ],
+  "stateEvidence": {
+    "populated": ["today-runway", "pipeline-ledger"],
+    "empty": ["today-runway", "scanner-completeness"],
+    "loading": ["today-runway", "worker-recovery"],
+    "running": ["today-runway", "worker-recovery"],
+    "success": ["grouped-work", "opportunity-detail"],
+    "warning": ["pdf-overflow-review", "scanner-completeness"],
+    "error": ["grouped-work", "worker-recovery"],
+    "disabled": ["pipeline-ledger", "scanner-completeness"],
+    "conflict": ["today-runway", "grouped-work"],
+    "recovery": ["worker-recovery", "grouped-work"]
+  },
+  "rows": [
+    {
+      "id": "passive-lifecycle-contract",
+      "capabilities": ["canonical passive reads", "provenance", "compatibility", "capability flags", "fictional workspace isolation"],
+      "noUiRationale": "The lifecycle seam is server-only infrastructure, so it has no competing screen. Pipeline, Today, Opportunity detail, and Explore render its canonical contract.",
+      "implementationSlice": "Publish the passive Opportunity lifecycle contract",
+      "ticket": 43,
+      "automatedChecks": ["tests/opportunity-lifecycle.test.mjs", "web/test-opportunity-lifecycle-adapter.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["pipeline-ledger", "opportunity-detail"],
+      "passingEvidence": ["branch-parity-browser", "web-unit-contract"]
+    },
+    {
+      "id": "guarded-agent-work",
+      "capabilities": ["explicit work orders", "duplicate suppression", "revision conflicts", "artifact reconciliation", "stable structured outcomes"],
+      "treatment": "Today and Opportunity detail request canonical work explicitly; worker recovery reconciles artifacts without treating process completion as lifecycle truth.",
+      "implementationSlice": "Guard Agent-owned work and artifact reconciliation",
+      "ticket": 44,
+      "automatedChecks": ["tests/opportunity-lifecycle.test.mjs", "web/test-opportunity-lifecycle-adapter.mjs", "web/test-today-supervision-browser.mjs"],
+      "renderedCases": ["today-runway", "worker-recovery"],
+      "passingEvidence": ["branch-parity-browser", "root-lifecycle-contract"]
+    },
+    {
+      "id": "today-supervision",
+      "capabilities": ["mixed-owner priority queue", "Generate one", "reviewed batch", "fresh exclusions", "Nothing started"],
+      "treatment": "Today is the global supervision queue; only eligible Agent-owned work mutates and all other ownership classes navigate.",
+      "implementationSlice": "Turn Today into the supervised action runway",
+      "ticket": 45,
+      "automatedChecks": ["web/test-today-runway.mjs", "web/test-today-supervision-browser.mjs"],
+      "renderedCases": ["today-runway"],
+      "passingEvidence": ["branch-parity-browser", "today-render-matrix"]
+    },
+    {
+      "id": "pipeline-ledger",
+      "capabilities": ["canonical Stage tabs", "URL-backed selection", "search", "desktop ledger", "phone cards", "focus-safe shortcuts"],
+      "treatment": "Pipeline is the selected lifecycle ledger, while Inbox remains separate upstream triage.",
+      "implementationSlice": "Turn Pipeline into a selected Stage ledger",
+      "ticket": 46,
+      "automatedChecks": ["web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["pipeline-ledger"],
+      "passingEvidence": ["branch-parity-browser", "pipeline-render-matrix"]
+    },
+    {
+      "id": "opportunity-surface",
+      "capabilities": ["lifecycle strip", "dominant next step", "provenance", "typed history", "readiness", "phone action"],
+      "treatment": "Opportunity detail is the complete working surface, with one primary mutation path and revisitable evidence sections.",
+      "implementationSlice": "Build the complete Opportunity working surface",
+      "ticket": 47,
+      "automatedChecks": ["web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["opportunity-detail"],
+      "passingEvidence": ["branch-parity-browser", "opportunity-render-matrix"]
+    },
+    {
+      "id": "reviewed-preparation",
+      "capabilities": ["ranked Approach routes", "protected edits", "missing-fact blockers", "channel limits", "clipboard fallback", "Act outside boundary"],
+      "treatment": "A bounded dialog prepares one canonical route and stops before any real-world action or Attempt record.",
+      "implementationSlice": "Guide one Approach route through reviewed preparation",
+      "ticket": 48,
+      "automatedChecks": ["web/test-approach-plan.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["guided-approach"],
+      "passingEvidence": ["branch-parity-browser", "guided-approach-render-matrix"]
+    },
+    {
+      "id": "reported-events",
+      "capabilities": ["focused clarification", "typed not-recorded preview", "append-only confirmation", "linked follow-up", "partial-write repair", "stale conflict"],
+      "treatment": "The Report checkpoint interprets first and records only after a separate explicit confirmation.",
+      "implementationSlice": "Interpret and confirm reported real-world events",
+      "ticket": 49,
+      "automatedChecks": ["tests/opportunity-lifecycle.test.mjs", "web/test-opportunity-lifecycle-adapter.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["reported-event-preview"],
+      "passingEvidence": ["branch-parity-browser", "reported-event-browser-journey"]
+    },
+    {
+      "id": "candidacy-coordination",
+      "capabilities": ["silent independent siblings", "shared Hiring surface", "durable Primary", "Outreach anchor continuity", "one-generation exception", "evidence drift block"],
+      "treatment": "Opportunity detail shows coordination only when the canonical candidacy evidence establishes a shared Hiring surface.",
+      "implementationSlice": "Coordinate related Opportunities without changing Stage",
+      "ticket": 50,
+      "automatedChecks": ["tests/opportunity-lifecycle.test.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["candidacy-coordination"],
+      "passingEvidence": ["branch-parity-browser", "candidacy-render-matrix"]
+    },
+    {
+      "id": "artifact-first-recovery",
+      "capabilities": ["eight typed outcomes", "retry versus resume", "stranded artifacts", "durable worker identity", "content-safe diagnostics", "live terminal announcements"],
+      "treatment": "Workers inspect canonical artifacts before classifying uncertain process outcomes and expose exactly one safe next action.",
+      "implementationSlice": "Recover individual work artifact-first",
+      "ticket": 51,
+      "automatedChecks": ["web/test-work-recovery.mjs", "web/test-today-supervision-browser.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["worker-recovery"],
+      "passingEvidence": ["branch-parity-browser", "worker-recovery-browser-journey"]
+    },
+    {
+      "id": "grouped-work-truth",
+      "capabilities": ["mixed child outcomes", "partial success", "processed history", "unmerged completion", "per-child retry or resume", "reload-safe group ownership"],
+      "treatment": "Grouped work projects child-level canonical outcomes without inventing a web batch lifecycle.",
+      "implementationSlice": "Preserve truth across grouped and partial work",
+      "ticket": 52,
+      "automatedChecks": ["web/test-work-groups.mjs", "web/test-grouped-work-browser.mjs"],
+      "renderedCases": ["grouped-work"],
+      "passingEvidence": ["branch-parity-browser", "grouped-work-render-matrix"]
+    },
+    {
+      "id": "pdf-overflow-review",
+      "capabilities": ["inspectable overflow", "actual pages and budget", "trim guidance", "separate regenerate and allow actions", "idempotent acceptance"],
+      "treatment": "Opportunity and worker detail present a written overflow PDF as needs review, never as accepted or missing.",
+      "implementationSlice": "Handle PDF overflow as a reviewable artifact",
+      "ticket": 53,
+      "automatedChecks": ["web/test-pdf-artifact.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["pdf-overflow-review"],
+      "passingEvidence": ["branch-parity-browser", "pdf-overflow-browser-journey"]
+    },
+    {
+      "id": "scanner-completeness",
+      "capabilities": ["company-first caps and priority", "reverse-ATS sampling", "degraded datasets", "legacy warning", "feature-specific disabling", "content-safe diagnostics"],
+      "treatment": "Explore reports completeness from the exact scanner contract invoked and disables only unsupported discovery paths.",
+      "implementationSlice": "Expose scanner completeness honestly",
+      "ticket": 54,
+      "automatedChecks": ["web/test-scanner-completeness.mjs", "web/test-opportunity-lifecycle-browser.mjs"],
+      "renderedCases": ["scanner-completeness"],
+      "passingEvidence": ["branch-parity-browser", "scanner-render-matrix"]
+    }
+  ]
+}

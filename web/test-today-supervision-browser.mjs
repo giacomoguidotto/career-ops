@@ -12,6 +12,12 @@ import {
 const WEB_ROOT = import.meta.dirname;
 const DIST_DIR = process.env.BUILD_DIST ?? ".next";
 const ARTIFACT_DIR = join(WEB_ROOT, ".lifecycle-browser-artifacts", "today");
+const RENDER_MATRIX = [
+  { id: "desktop-light", viewport: { width: 1440, height: 960 }, colorScheme: "light" },
+  { id: "desktop-dark", viewport: { width: 1440, height: 960 }, colorScheme: "dark" },
+  { id: "mobile-light", viewport: { width: 390, height: 844 }, colorScheme: "light" },
+  { id: "mobile-dark", viewport: { width: 390, height: 844 }, colorScheme: "dark" },
+];
 rmSync(ARTIFACT_DIR, { recursive: true, force: true });
 
 async function availablePort() {
@@ -138,6 +144,29 @@ const observedRequests = [];
 try {
   await waitUntilReady(baseUrl, child, output);
   browser = await chromium.launch({ headless: true });
+
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  for (const review of RENDER_MATRIX) {
+    const reviewContext = await browser.newContext({
+      viewport: review.viewport,
+      colorScheme: review.colorScheme,
+      reducedMotion: "reduce",
+    });
+    const tracePath = join(ARTIFACT_DIR, `today-runway-${review.id}-trace.zip`);
+    await reviewContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    try {
+      await reviewContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
+      const reviewPage = await reviewContext.newPage();
+      await reviewPage.goto(baseUrl);
+      await reviewPage.getByRole("heading", { name: "Keep the search moving." }).waitFor();
+      assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `${review.id} has no horizontal overflow`);
+      assert.equal(await reviewPage.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true, `${review.id} preserves meaning with reduced motion`);
+      await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `today-runway-${review.id}.png`), fullPage: true });
+    } finally {
+      await reviewContext.tracing.stop({ path: tracePath });
+      await reviewContext.close();
+    }
+  }
 
   desktopContext = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme: "light" });
   await desktopContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
@@ -308,6 +337,13 @@ try {
   writeFileSync(join(ARTIFACT_DIR, "server-output.txt"), `${output.join("")}\nREQUESTS\n${JSON.stringify(observedRequests, null, 2)}\n`);
   throw error;
 } finally {
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  writeFileSync(join(ARTIFACT_DIR, "fixture-manifest.json"), `${JSON.stringify({
+    renderedCase: "today-runway",
+    opportunityCount: fixture.opportunities.length,
+    renderMatrix: RENDER_MATRIX.map((entry) => entry.id),
+    fictionalWorkspace: true,
+  }, null, 2)}\n`);
   await desktopContext?.close();
   await phoneContext?.close();
   await browser?.close();

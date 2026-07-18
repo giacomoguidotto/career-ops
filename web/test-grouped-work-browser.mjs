@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -14,6 +14,14 @@ import { acknowledgeDurableWorker, createDurableWorker, settleDurableWorker } fr
 
 const WEB_ROOT = import.meta.dirname;
 const DIST_DIR = process.env.BUILD_DIST ?? ".next";
+const ARTIFACT_DIR = join(WEB_ROOT, ".lifecycle-browser-artifacts", "grouped");
+const RENDER_MATRIX = [
+  { id: "desktop-light", viewport: { width: 1440, height: 960 }, colorScheme: "light" },
+  { id: "desktop-dark", viewport: { width: 1440, height: 960 }, colorScheme: "dark" },
+  { id: "mobile-light", viewport: { width: 390, height: 844 }, colorScheme: "light" },
+  { id: "mobile-dark", viewport: { width: 390, height: 844 }, colorScheme: "dark" },
+];
+rmSync(ARTIFACT_DIR, { recursive: true, force: true });
 
 async function availablePort() {
   const server = createServer();
@@ -213,9 +221,30 @@ child.stderr.on("data", (chunk) => output.push(String(chunk)));
 let browser;
 let desktopContext;
 let phoneContext;
+let phone;
 try {
   await waitUntilReady(baseUrl, child, output);
   browser = await chromium.launch({ headless: true });
+
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  for (const review of RENDER_MATRIX) {
+    const reviewContext = await browser.newContext({ viewport: review.viewport, colorScheme: review.colorScheme, reducedMotion: "reduce" });
+    const tracePath = join(ARTIFACT_DIR, `grouped-work-${review.id}-trace.zip`);
+    await reviewContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    try {
+      await reviewContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
+      const reviewPage = await reviewContext.newPage();
+      await reviewPage.goto(`${baseUrl}/jobs/groups/${groupId}`);
+      await reviewPage.getByRole("heading", { name: "Mixed browser truth" }).waitFor();
+      assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `${review.id} has no horizontal overflow`);
+      assert.equal(await reviewPage.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true, `${review.id} preserves meaning with reduced motion`);
+      await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `grouped-work-${review.id}.png`), fullPage: true });
+    } finally {
+      await reviewContext.tracing.stop({ path: tracePath });
+      await reviewContext.close();
+    }
+  }
+
   desktopContext = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme: "light" });
   await desktopContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
   const desktop = await desktopContext.newPage();
@@ -260,7 +289,7 @@ try {
 
   phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", reducedMotion: "reduce" });
   await phoneContext.addInitScript(() => localStorage.setItem("career-ops:config", JSON.stringify({ cliId: "codex" })));
-  const phone = await phoneContext.newPage();
+  phone = await phoneContext.newPage();
   await phone.goto(`${baseUrl}/jobs/groups/${groupId}`);
   await phone.getByRole("heading", { name: "Mixed browser truth" }).waitFor();
   await phone.reload();
@@ -276,7 +305,23 @@ try {
   assert.equal(staleChild.canonicalEvidence.revision, staleReserved.revision, "reviewed revision remains visible after drift");
   assert.equal(api.group.summary.failed, 5, "partial failure does not collapse successful siblings");
   console.log("PASS grouped work browser journeys");
+} catch (error) {
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  if (phone) {
+    try { await phone.screenshot({ path: join(ARTIFACT_DIR, "failure.png"), fullPage: true }); } catch { /* page may already be closed */ }
+  }
+  writeFileSync(join(ARTIFACT_DIR, "server-output.txt"), output.join(""));
+  throw error;
 } finally {
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  writeFileSync(join(ARTIFACT_DIR, "fixture-manifest.json"), `${JSON.stringify({
+    renderedCase: "grouped-work",
+    opportunityCount: fixture.opportunities.length,
+    groupId,
+    childCount: 11,
+    renderMatrix: RENDER_MATRIX.map((entry) => entry.id),
+    fictionalWorkspace: true,
+  }, null, 2)}\n`);
   await desktopContext?.close();
   await phoneContext?.close();
   await browser?.close();

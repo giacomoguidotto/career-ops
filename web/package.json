@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test-clean-chips.mjs test-logo-cache.mjs test-opportunity-lifecycle-adapter.mjs test-pdf-artifact.mjs test-work-recovery.mjs test-work-groups.mjs test-scanner-completeness.mjs test-today-runway.mjs test-approach-plan.mjs",
-    "test:browser": "node test-opportunity-lifecycle-browser.mjs && node test-today-supervision-browser.mjs && node test-grouped-work-browser.mjs"
+    "test": "node --test test-clean-chips.mjs test-logo-cache.mjs test-opportunity-lifecycle-adapter.mjs test-pdf-artifact.mjs test-work-recovery.mjs test-work-groups.mjs test-scanner-completeness.mjs test-today-runway.mjs test-approach-plan.mjs test-branch-parity-ledger.mjs",
+    "test:browser": "node test-opportunity-lifecycle-browser.mjs && node test-today-supervision-browser.mjs && node test-grouped-work-browser.mjs && node test-branch-parity-evidence.mjs"
   },
   "dependencies": {
     "@paper-design/shaders-react": "^0.0.77",

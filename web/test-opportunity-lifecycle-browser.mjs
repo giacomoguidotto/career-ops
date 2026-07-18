@@ -831,6 +831,22 @@ try {
   await page.getByRole('button', { name: 'Interpret report' }).click();
   await page.locator('[data-interpretation="proposal"]').waitFor();
   assert.equal(await page.getByText('Preview · Not recorded').isVisible(), true);
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  for (const review of [
+    { name: 'desktop-light', viewport: { width: 1440, height: 960 }, colorScheme: 'light' },
+    { name: 'desktop-dark', viewport: { width: 1440, height: 960 }, colorScheme: 'dark' },
+    { name: 'mobile-light', viewport: { width: 390, height: 844 }, colorScheme: 'light' },
+    { name: 'mobile-dark', viewport: { width: 390, height: 844 }, colorScheme: 'dark' },
+  ]) {
+    await page.setViewportSize(review.viewport);
+    await page.emulateMedia({ colorScheme: review.colorScheme, reducedMotion: 'reduce' });
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), review.colorScheme === 'dark');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} reported-event preview has no horizontal overflow`);
+    await page.screenshot({ path: join(ARTIFACT_DIR, `reported-event-preview-${review.name}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
   assert.equal(fingerprintFictionalWorkspace(fixture.root), interpretationFingerprint);
   assert.equal(readFileSync(join(fixture.root, 'data', 'approach-attempts.md'), 'utf8').includes('| A015 |'), false);
   await page.getByLabel('Result', { exact: true }).fill('sent, no reply yet');
@@ -1083,8 +1099,15 @@ try {
       reducedMotion: 'reduce',
     });
     const reviewPage = await reviewContext.newPage();
+    await reviewPage.goto(`${baseUrl}/pipeline`);
+    await reviewPage.getByRole('heading', { name: 'Pipeline' }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `pipeline-ledger-${review.name}.png`), fullPage: true });
+
     await reviewPage.goto(`${baseUrl}/pipeline/114`);
     await reviewPage.getByRole('heading', { name: 'Review Flow Co', exact: true }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} Opportunity detail has no horizontal overflow`);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `opportunity-detail-${review.name}.png`), fullPage: true });
     await reviewPage.getByRole('button', { name: 'Start guided approach' }).click();
     const guidedReviewDialog = reviewPage.getByRole('dialog', { name: 'Guided approach preparation' });
     await guidedReviewDialog.waitFor();
@@ -1100,7 +1123,17 @@ try {
     await reviewPage.getByRole('heading', { name: 'Shared Surface Co', exact: true }).waitFor();
     assert.equal(await reviewPage.getByRole('heading', { name: 'Shared Hiring surface' }).isVisible(), true);
     assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `candidacy-${review.name}.png`), fullPage: true });
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `candidacy-coordination-${review.name}.png`), fullPage: true });
+
+    await reviewPage.goto(`${baseUrl}/pipeline/116`);
+    await reviewPage.getByRole('status', { name: 'PDF needs review' }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} PDF review has no horizontal overflow`);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `pdf-overflow-review-${review.name}.png`), fullPage: true });
+
+    await reviewPage.goto(`${baseUrl}/jobs`);
+    await reviewPage.getByRole('heading', { name: 'Workers', exact: true }).waitFor();
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${review.name} worker recovery has no horizontal overflow`);
+    await reviewPage.screenshot({ path: join(ARTIFACT_DIR, `worker-recovery-${review.name}.png`), fullPage: true });
     await reviewContext.close();
   }
 
@@ -1156,6 +1189,8 @@ try {
     await page.getByLabel('Scanner completeness').waitFor();
     assert.equal(await page.locator('html').evaluate((html) => html.classList.contains('dark')), theme === 'dark');
     assert.equal(await page.locator('body').evaluate((body) => body.scrollWidth <= document.documentElement.clientWidth), true);
+    const evidenceName = `${width === 390 ? 'mobile' : 'desktop'}-${theme}`;
+    await page.screenshot({ path: join(ARTIFACT_DIR, `scanner-completeness-${evidenceName}.png`), fullPage: true });
   }
   assert.equal(fingerprintFictionalWorkspace(fixture.root), passiveBaseline);
   await context.tracing.stop();
@@ -1172,6 +1207,16 @@ try {
   writeFileSync(join(ARTIFACT_DIR, 'fixture-manifest.json'), `${JSON.stringify({
     stageCount: fixture.stages.length,
     opportunityCount: fixture.opportunities.length,
+    renderedCases: [
+      'pipeline-ledger',
+      'opportunity-detail',
+      'guided-approach',
+      'reported-event-preview',
+      'candidacy-coordination',
+      'worker-recovery',
+      'pdf-overflow-review',
+      'scanner-completeness',
+    ],
     workspaceFingerprint: fingerprintFictionalWorkspace(fixture.root),
     changedPaths: beforeSnapshot
       ? [...new Set([
