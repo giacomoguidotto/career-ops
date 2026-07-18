@@ -940,11 +940,12 @@ test('one-generation exception is scoped to one suppressed Opportunity and never
       '',
     ].join('\n'));
     const current = readOpportunity({ root: fixture.root, opportunity: 2 }).opportunity;
+    assert.notEqual(current.revision, accepted.workOrder.source.revision);
     const reconciled = await reconcileOpportunityWork({
       root: fixture.root,
       opportunity: 2,
-      expectedStage: current.stage.id,
-      expectedRevision: current.revision,
+      expectedStage: accepted.workOrder.source.stage,
+      expectedRevision: accepted.workOrder.source.revision,
     });
     assert.equal(reconciled.code, 'work-reconciled');
     assert.equal(reconciled.after.stage.id, 'approach_ready');

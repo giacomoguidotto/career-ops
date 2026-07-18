@@ -1342,10 +1342,25 @@ export async function reconcileOpportunityWork(options = {}) {
       });
     }
     const before = focused.opportunity;
-    if (expectationConflict(before, expected)) return conflictOutcome(before);
-
     const states = loadStates({ rootDir: root, force: true });
     const stage = resolveState(before.rawStage, states);
+    const workOrder = workOrderFor(before, states);
+    const activeWork = workOrder
+      ? readWorkState(workStatePath(root, workOrder))
+      : null;
+    const activeExpectationMatches = Boolean(
+      activeWork
+      && !activeWork.invalid
+      && !activeWork.stale
+      && sameWorkOrderForReconciliation(activeWork.workOrder, workOrder)
+      && activeWork.workOrder.source.stage === expected.expectedStage
+      && activeWork.workOrder.source.revision === expected.expectedRevision
+    );
+    if (
+      before.stage.id !== expected.expectedStage
+      || (before.revision !== expected.expectedRevision && !activeExpectationMatches)
+    ) return conflictOutcome(before);
+
     const action = predecessorAction(stage, states);
     const artifact = expectedGeneratedArtifact(before, action);
     if (!stage || !action || !artifact) {
@@ -1363,14 +1378,7 @@ export async function reconcileOpportunityWork(options = {}) {
         before, artifacts: commandArtifacts(before),
       });
     }
-    const workOrder = workOrderFor(before, states);
-    const activeWork = workOrder
-      ? readWorkState(workStatePath(root, workOrder))
-      : null;
-    const authorization = activeWork
-      && !activeWork.invalid
-      && !activeWork.stale
-      && sameWorkOrderForReconciliation(activeWork.workOrder, workOrder)
+    const authorization = activeExpectationMatches
       ? activeWork.workOrder.authorization
       : null;
     const oneGenerationAuthorized = Boolean(
