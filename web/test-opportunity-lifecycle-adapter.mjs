@@ -151,6 +151,41 @@ test("adapter rejects future versions and malformed domain values", async () => 
   }
 });
 
+test("adapter rejects contradictory PDF acceptance metadata", async () => {
+  const cases = [
+    { status: "needs-review", actualPages: 1, budget: 1, acceptedBy: null },
+    { status: "accepted", actualPages: 2, budget: 1, acceptedBy: "within-budget" },
+    { status: "accepted", actualPages: 1, budget: 1, acceptedBy: "explicit-overflow" },
+  ];
+  for (const acceptance of cases) {
+    const fixture = createFictionalOpportunityWorkspace({ materializeCore: true, missingOptionalFiles: true });
+    try {
+      const malformed = clone(await listOpportunityLifecycle(fixture.root));
+      malformed.opportunities[0].artifacts.push({
+        kind: "pdf",
+        action: "generate_pdf",
+        expectedAction: "generate_pdf",
+        state: "available",
+        format: "canonical",
+        path: "output/fictional.pdf",
+        revision: "a".repeat(64),
+        acceptance: {
+          ...acceptance,
+          trimGuidance: "Trim fictional content.",
+          reviewRevision: "b".repeat(64),
+        },
+      });
+      servePayload(fixture.root, malformed);
+      await assert.rejects(
+        listOpportunityLifecycle(fixture.root),
+        (error) => error instanceof LifecycleAdapterError && error.code === "invalid-opportunity-summary" && error.status === 503,
+      );
+    } finally {
+      removeFictionalOpportunityWorkspace(fixture.root);
+    }
+  }
+});
+
 test("adapter transports guarded candidacy commands through the canonical seam", async () => {
   const clusters = [
     "# Candidacy clusters",

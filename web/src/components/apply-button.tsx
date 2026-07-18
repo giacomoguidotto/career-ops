@@ -2,21 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { Send, Lock } from "lucide-react";
-import { useJobs } from "@/components/jobs/job-store";
 import { useApply } from "@/components/apply/apply-provider";
 
-// The "Apply" CTA — brand orange, paper-plane. Enabled ONLY when the tailored CV
-// for THIS offer is ready (the tracker's PDF column is ✅, or a pdf worker for
-// this #n just finished). On click it opens the apply form-proxy for the offer
-// (where the user reviews and submits it themselves — never auto-submit).
+// The "Apply" CTA is enabled only by canonical accepted PDF evidence. A worker
+// exit alone is insufficient because an inspectable overflow still needs review.
 export function ApplyButton({ n, url, company, pdfReady }: { n: string; url?: string; company: string; pdfReady: boolean }) {
   const router = useRouter();
-  const { jobs } = useJobs();
   const apply = useApply();
 
-  const pdfJobDone = jobs.some((j) => j.kind === "pdf" && j.input === n && j.status === "done");
   const hasUrl = !!url && /^https?:\/\//i.test(url);
-  const ready = (pdfReady || pdfJobDone) && hasUrl;
+  const ready = pdfReady && hasUrl;
 
   if (!ready) {
     return (

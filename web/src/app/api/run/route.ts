@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveCli } from "@/lib/clis";
@@ -10,7 +11,7 @@ import {
   releaseWorker,
 } from "@/lib/core/run-registry";
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
-import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import { recoverLifecycleWork, recoverPdfWork, recoverWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
 import { owningGroupForChild, ownsGroupChild, settleQueuedGroupChildConflict } from "@/lib/core/work-group-store";
 import { isWorkGroupId } from "@/lib/core/work-group";
 import {
@@ -57,14 +58,14 @@ Target: ${input}`;
   }
   if (kind === "pdf") {
     return `You are generating the user's ATS-optimized, TAILORED CV PDF for application #${input}, headless, on their machine. Run the REAL career-ops "pdf" mode — follow modes/pdf.md EXACTLY (do not improvise a format).
-1. Read modes/pdf.md, cv.md, config/profile.yml, and the evaluation report at reports/${input}-*.md (for the JD keywords + analysis).
+1. Run \`node find.mjs ${input} --json\` to resolve the exact report number and report path. Read modes/pdf.md, cv.md, config/profile.yml, and that evaluation report (for the JD keywords + analysis).
 2. Tailor the CV per modes/pdf.md: inject the JD's keywords into the summary + first bullets, reorder experience by relevance, build the competency grid, pick the top 3–4 projects. NEVER invent skills — only reword REAL experience using the JD's vocabulary.
 3. Fill templates/cv-template.html's {{...}} placeholders with the tailored content; write the HTML to /tmp/cv-{candidate}-{company}.html (candidate = the profile name in kebab-case).
-4. Render the PDF: \`node generate-pdf.mjs /tmp/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-${today}.pdf --format={letter for US/Canada companies, else a4}\`.
-5. Update the tracker: in data/applications.md, change the PDF column for row #${input} from ❌ to ✅.
+4. Render the PDF: \`node generate-pdf.mjs /tmp/cv-{candidate}-{company}.html output/cv-{candidate}-{company}-${today}.pdf --format={letter for US/Canada companies, else a4} --max-pages=1 --report={resolved report number}\`.
+5. Never edit the tracker PDF cell directly. The generator records the actual page count and reconciles only an accepted PDF through the canonical PDF seam. If it writes an overflow and exits non-zero, preserve it for review and report the overflow honestly.
 Do not submit anything anywhere.
 
-End with EXACTLY one final line: VERDICT: {5 if the PDF was written, else 1}/5 — {the output/ path, ≤12 words}`;
+End with EXACTLY one final line: VERDICT: {5 if the PDF was accepted, else 1}/5 | {the output/ path or overflow, 12 words or fewer}`;
   }
   if (kind === "fix-portal") {
     return `A company's job-portal ATS slug is BROKEN — career-ops can no longer scan it, so it silently disappears from every future scan. Repair it (headless, on the user's machine):
@@ -121,7 +122,7 @@ export async function POST(req: Request) {
   if (body.continuation !== undefined && !["retry", "resume"].includes(body.continuation)) {
     return Response.json({ error: "invalid continuation" }, { status: 400 });
   }
-  if (!cliId || (!input && !(kind === "lifecycle" && continuation))) {
+  if (!cliId || (!input && !(["lifecycle", "pdf"].includes(kind) && continuation))) {
     return new Response(JSON.stringify({ error: "input and cliId required" }), { status: 400 });
   }
   const resolved = resolveCli(cliId);
@@ -307,6 +308,81 @@ export async function POST(req: Request) {
     }
     promptInput = JSON.stringify(lifecycleWorkOrder);
   }
+  if (kind === "pdf") {
+    if (!/^job-[a-z0-9-]{1,96}$/i.test(durableWorkerId) || (continuation && !workerId)) {
+      return Response.json({ error: "valid workerId required" }, { status: 400 });
+    }
+    const existingPdfWorker = continuation ? readDurableWorker(careerOpsRoot(), durableWorkerId) : null;
+    const requestedOpportunity = input ? Number(input) : null;
+    if (continuation && input && requestedOpportunity !== existingPdfWorker?.workOrder.opportunity) {
+      return Response.json({ error: "PDF worker opportunity mismatch.", code: "opportunity-conflict" }, { status: 409 });
+    }
+    const opportunity = continuation ? existingPdfWorker?.workOrder.opportunity : requestedOpportunity;
+    if (typeof opportunity !== "number" || !Number.isSafeInteger(opportunity) || opportunity <= 0) {
+      return Response.json({ error: "valid PDF opportunity required" }, { status: 400 });
+    }
+    try {
+      const current = (await readOpportunityLifecycle(careerOpsRoot(), opportunity)).opportunity;
+      if (!current.stage.id) return Response.json({ error: "The Opportunity Stage is not canonical." }, { status: 409 });
+      if (continuation) {
+        const existing = existingPdfWorker;
+        const prior = existing?.recoveryHistory.at(-1);
+        if (
+          continuation !== "retry"
+          || !existing
+          || existing.workOrder.workflow !== "pdf"
+          || existing.status !== "terminal"
+          || prior?.nextAction.kind !== "retry"
+        ) return Response.json({ error: "This PDF worker cannot continue safely." }, { status: 409 });
+        const refreshed = await recoverPdfWork(careerOpsRoot(), existing.workOrder, { trigger: "reload" });
+        if (refreshed.nextAction.kind !== "retry") {
+          settleDurableWorker(careerOpsRoot(), durableWorkerId, refreshed);
+          return Response.json({ error: refreshed.message, code: refreshed.outcome, recovery: refreshed }, { status: 409 });
+        }
+        lifecycleWorkOrder = { ...existing.workOrder, source: { stage: current.stage.id, revision: current.revision } };
+      } else {
+        lifecycleWorkOrder = {
+          workflow: "pdf",
+          id: createHash("sha256").update(JSON.stringify({ opportunity, action: "generate_pdf", worker: durableWorkerId })).digest("hex"),
+          opportunity,
+          action: "generate_pdf",
+          source: { stage: current.stage.id, revision: current.revision },
+          artifact: { kind: "pdf", directory: "output" },
+          consequence: { stage: current.stage.id, label: "PDF ready" },
+        };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PDF work could not be reserved.";
+      return Response.json({ error: message }, { status: 503 });
+    }
+    if (!lifecycleWorkOrder) {
+      return Response.json({ error: "Durable PDF work could not be prepared.", code: "worker-state-unavailable" }, { status: 503 });
+    }
+    if (!continuation && readDurableWorker(careerOpsRoot(), durableWorkerId)) {
+      return Response.json({ error: "This durable worker already has canonical history.", code: "worker-history-exists" }, { status: 409 });
+    }
+    if (!acquireWorker(durableWorkerId)) return Response.json({ error: "Already running.", code: "already-running" }, { status: 409 });
+    try {
+      if (continuation) {
+        if (!appendWorkerPhase(careerOpsRoot(), durableWorkerId, "retrying", "Regenerating after trim review", lifecycleWorkOrder)) {
+          throw new Error("durable worker missing");
+        }
+      } else {
+        createDurableWorker(careerOpsRoot(), {
+          id: durableWorkerId,
+          title: body.title || `CV PDF for Opportunity #${opportunity}`,
+          subtitle: body.subtitle,
+          page: body.page,
+          batchId: body.batchId,
+          workOrder: lifecycleWorkOrder,
+        });
+      }
+    } catch {
+      releaseWorker(durableWorkerId);
+      return Response.json({ error: "Durable PDF worker state could not be initialized." }, { status: 503 });
+    }
+    promptInput = String(opportunity);
+  }
   const prompt = buildPrompt(kind, promptInput, readMemory(), today);
 
   const isClaude = cliId === "claude";
@@ -368,7 +444,7 @@ export async function POST(req: Request) {
     if (resourcesReleased) return;
     resourcesReleased = true;
     if (writeToken !== null) releaseTrackerWrite(writeToken);
-    if (kind === "lifecycle") releaseWorker(durableWorkerId);
+    if (["lifecycle", "pdf"].includes(kind)) releaseWorker(durableWorkerId);
   };
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -377,7 +453,7 @@ export async function POST(req: Request) {
       let sawError = false;
       let lastTokens = 0; // per-run token cost from the Claude result event (#6) — local only
       let lastCostUsd: number | null = null;
-      if (kind === "lifecycle" && lifecycleWorkOrder) {
+      if (["lifecycle", "pdf"].includes(kind) && lifecycleWorkOrder) {
         controller.enqueue(enc.encode(`${JSON.stringify({
           type: "identity",
           workerId: durableWorkerId,
@@ -422,14 +498,14 @@ export async function POST(req: Request) {
               const e = ev.event;
               if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
                 send({ type: "tool", name: e.content_block.name });
-                if (kind === "lifecycle") appendWorkerPhase(careerOpsRoot(), durableWorkerId, "tool", e.content_block.name);
+                if (["lifecycle", "pdf"].includes(kind)) appendWorkerPhase(careerOpsRoot(), durableWorkerId, "tool", e.content_block.name);
               } else if (e?.type === "content_block_delta" && e.delta?.text) {
                 emittedText = true;
                 send({ type: "text", text: e.delta.text });
               }
             } else if (ev.type === "system" && ev.subtype === "init") {
               send({ type: "status", label: "Agent ready" });
-              if (kind === "lifecycle") appendWorkerPhase(careerOpsRoot(), durableWorkerId, "agent-ready", "Agent ready");
+              if (["lifecycle", "pdf"].includes(kind)) appendWorkerPhase(careerOpsRoot(), durableWorkerId, "agent-ready", "Agent ready");
             } else if (ev.type === "result") {
               // Capture the per-run cost; the authoritative "done" is sent on close
               // (so the honesty gate decides done-vs-error first). Tokens = the same
@@ -450,7 +526,7 @@ export async function POST(req: Request) {
         if (/error|denied|fatal|not found|unauthorized|forbidden|auth|login|credential|api[ -]?key|quota|rate limit|capacity|not authenticated/i.test(s)) {
           sawError = true;
           if (/rate limit|capacity/i.test(s)) terminationTrigger = "paused";
-          if (kind === "lifecycle") {
+          if (["lifecycle", "pdf"].includes(kind)) {
             appendWorkerPhase(careerOpsRoot(), durableWorkerId, "checking", "Checking canonical work after a process warning");
             send({ type: "status", label: "Checking canonical work" });
           } else {
@@ -460,16 +536,16 @@ export async function POST(req: Request) {
       });
       child.on("error", (e) => {
         terminationTrigger = "non-zero-exit";
-        if (kind !== "lifecycle") send({ type: "error", msg: e.message });
+        if (!["lifecycle", "pdf"].includes(kind)) send({ type: "error", msg: e.message });
       });
       child.on("close", async (code, signal) => {
         const wroteReport = countReports() > reportsBefore;
         const cleanExit = code === 0; // non-zero OR null (killed/signal) = NOT clean
-        if (kind === "lifecycle" && lifecycleWorkOrder) {
+        if (["lifecycle", "pdf"].includes(kind) && lifecycleWorkOrder) {
           try {
             const trigger = terminationTrigger ?? (cleanExit && !sawError ? "completed" : "non-zero-exit");
             appendWorkerPhase(careerOpsRoot(), durableWorkerId, "reconciling", "Inspecting canonical artifact and lifecycle state");
-            const recovery = await recoverLifecycleWork(careerOpsRoot(), lifecycleWorkOrder, {
+            const recovery = await recoverWork(careerOpsRoot(), lifecycleWorkOrder, {
               trigger,
               exitCode: code,
               signal: signal ? String(signal) : null,

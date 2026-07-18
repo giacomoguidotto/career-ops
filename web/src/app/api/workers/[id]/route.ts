@@ -1,6 +1,6 @@
 import { careerOpsRoot } from "@/lib/career-ops";
 import { acquireTrackerWrite, acquireWorker, isWorkerActive, releaseTrackerWrite, releaseWorker } from "@/lib/core/run-registry";
-import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import { recoverWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
 import {
   acknowledgeDurableWorker,
   readDurableWorker,
@@ -55,7 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const writeToken = acquireTrackerWrite();
   try {
-    const recovery = await recoverLifecycleWork(root, worker.workOrder, {
+    const recovery = await recoverWork(root, worker.workOrder, {
       trigger: body.trigger as WorkRecoveryTrigger,
     });
     return Response.json({ active: false, worker: settleDurableWorker(root, id, recovery), recovery });

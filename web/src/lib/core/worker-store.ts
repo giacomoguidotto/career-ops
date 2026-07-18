@@ -49,7 +49,8 @@ function isWorkOrder(value: unknown): value is LifecycleWorkOrder {
     && typeof item.action === "string"
     && source && typeof source.stage === "string" && typeof source.revision === "string"
     && consequence && typeof consequence.stage === "string"
-    && artifact && typeof artifact.kind === "string" && typeof artifact.directory === "string",
+    && artifact && typeof artifact.kind === "string" && ["output/next-packs", "output"].includes(String(artifact.directory))
+    && (item.workflow === undefined || ["lifecycle", "pdf"].includes(String(item.workflow))),
   );
 }
 

@@ -126,4 +126,5 @@ plan/
 # Web
 .career-ops-web/logo-cache/
 .career-ops-web/lifecycle-work/
+.career-ops-web/pdf-artifacts/
 .career-ops-web/workers/

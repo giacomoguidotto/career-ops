@@ -36,6 +36,7 @@ type Ctx = {
   jobs: Job[];
   startJob: (opts: StartOpts) => string | null;
   actOnJob: (id: string) => void;
+  allowPdfOverflow: (id: string) => void;
   acknowledgeJob: (id: string) => Promise<void>;
   removeJob: (id: string) => Promise<void>;
   clearFinished: () => void;
@@ -76,12 +77,12 @@ function durableJob(worker: DurableWorker, local?: Job): Job {
     title: local?.title ?? worker.title,
     subtitle: local?.subtitle ?? worker.subtitle ?? undefined,
     page: local?.page ?? worker.page ?? undefined,
-    input: local?.input ?? JSON.stringify({
+    input: local?.input ?? (worker.workOrder.workflow === "pdf" ? String(worker.workOrder.opportunity) : JSON.stringify({
       opportunity: worker.workOrder.opportunity,
       expectedStage: worker.workOrder.source.stage,
       expectedRevision: worker.workOrder.source.revision,
-    }),
-    kind: "lifecycle",
+    })),
+    kind: worker.workOrder.workflow === "pdf" ? "pdf" : "lifecycle",
     batchId: local?.batchId ?? worker.batchId ?? undefined,
     status: worker.status === "active" ? "running" : recovery ? recoveryStatus(recovery) : "error",
     steps: worker.phases.map((item) => ({ kind: "status", label: item.label, ts: Date.parse(item.at) })),
@@ -102,6 +103,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const [announcement, setAnnouncement] = useState("");
   const seq = useRef(0);
   const loaded = useRef(false);
+  const pdfAllowancesInFlight = useRef(new Set<string>());
 
   const patch = useCallback((id: string, fn: (j: Job) => Job) => {
     setJobs((js) => js.map((j) => (j.id === id ? fn(j) : j)));
@@ -192,7 +194,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       });
       loaded.current = true;
       for (const job of local) {
-        if (job.kind === "lifecycle" && job.status === "running") void recoverJob(job.id, "reload");
+        if (["lifecycle", "pdf"].includes(job.kind ?? "") && job.status === "running") void recoverJob(job.id, "reload");
       }
     })();
     return () => { cancelled = true; };
@@ -316,13 +318,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-        if (opts.kind === "lifecycle") {
+        if (["lifecycle", "pdf"].includes(opts.kind)) {
           if (!sawTerminal) await recoverJob(id, "uncertain-close");
         } else {
           finish("done", "Done");
         }
       } catch {
-        if (opts.kind === "lifecycle") await recoverJob(id, "disconnect");
+        if (["lifecycle", "pdf"].includes(opts.kind)) await recoverJob(id, "disconnect");
         else finish("error", "Connection error");
       }
     })();
@@ -406,7 +408,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const at = Date.now();
     const previous = job.acknowledgedAt;
     patch(id, (current) => ({ ...current, acknowledgedAt: at }));
-    if (job.kind !== "lifecycle") return;
+    if (!["lifecycle", "pdf"].includes(job.kind ?? "")) return;
     await fetch(`/api/workers/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -418,13 +420,44 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       setAnnouncement("Worker acknowledgement could not be saved.");
     });
   }, [jobs, patch]);
+  const allowPdfOverflow = useCallback((id: string) => {
+    const job = jobs.find((candidate) => candidate.id === id);
+    const review = job?.recovery?.pdfReview;
+    const opportunity = job?.workOrder?.opportunity;
+    if (!job || job.kind !== "pdf" || !review || !opportunity || job.status === "running" || pdfAllowancesInFlight.current.has(id)) return;
+    pdfAllowancesInFlight.current.add(id);
+    patch(id, (current) => ({
+      ...current,
+      status: "running",
+      endedAt: undefined,
+      steps: [...current.steps, { kind: "status", label: `Allowing this ${review.actualPages}-page PDF`, ts: Date.now() }],
+    }));
+    void fetch(`/api/opportunities/${opportunity}/pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "allow-page-count", expectedRevision: review.reviewRevision, pages: review.actualPages, workerId: id }),
+    }).then(async (response) => {
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value?.message || value?.error?.message || "The page allowance was rejected.");
+      if (value.recovery) applyRecovery(id, value.recovery as WorkRecovery);
+      else await recoverJob(id, "reload");
+    }).catch((error) => {
+      patch(id, (current) => ({
+        ...current,
+        status: "error",
+        endedAt: Date.now(),
+        steps: [...current.steps, { kind: "status", label: error instanceof Error ? error.message : "The page allowance failed.", ts: Date.now() }],
+      }));
+      setAnnouncement(error instanceof Error ? error.message : "The page allowance failed.");
+    }).finally(() => { pdfAllowancesInFlight.current.delete(id); });
+  }, [applyRecovery, jobs, patch, recoverJob]);
   const removeJob = acknowledgeJob;
   const clearFinished = useCallback(() => {
     for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) void acknowledgeJob(job.id);
   }, [acknowledgeJob, jobs]);
 
   return (
-    <JobsContext.Provider value={{ jobs, startJob, actOnJob, acknowledgeJob, removeJob, clearFinished }}>
+    <JobsContext.Provider value={{ jobs, startJob, actOnJob, allowPdfOverflow, acknowledgeJob, removeJob, clearFinished }}>
       {children}
       <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
     </JobsContext.Provider>

@@ -208,14 +208,15 @@ function RecommendationCue({ children }: { children: React.ReactNode }) {
 }
 
 function ArtifactState({ artifact }: { artifact: Artifact }) {
-  const available = artifact.state === "available";
+  const needsReview = artifact.acceptance?.status === "needs-review";
+  const available = artifact.state === "available" && !needsReview;
   const Icon = available ? FileCheck2 : artifact.state === "missing" ? CircleDashed : AlertTriangle;
   return (
     <span className={cn(
       "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide",
       available ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : artifact.state === "missing" ? "bg-surface-hover text-muted" : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
     )}>
-      <Icon className="size-3" aria-hidden="true" /> {artifact.state}
+      <Icon className="size-3" aria-hidden="true" /> {needsReview ? "needs review" : artifact.state}
     </span>
   );
 }
@@ -269,6 +270,15 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
         <ArtifactState artifact={artifact} />
       </div>
       {artifact.path && <p className="mt-3 break-all font-mono text-[10px] leading-relaxed text-faint">Source: {artifact.path}</p>}
+      {artifact.acceptance && (
+        <div className={cn("mt-3 rounded-lg p-3 text-xs", artifact.acceptance.status === "accepted" ? "bg-emerald-500/[0.07]" : "bg-amber-500/[0.08]")}>
+          <p className="font-semibold">
+            {artifact.acceptance.actualPages} {artifact.acceptance.actualPages === 1 ? "page" : "pages"} · {artifact.acceptance.budget}-page budget
+          </p>
+          {artifact.acceptance.status === "needs-review" && <p className="mt-1 leading-relaxed text-muted">{artifact.acceptance.trimGuidance}</p>}
+          {artifact.acceptance.acceptedBy === "explicit-overflow" && <p className="mt-1 text-muted">Accepted through an explicit page-count allowance.</p>}
+        </div>
+      )}
     </article>
   );
 }
@@ -283,6 +293,12 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
+  const pdfArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "pdf" && artifact.format === "canonical");
+  const pdfReady = Boolean(
+    pdfArtifact
+    && pdfArtifact.state === "available"
+    && pdfArtifact.acceptance?.status === "accepted",
+  );
   const hasGuideableRoutes = approachArtifact?.format === "canonical" && approachPlan
     ? (parseApproachPlan(approachPlan.content) as unknown[]).length > 0
     : false;
@@ -452,8 +468,18 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
               <p className="mt-5 text-sm text-muted">No lifecycle artifacts are declared for this Opportunity.</p>
             )}
             <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface/35 p-4">
-              <GeneratePdfButton n={String(opportunity.opportunity)} company={opportunity.company} pdfReady={opportunity.artifacts.some((artifact) => artifact.kind === "pdf" && artifact.state === "available")} />
-              <ApplyButton n={String(opportunity.opportunity)} url={reportUrl?.startsWith("http") ? reportUrl : undefined} company={opportunity.company} pdfReady={opportunity.artifacts.some((artifact) => artifact.kind === "pdf" && artifact.state === "available")} />
+              <GeneratePdfButton
+                n={String(opportunity.opportunity)}
+                company={opportunity.company}
+                pdfReady={pdfReady}
+                pdfReview={pdfArtifact?.acceptance?.status === "needs-review" ? {
+                  actualPages: pdfArtifact.acceptance.actualPages,
+                  budget: pdfArtifact.acceptance.budget,
+                  trimGuidance: pdfArtifact.acceptance.trimGuidance,
+                  reviewRevision: pdfArtifact.acceptance.reviewRevision,
+                } : undefined}
+              />
+              <ApplyButton n={String(opportunity.opportunity)} url={reportUrl?.startsWith("http") ? reportUrl : undefined} company={opportunity.company} pdfReady={pdfReady} />
               <p className="basis-full text-[11px] text-faint">Application review never submits or sends from this page.</p>
             </div>
           </section>
@@ -518,7 +544,7 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
                 <li key={`history-artifact-${artifact.kind}-${index}`} className="relative pb-5 last:pb-0" data-history-type="artifact">
                   <span className="absolute -left-[1.58rem] top-1.5 size-2 rounded-full bg-emerald-500 ring-4 ring-background" aria-hidden="true" />
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Artifact</p>
-                  <p className="mt-1 text-sm font-medium">{words(artifact.kind.replaceAll("-", "_"))} available</p>
+                  <p className="mt-1 text-sm font-medium">{words(artifact.kind.replaceAll("-", "_"))} {artifact.acceptance?.status === "needs-review" ? "written, needs review" : "available"}</p>
                   {artifact.path && <p className="mt-1 break-all font-mono text-[10px] text-faint">{artifact.path}</p>}
                 </li>
               ))}
