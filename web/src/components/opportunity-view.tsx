@@ -115,7 +115,7 @@ function LifecyclePosition({ eyebrow, label, title, muted = false }: { eyebrow: 
   );
 }
 
-function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
+function primaryCopy(opportunity: OpportunitySummary, hasApproachPlan: boolean): { eyebrow: string; title: string; detail: string; href: string; cta: string } {
   const action = words(opportunity.primaryAction.id);
   switch (opportunity.primaryAction.kind) {
     case "generate":
@@ -134,6 +134,15 @@ function primaryCopy(opportunity: OpportunitySummary): { eyebrow: string; title:
           detail: "Review the prepared material, act outside career-ops, then report exactly what happened. Viewing the artifact records nothing.",
           href: "#materials",
           cta: "Review prepared materials",
+        };
+      }
+      if (!hasApproachPlan) {
+        return {
+          eyebrow: "Your next step",
+          title: action || "Act outside career-ops",
+          detail: "The canonical Approach Plan is not readable. Review its artifact status before preparing any external action.",
+          href: "#approach-plan",
+          cta: "Review Approach Plan",
         };
       }
       return {
@@ -278,11 +287,11 @@ export function OpportunityView({ workspace }: { workspace: OpportunityWorkspace
   const reportMeta = report ? parseReport(report.content) : null;
   const reportUrl = reportMeta?.fields.find((field) => field.label === "URL")?.value;
   const score = scoreNum(opportunity.score);
-  const primary = primaryCopy(opportunity);
   const warnings = [...opportunity.warnings, ...detail.warnings]
     .filter((warning, index, all) => all.findIndex((candidate) => candidate.code === warning.code) === index);
   const approachArtifact = opportunity.artifacts.find((artifact) => artifact.kind === "approach-plan");
   const approachPlan = textArtifacts["approach-plan"];
+  const primary = primaryCopy(opportunity, Boolean(approachPlan));
   const canGuideApproach = opportunity.primaryAction.kind === "act-outside"
     && opportunity.primaryAction.id === "execute_approach";
   const provenance = sourcePaths([...contract.provenance, ...opportunity.provenance]);

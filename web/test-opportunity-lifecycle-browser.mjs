@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -640,6 +640,17 @@ try {
     assert.equal(await preparedMaterialsLink.getAttribute('href'), '#materials');
     assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
   }
+
+  const missingApproachRow = readFileSync(join(fixture.root, 'data', 'applications.md'), 'utf8')
+    .split(/\r?\n/)
+    .find((line) => line.includes('| Approach Ready Alias Specialist |'));
+  assert.ok(missingApproachRow);
+  const missingApproachOpportunity = missingApproachRow.split('|')[1].trim();
+  await page.goto(`${baseUrl}/pipeline/${missingApproachOpportunity}`);
+  const approachFallback = page.getByRole('link', { name: /Review Approach Plan/ }).first();
+  await approachFallback.waitFor();
+  assert.equal(await approachFallback.getAttribute('href'), '#approach-plan');
+  assert.equal(await page.getByRole('button', { name: /Start guided approach/ }).count(), 0);
 
   await page.goto(`${baseUrl}/pipeline/3`);
   await page.getByRole('heading', { name: 'Attempts' }).waitFor();
