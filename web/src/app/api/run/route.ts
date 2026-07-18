@@ -11,6 +11,8 @@ import {
 } from "@/lib/core/run-registry";
 import { LifecycleAdapterError, readOpportunityLifecycle, requestOpportunityWork, type LifecycleWorkOrder } from "@/lib/core/opportunity-lifecycle";
 import { recoverLifecycleWork, type WorkRecoveryTrigger } from "@/lib/core/work-recovery";
+import { owningGroupForChild, ownsGroupChild, settleQueuedGroupChildConflict } from "@/lib/core/work-group-store";
+import { isWorkGroupId } from "@/lib/core/work-group";
 import {
   appendWorkerPhase,
   createDurableWorker,
@@ -167,6 +169,9 @@ export async function POST(req: Request) {
   let lifecycleWorkOrder: LifecycleWorkOrder | null = null;
   const durableWorkerId = workerId ?? `job-api-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   if (kind === "lifecycle") {
+    if (body.batchId !== undefined && !isWorkGroupId(body.batchId)) {
+      return Response.json({ error: "invalid lifecycle work group" }, { status: 400 });
+    }
     if (!/^job-[a-z0-9-]{1,96}$/i.test(durableWorkerId) || (continuation && !workerId)) {
       return Response.json({ error: "valid workerId required" }, { status: 400 });
     }
@@ -238,11 +243,31 @@ export async function POST(req: Request) {
       } catch {
         return Response.json({ error: "invalid lifecycle expectation" }, { status: 400 });
       }
+      const groupOwner = owningGroupForChild(careerOpsRoot(), durableWorkerId);
+      if (
+        (body.batchId && !ownsGroupChild(careerOpsRoot(), body.batchId, durableWorkerId, expectation.opportunity))
+        || (!body.batchId && groupOwner)
+        || (body.batchId && groupOwner?.id !== body.batchId)
+      ) {
+        return Response.json({ error: "This worker is not owned by the named work group.", code: "group-child-conflict" }, { status: 409 });
+      }
+      if (readDurableWorker(careerOpsRoot(), durableWorkerId)) {
+        return Response.json({ error: "This durable worker already has canonical history.", code: "worker-history-exists" }, { status: 409 });
+      }
       try {
         const outcome = await requestOpportunityWork(careerOpsRoot(), expectation);
         if (outcome.code !== "work-requested" || !outcome.workOrder) {
           const status = outcome.effect === "conflict" || outcome.code === "already-running" ? 409 : 422;
-          return Response.json({ error: outcome.message, code: outcome.code, outcome }, { status });
+          const groupSettled = Boolean(body.batchId && outcome.effect === "conflict" && settleQueuedGroupChildConflict(careerOpsRoot(), {
+            groupId: body.batchId,
+            workerId: durableWorkerId,
+            opportunity: expectation.opportunity,
+            expectedStage: expectation.expectedStage,
+            expectedRevision: expectation.expectedRevision,
+            code: outcome.code,
+            message: outcome.message,
+          }));
+          return Response.json({ error: outcome.message, code: outcome.code, outcome, groupSettled }, { status });
         }
         lifecycleWorkOrder = outcome.workOrder;
       } catch (error) {

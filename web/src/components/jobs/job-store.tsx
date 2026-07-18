@@ -30,14 +30,14 @@ export type Job = {
   endedAt?: number;
 };
 
-type StartOpts = { title: string; subtitle?: string; kind: string; input: string; page?: string; batchId?: string };
+type StartOpts = { workerId?: string; title: string; subtitle?: string; kind: string; input: string; page?: string; batchId?: string };
 
 type Ctx = {
   jobs: Job[];
   startJob: (opts: StartOpts) => string | null;
   actOnJob: (id: string) => void;
-  acknowledgeJob: (id: string) => void;
-  removeJob: (id: string) => void;
+  acknowledgeJob: (id: string) => Promise<void>;
+  removeJob: (id: string) => Promise<void>;
   clearFinished: () => void;
 };
 
@@ -118,6 +118,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       steps: [...job.steps, { kind: "status", label: recovery.message, ts: Date.parse(recovery.occurredAt) }],
     }));
     setAnnouncement(recovery.message);
+    window.dispatchEvent(new CustomEvent("co-worker-settled", { detail: { kind: "lifecycle", outcome: recovery.outcome } }));
     if (["changed", "recovered", "unchanged"].includes(recovery.outcome)) {
       window.dispatchEvent(new CustomEvent("co-job-done", { detail: { kind: "lifecycle" } }));
     }
@@ -259,6 +260,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             applyRecovery(id, error.recovery as WorkRecovery);
             return;
           }
+          if (opts.kind === "lifecycle" && error.groupSettled) {
+            window.dispatchEvent(new CustomEvent("co-worker-settled", { detail: { kind: "lifecycle", outcome: error.code } }));
+          }
           finish("error", error.error || "Failed to start");
           return;
         }
@@ -333,7 +337,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
       } catch {
         cliId = null;
       }
-      const id = `job-${Date.now()}-${seq.current++}`;
+      const id = opts.workerId ?? `job-${Date.now()}-${seq.current++}`;
       const job: Job = {
         id,
         title: opts.title,
@@ -347,7 +351,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         text: "",
         startedAt: Date.now(),
       };
-      setJobs((js) => [job, ...js]);
+      setJobs((js) => [job, ...js.filter((existing) => existing.id !== id)]);
 
       if (!cliId) {
         patch(id, (j) => ({ ...j, status: "error", endedAt: Date.now(), steps: [...j.steps, { kind: "status", label: "No CLI configured: open Config", ts: Date.now() }] }));
@@ -396,14 +400,14 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     execute(id, opts, cliId, continuation);
   }, [execute, jobs, patch]);
 
-  const acknowledgeJob = useCallback((id: string) => {
+  const acknowledgeJob = useCallback(async (id: string): Promise<void> => {
     const job = jobs.find((candidate) => candidate.id === id);
     if (!job || job.status === "running") return;
     const at = Date.now();
     const previous = job.acknowledgedAt;
     patch(id, (current) => ({ ...current, acknowledgedAt: at }));
     if (job.kind !== "lifecycle") return;
-    void fetch(`/api/workers/${encodeURIComponent(id)}`, {
+    await fetch(`/api/workers/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "acknowledge" }),
@@ -416,7 +420,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   }, [jobs, patch]);
   const removeJob = acknowledgeJob;
   const clearFinished = useCallback(() => {
-    for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) acknowledgeJob(job.id);
+    for (const job of jobs) if (job.status !== "running" && !job.acknowledgedAt) void acknowledgeJob(job.id);
   }, [acknowledgeJob, jobs]);
 
   return (

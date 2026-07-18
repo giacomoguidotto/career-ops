@@ -250,6 +250,34 @@ try {
   const batchPayload = await batch.json();
   assert.deepEqual(batchPayload.ready.map((item) => item.opportunity), [1]);
   assert.deepEqual(batchPayload.skipped.map((item) => [item.opportunity, item.code]), [[7, "changed"]]);
+  assert.match(batchPayload.groupId, /^group-today-/);
+  const grouped = await (await phone.request.get(`${baseUrl}/api/work-groups/${batchPayload.groupId}`)).json();
+  assert.equal(grouped.group.children.length, 3, "group owns ready and reviewed child identities");
+  assert.equal(grouped.group.summary.conflict, 2, "fresh revision drift is preserved per child");
+  assert.equal(grouped.group.children.find((item) => item.opportunity === 7).expectedStage, "responded", "drifted child preserves the reviewed Stage evidence");
+  const conflictOnlyResponse = await phone.request.post(`${baseUrl}/api/opportunities/batch`, {
+    data: {
+      candidates: [{ opportunity: 1, expectedStage: "evaluated", expectedRevision: "0".repeat(64) }],
+      reviewed: [],
+    },
+  });
+  assert.equal(conflictOnlyResponse.status(), 200);
+  const conflictOnly = await conflictOnlyResponse.json();
+  assert.equal(conflictOnly.code, "nothing-started");
+  assert.match(conflictOnly.groupId, /^group-today-/, "review truth persists even when no worker starts");
+  const conflictOnlyGroup = await (await phone.request.get(`${baseUrl}/api/work-groups/${conflictOnly.groupId}`)).json();
+  assert.equal(conflictOnlyGroup.group.summary.conflict, 1);
+  assert.equal(conflictOnlyGroup.group.children[0].expectedRevision, "0".repeat(64), "drifted child preserves the reviewed revision evidence");
+  const detachedChild = await phone.request.post(`${baseUrl}/api/run`, {
+    data: {
+      kind: "lifecycle",
+      cliId: "codex",
+      workerId: batchPayload.ready[0].workerId,
+      input: JSON.stringify(batchPayload.ready[0]),
+    },
+  });
+  assert.equal(detachedChild.status(), 409, "a group child cannot be launched outside its owning group");
+  assert.equal((await detachedChild.json()).code, "group-child-conflict");
   await phone.getByText(/Starting 1 eligible work item\. Skipped 1 changed or excluded Opportunity\./).waitFor();
 
   const conflict = await phone.request.post(`${baseUrl}/api/run`, {
