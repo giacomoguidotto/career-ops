@@ -523,7 +523,7 @@ soft_gaps:
 }
 
 // --- CLI ---
-// --- CLI ---
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
 const args = process.argv.slice(2);
 if (args.includes('--self-test')) runSelfTest();
 
@@ -660,4 +660,5 @@ if (urlTextIdx !== -1 || directUrl) {
   } else {
     console.log(JSON.stringify(result, null, 2));
   }
+}
 }
