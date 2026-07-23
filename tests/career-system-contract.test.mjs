@@ -39,6 +39,77 @@ if (
   fail(`fork release path is invalid: ${forkVersionSyntax.stderr}`);
 }
 
+try {
+  const releaseRoot = mkdtempSync(join(tmpdir(), 'career-system-release-'));
+  const releaseScript = join(releaseRoot, 'bump-fork-version.sh');
+  mkdirSync(join(releaseRoot, 'scaffolder'), { recursive: true });
+  cpSync(forkVersionScript, releaseScript);
+  writeFileSync(join(releaseRoot, 'VERSION'), '1.23.0 # x-release-please-version\n');
+  writeFileSync(join(releaseRoot, 'package.json'), '{"version":"1.23.0"}\n');
+  writeFileSync(join(releaseRoot, 'scaffolder/package.json'), '{"version":"1.23.0"}\n');
+  writeFileSync(join(releaseRoot, '.release-please-manifest.json'), '{".":"1.23.0"}\n');
+  writeFileSync(join(releaseRoot, 'README.md'), 'release fixture\n');
+
+  const git = (args, options = {}) => execFileSync(
+    'git',
+    args,
+    { cwd: releaseRoot, encoding: 'utf8', ...options },
+  ).trim();
+  git(['init', '--initial-branch=main']);
+  git(['config', 'user.name', 'release-fixture']);
+  git(['config', 'user.email', 'release-fixture@example.invalid']);
+  git(['add', '.']);
+  git(['commit', '-m', 'chore: align native version files']);
+  git(['tag', '-a', 'career-ops-v0.1.0', '-m', 'immutable audit tag']);
+  writeFileSync(join(releaseRoot, 'README.md'), 'release fixture\nnext push\n');
+  git(['commit', '-am', 'feat: publish correct native release']);
+
+  const tree = git(['rev-parse', 'HEAD^{tree}']);
+  const unreachable = git(['commit-tree', tree], { input: 'unreachable tag fixture\n' });
+  git(['tag', '-a', 'career-ops-v9.0.0', unreachable, '-m', 'unreachable tag']);
+
+  const dryRun = execFileSync(
+    'bash',
+    [releaseScript, '--dry-run'],
+    { cwd: releaseRoot, encoding: 'utf8' },
+  );
+  const outputPath = join(releaseRoot, 'github-output');
+  execFileSync(
+    'bash',
+    [releaseScript],
+    {
+      cwd: releaseRoot,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    },
+  );
+  const retry = execFileSync(
+    'bash',
+    [releaseScript],
+    {
+      cwd: releaseRoot,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    },
+  );
+
+  if (
+    dryRun.includes('career-ops-v0.1.0 -> career-ops-v1.23.0')
+    && !dryRun.includes('career-ops-v9.0.0')
+    && git(['rev-list', '-n1', 'career-ops-v1.23.0']) === git(['rev-parse', 'HEAD'])
+    && retry.includes('Release tag already points at HEAD: career-ops-v1.23.0')
+    && readFileSync(outputPath, 'utf8').trim().split('\n').every(
+      (line) => line === 'tag=career-ops-v1.23.0',
+    )
+  ) {
+    pass('fork release follows aligned source versions, reachable tags, and retry safety');
+  } else {
+    fail(`fork release lineage or retry safety failed: ${JSON.stringify({ dryRun, retry })}`);
+  }
+} catch (error) {
+  fail(`fork release lineage fixture failed: ${error.message}`);
+}
+
 function gateway(capability, input) {
   return JSON.parse(execFileSync(
     process.execPath,

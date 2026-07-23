@@ -10,54 +10,69 @@ elif [[ $# -gt 0 ]]; then
 fi
 
 tag_pattern='career-ops-v[0-9]*.[0-9]*.[0-9]*'
-head_tag=$(git tag --points-at HEAD --list "$tag_pattern" --sort=-v:refname | head -n1)
-if [[ -n "$head_tag" ]]; then
-  printf 'Release tag already points at HEAD: %s\n' "$head_tag"
-  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf 'tag=%s\n' "$head_tag" >> "$GITHUB_OUTPUT"
+source_version=$(sed -E 's/[[:space:]]*#.*$//' VERSION | tr -d '[:space:]')
+package_version=$(node -p "require('./package.json').version")
+scaffolder_version=$(node -p "require('./scaffolder/package.json').version")
+manifest_version=$(node -p "require('./.release-please-manifest.json')['.']")
+
+if [[ ! "$source_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  printf 'Invalid source version in VERSION: %s\n' "$source_version" >&2
+  exit 1
+fi
+
+for aligned_version in "$package_version" "$scaffolder_version" "$manifest_version"; do
+  if [[ "$aligned_version" != "$source_version" ]]; then
+    printf 'Release version files are not aligned: VERSION=%s, observed=%s\n' \
+      "$source_version" "$aligned_version" >&2
+    exit 1
   fi
-  exit 0
-fi
+done
 
-latest_tag=$(git tag --list "$tag_pattern" --sort=-v:refname | head -n1)
-if [[ -z "$latest_tag" ]]; then
-  latest_tag=career-ops-v0.0.0
-  range=HEAD
-else
-  range="${latest_tag}..HEAD"
-fi
-
-IFS=. read -r major minor patch <<< "${latest_tag#career-ops-v}"
-bump=
-breaking_subject='^[a-z]+(\([^)]*\))?!:'
-feature_subject='^feat(\([^)]*\))?:'
-fix_subject='^fix(\([^)]*\))?:'
-
-while IFS= read -r subject; do
-  if [[ "$subject" =~ $breaking_subject ]] \
-    || [[ "$subject" == BREAKING\ CHANGE:* ]]; then
-    bump=major
-    break
-  elif [[ "$subject" =~ $feature_subject ]]; then
-    [[ "$bump" == major ]] || bump=minor
-  elif [[ "$subject" =~ $fix_subject ]]; then
-    [[ -n "$bump" ]] || bump=patch
+next_tag="career-ops-v${source_version}"
+tag_commit=$(git rev-list -n1 "$next_tag" 2>/dev/null || true)
+if [[ -n "$tag_commit" ]]; then
+  if [[ "$tag_commit" == "$(git rev-parse HEAD)" ]]; then
+    printf 'Release tag already points at HEAD: %s\n' "$next_tag"
+    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+      printf 'tag=%s\n' "$next_tag" >> "$GITHUB_OUTPUT"
+    fi
+    exit 0
   fi
-done < <(git log "$range" --format='%s%n%b')
 
-if [[ -z "$bump" ]]; then
-  printf 'No release required after %s.\n' "$latest_tag"
-  exit 0
+  if git merge-base --is-ancestor "$tag_commit" HEAD; then
+    printf 'Source version already released: %s\n' "$next_tag"
+    exit 0
+  fi
+
+  printf 'Release tag exists outside the current lineage: %s\n' "$next_tag" >&2
+  exit 1
 fi
 
-case "$bump" in
-  major) major=$((major + 1)); minor=0; patch=0 ;;
-  minor) minor=$((minor + 1)); patch=0 ;;
-  patch) patch=$((patch + 1)) ;;
-esac
+version_is_greater() {
+  local left_major left_minor left_patch right_major right_minor right_patch
+  IFS=. read -r left_major left_minor left_patch <<< "$1"
+  IFS=. read -r right_major right_minor right_patch <<< "$2"
 
-next_tag="career-ops-v${major}.${minor}.${patch}"
-printf '%s fork release: %s -> %s\n' "$bump" "$latest_tag" "$next_tag"
+  if (( 10#$left_major != 10#$right_major )); then
+    (( 10#$left_major > 10#$right_major ))
+    return
+  fi
+  if (( 10#$left_minor != 10#$right_minor )); then
+    (( 10#$left_minor > 10#$right_minor ))
+    return
+  fi
+  (( 10#$left_patch > 10#$right_patch ))
+}
+
+latest_tag=$(git tag --merged HEAD --list "$tag_pattern" --sort=-v:refname | head -n1)
+if [[ -n "$latest_tag" ]] \
+  && ! version_is_greater "$source_version" "${latest_tag#career-ops-v}"; then
+  printf 'Source version %s does not advance reachable release %s\n' \
+    "$source_version" "$latest_tag" >&2
+  exit 1
+fi
+
+printf 'source release: %s -> %s\n' "${latest_tag:-none}" "$next_tag"
 
 if [[ "$dry_run" == false ]]; then
   git tag -a "$next_tag" -m "$next_tag"
