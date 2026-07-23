@@ -33,6 +33,7 @@
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { createHash } from 'crypto';
 import { pathToFileURL, fileURLToPath } from 'url';
 import path from 'path';
 import yaml from 'js-yaml';
@@ -899,6 +900,12 @@ export function normalizeRoleForDedup(role) {
  */
 export function companyRoleDedupKey(company, role, canonicalize = defaultCompanyNormalizer) {
   return `${canonicalize(company)}::${normalizeRoleForDedup(role)}`;
+}
+
+export function stableOpportunityIdentity(offer, canonicalize = defaultCompanyNormalizer) {
+  const key = companyRoleDedupKey(offer?.company, offer?.title, canonicalize);
+  const digest = createHash('sha256').update(key).digest('hex').slice(0, 24);
+  return `career.opportunity/v1/${digest}`;
 }
 
 /**
@@ -1929,6 +1936,7 @@ Options:
       malformedSources: malformedSourceCount,
       saved: !dryRun && verifiedOffers.length > 0,
       offers: verifiedOffers.map(o => ({
+        identity: stableOpportunityIdentity(o, canonicalizeCompany),
         company: o.company,
         title: o.title,
         url: o.url,

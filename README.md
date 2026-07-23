@@ -152,6 +152,19 @@ produces no write, and profile reconciliation cannot reach applications,
 reports, attempts, outcomes, follow-ups, offers, observations, or generated
 artifacts.
 
+Opportunity discovery also enters through the gateway and delegates provider
+routing, filtering, deduplication, and artifact writes to the native scanner:
+
+```bash
+printf '{"schema":"career.opportunity.discover.request/v1","target":{"count":30}}' \
+  | node main.mjs career.opportunity.discover/v1 --input -
+```
+
+The result uses `career.opportunity.discover.result/v1`, assigns stable
+Career-owned identities, reports partial provider failures without discarding
+successful discoveries, and references native pipeline, history, and run
+artifacts. An optional `target.company` narrows the configured source.
+
 The standalone setup module is the only public export under `skills/public/`.
 It supports a read-only check and an idempotent reconcile:
 

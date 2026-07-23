@@ -13,6 +13,7 @@ const DEFAULT_CAPABILITIES = [
 
 const SYSTEM_REQUIREMENTS = [
   'main.mjs',
+  'lib/career-opportunity-discovery.mjs',
   'lib/career-system-gateway.mjs',
   'lib/career-profile-reconciliation.mjs',
   '.agents/skills/career-ops/SKILL.md',

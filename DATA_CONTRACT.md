@@ -89,7 +89,7 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `GEMINI.md` | Legacy no-op context guard (prevents Antigravity duplicate imports) |
 | `AGENTS.md` | Canonical agent instructions (imported by CLI-specific wrappers) |
 | `*.mjs` | Utility scripts |
-| `main.mjs` / `lib/career-system-gateway.mjs` / `lib/career-profile-reconciliation.mjs` | Canonical versioned Career capability gateway and native profile reconciler |
+| `main.mjs` / `lib/career-system-gateway.mjs` / `lib/career-profile-reconciliation.mjs` / `lib/career-opportunity-discovery.mjs` | Canonical versioned Career capability gateway, native profile reconciler, and opportunity discovery adapter |
 | `skills/public/setup-career-system/` | The single public Career setup export |
 | `validate-career-system-source.mjs` | Public-export and native ownership boundary validator |
 | `plugins/` | Bundled plugins + the plugin engine (opt-in external integrations) |
