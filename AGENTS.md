@@ -389,6 +389,9 @@ These are two separate axes:
 
 - **GitHub Actions** run on every PR: `test-all.mjs` (63+ checks), auto-labeler (risk-based: 🔴 core-architecture, ⚠️ agent-behavior, 📄 docs), welcome bot for first-time contributors
 - **Branch protection** on `main`: status checks must pass before merge. No direct pushes to main (except admin bypass).
+- **Fork releases** run independently from `fork/main`: `feat` triggers a
+  minor release, `fix` triggers a patch release, and a `!` marker or
+  `BREAKING CHANGE` footer triggers a major release.
 - **Dependabot** monitors npm, Go modules, and GitHub Actions for security updates
 - **Contributing process**: issue first → discussion → PR with linked issue → CI passes → maintainer review → merge
 

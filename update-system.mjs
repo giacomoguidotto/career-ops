@@ -154,6 +154,7 @@ const SYSTEM_PATHS = [
   'candidacy-select.mjs',
   'candidacy-select.test.mjs',
   'integration-preflight.mjs',
+  'scripts/bump-fork-version.sh',
   'advance-stage.mjs',
   'advance-stage.test.mjs',
   'approach-attempts.mjs',

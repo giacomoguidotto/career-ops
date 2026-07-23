@@ -18,6 +18,26 @@ import { stableOpportunityIdentity } from '../scan.mjs';
 
 console.log('\nCareer System gateway and standalone setup');
 
+const forkReleaseWorkflow = readFileSync(
+  join(ROOT, '.github/workflows/release-fork.yml'),
+  'utf8',
+);
+const forkVersionScript = join(ROOT, 'scripts/bump-fork-version.sh');
+const forkVersionSyntax = spawnSync('bash', ['-n', forkVersionScript], {
+  encoding: 'utf8',
+});
+if (
+  forkReleaseWorkflow.includes('branches: [fork/main]')
+  && forkReleaseWorkflow.includes('scripts/bump-fork-version.sh')
+  && forkReleaseWorkflow.includes('gh release create')
+  && forkReleaseWorkflow.includes('--verify-tag')
+  && forkVersionSyntax.status === 0
+) {
+  pass('fork/main has an independent stable release path');
+} else {
+  fail(`fork release path is invalid: ${forkVersionSyntax.stderr}`);
+}
+
 function gateway(capability, input) {
   return JSON.parse(execFileSync(
     process.execPath,
