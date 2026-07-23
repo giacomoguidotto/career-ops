@@ -5,6 +5,7 @@ import { join } from 'path';
 import { fail, pass, ROOT } from './helpers.mjs';
 import { isForkManagedCheckout } from '../update-system.mjs';
 import { validateCareerSystemSource } from '../validate-career-system-source.mjs';
+import { stableOpportunityIdentity } from '../scan.mjs';
 
 console.log('\nCareer System gateway and standalone setup');
 
@@ -53,6 +54,7 @@ function makeSetupFixture() {
   mkdirSync(join(root, 'modes'), { recursive: true });
   mkdirSync(join(root, 'config'), { recursive: true });
   cpSync(join(ROOT, 'main.mjs'), join(root, 'main.mjs'));
+  cpSync(join(ROOT, 'lib/career-opportunity-discovery.mjs'), join(root, 'lib/career-opportunity-discovery.mjs'));
   cpSync(join(ROOT, 'lib/career-system-gateway.mjs'), join(root, 'lib/career-system-gateway.mjs'));
   cpSync(join(ROOT, 'lib/career-profile-reconciliation.mjs'), join(root, 'lib/career-profile-reconciliation.mjs'));
   writeFileSync(join(root, '.agents/skills/career-ops/SKILL.md'), '# Career Ops\n');
@@ -71,6 +73,7 @@ try {
     && names.includes('career-system.check/v1')
     && names.includes('career.profile.check/v1')
     && names.includes('career.profile.reconcile/v1')
+    && names.includes('career.opportunity.discover/v1')
     && names.every((name) => /\/v[1-9]\d*$/.test(name))
   ) pass('gateway advertises only versioned capabilities');
   else fail(`unexpected capability description: ${JSON.stringify(described)}`);
@@ -96,6 +99,90 @@ try {
   } else {
     fail(`unversioned invocation was not rejected: ${unversioned.status} ${unversioned.stderr}`);
   }
+
+  const identityA = stableOpportunityIdentity({ company: 'Example GmbH', title: 'Staff Engineer (Berlin)' });
+  const identityB = stableOpportunityIdentity({ company: ' example gmbh ', title: 'Staff Engineer' });
+  if (identityA === identityB && /^career\.opportunity\/v1\/[a-f0-9]{24}$/.test(identityA)) {
+    pass('native scanner assigns stable company-role opportunity identities');
+  } else {
+    fail(`opportunity identity drifted across equivalent inputs: ${identityA} ${identityB}`);
+  }
+
+  const discoveryBlockedRoot = makeSetupFixture();
+  const discoveryBlocked = fixtureGateway(discoveryBlockedRoot, 'career-system.check/v1', {
+    capabilities: ['career.opportunity.discover/v1'],
+  });
+  if (
+    discoveryBlocked.status === 'blocked'
+    && discoveryBlocked.result.capabilities[0]?.reasons.includes('missing:scan.mjs')
+    && discoveryBlocked.result.capabilities[0]?.reasons.includes('missing:portals.yml')
+    && discoveryBlocked.result.capabilities[0]?.reasons.includes('missing:providers')
+  ) pass('discovery readiness reports fresh capability-scoped blockers');
+  else fail(`discovery readiness missed native blockers: ${JSON.stringify(discoveryBlocked)}`);
+
+  const discoveryRoot = makeSetupFixture();
+  mkdirSync(join(discoveryRoot, 'providers'), { recursive: true });
+  writeFileSync(join(discoveryRoot, 'providers/fixture.mjs'), 'export default { id: "fixture", fetch: async () => [] };\n');
+  writeFileSync(join(discoveryRoot, 'portals.yml'), 'tracked_companies: []\njob_boards: []\n');
+  writeFileSync(join(discoveryRoot, 'scan.mjs'), `#!/usr/bin/env node
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+mkdirSync('data', { recursive: true });
+if (!existsSync('data/pipeline.md')) writeFileSync('data/pipeline.md', 'fixture opportunity\\n');
+if (!existsSync('data/scan-history.tsv')) writeFileSync('data/scan-history.tsv', 'fixture history\\n');
+if (!existsSync('data/scan-runs.tsv')) writeFileSync('data/scan-runs.tsv', 'fixture run\\n');
+process.stdout.write(JSON.stringify({
+  contract: { id: 'career-ops.scanner.company-first', version: 1 },
+  unreachableTargets: 0,
+  networkErrors: 1,
+  otherErrors: 0,
+  unhandledSources: 0,
+  malformedSources: 0,
+  offers: [{
+    identity: '${identityA}',
+    company: 'Example GmbH',
+    title: 'Staff Engineer',
+    url: 'https://jobs.example.test/staff',
+    location: 'Berlin',
+    postedAt: '2026-07-22',
+    source: 'fixture-api'
+  }]
+}) + '\\n');
+`);
+
+  const discoveryReady = fixtureGateway(discoveryRoot, 'career-system.check/v1', {
+    capabilities: ['career.opportunity.discover/v1'],
+  });
+  const discoveryRequest = {
+    schema: 'career.opportunity.discover.request/v1',
+    target: { count: 2 },
+  };
+  const partialDiscovery = fixtureGateway(discoveryRoot, 'career.opportunity.discover/v1', discoveryRequest);
+  const pipelinePath = join(discoveryRoot, 'data/pipeline.md');
+  const pipelineMtime = statSync(pipelinePath).mtimeMs;
+  const repeatedDiscovery = fixtureGateway(discoveryRoot, 'career.opportunity.discover/v1', discoveryRequest);
+  if (
+    discoveryReady.status === 'ready'
+    && partialDiscovery.status === 'incomplete'
+    && partialDiscovery.result.schema === 'career.opportunity.discover.result/v1'
+    && partialDiscovery.result.discovered === 1
+    && partialDiscovery.result.opportunities[0]?.identity === identityA
+    && partialDiscovery.result.failures.some(({ code, count }) => code === 'network-errors' && count === 1)
+    && partialDiscovery.result.artifacts.some(({ path }) => path === 'data/pipeline.md')
+    && repeatedDiscovery.result.opportunities[0]?.identity === identityA
+    && statSync(pipelinePath).mtimeMs === pipelineMtime
+  ) pass('discovery preserves partial native work and repeated invocations keep stable identities');
+  else fail(`discovery did not preserve partial or repeated work: ${JSON.stringify({ discoveryReady, partialDiscovery, repeatedDiscovery })}`);
+
+  const malformedDiscovery = fixtureGateway(discoveryRoot, 'career.opportunity.discover/v1', {
+    schema: 'career.opportunity.discover.request/v1',
+    target: { count: 0 },
+  });
+  if (
+    malformedDiscovery.status === 'failed'
+    && malformedDiscovery.result.reasons.includes('target-count-must-be-a-positive-integer')
+    && statSync(pipelinePath).mtimeMs === pipelineMtime
+  ) pass('discovery rejects malformed requests before native writes');
+  else fail(`discovery accepted malformed input: ${JSON.stringify(malformedDiscovery)}`);
 
   const setupScript = join(ROOT, 'skills/public/setup-career-system/scripts/setup-career-system.mjs');
   const checkRoot = makeSetupFixture();
