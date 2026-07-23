@@ -29,6 +29,7 @@ User-facing content (CV, cover letters, application emails, form answers, recrui
 - `cv.md`
 - `article-digest.md`
 - `config/profile.yml`
+- `config/career-profile.json` (gateway-managed profile projection)
 - `modes/_profile.md`
 - `modes/_custom.md` (procedural/style rules only — governs workflow and output preferences, never introduces factual claims)
 - `writing-samples/`
@@ -77,6 +78,11 @@ Parse the JSON output:
 - `{"status": "dismissed"}` → say nothing
 - `{"status": "offline"}` → say nothing
 - `{"status": "no-remote-version"}` → say nothing (checker reached GitHub but neither VERSION nor the latest release tag parsed as semver — treat as a silent non-failure, same as offline)
+
+When the fork-owned Career gateway is present, do not run `apply`: the upstream
+auto-updater cannot preserve the fork overlay and refuses before mutation.
+Absorb upstream releases on an isolated feature branch, validate them, and merge
+them into `fork/main` through a reviewed PR.
 
 The user can also say "check for updates" or "update career-ops" at any time to force a check.
 To rollback: `node update-system.mjs rollback`
@@ -135,6 +141,9 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `scan-ats-full.mjs` | Reverse-ATS keyword-first scanner — walks the full public job-board-aggregator dataset per ATS provider (Greenhouse/Lever/Ashby/Workday), filtered by portals.yml's title_filter/location_filter. No company-list curation needed; complements scan.mjs's company-first model. |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
+| `main.mjs` | Canonical machine gateway for versioned Career System capabilities |
+| `config/career-profile.json` | Gateway-managed native projection of a revision-checked Career profile snapshot |
+| `skills/public/setup-career-system/` | Standalone `/setup-career-system` check and reconcile module |
 | `reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). `## Decision Snapshot` first, then `## Machine Summary`, then Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
 
 ### Plugins (optional)

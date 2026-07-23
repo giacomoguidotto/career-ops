@@ -204,6 +204,11 @@ const SYSTEM_PATHS = [
   'eval-golden.mjs',
   'evals/',
   'openrouter-runner.mjs',
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/',
+  'validate-career-system-source.mjs',
   'test-all.mjs',
   'detect-reposts.test.mjs',
   'test-salary-filter.mjs',
@@ -303,6 +308,11 @@ const SYSTEM_PATHS = [
 
 const BOOTSTRAP_PATHS = [
   '.agents/',
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/',
+  'validate-career-system-source.mjs',
   '.opencode/skills/',
   '.antigravitycli/skills/',
   '.grok/skills/',
@@ -332,10 +342,18 @@ const BOOTSTRAP_PATHS = [
   'agent-inbox-tests.mjs',
 ];
 
+const FORK_CAREER_SURFACE_PATHS = [
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/setup-career-system/SKILL.md',
+];
+
 // User layer paths — NEVER touch these (safety check)
 export const USER_PATHS = [
   'cv.md',
   'config/profile.yml',
+  'config/career-profile.json',
   'modes/_profile.md',
   'modes/_custom.md',
   'voice-dna.md',
@@ -364,6 +382,10 @@ function parseVersionFile(raw) {
 function localVersion() {
   const vPath = join(ROOT, 'VERSION');
   return existsSync(vPath) ? parseVersionFile(readFileSync(vPath, 'utf-8')) : '0.0.0';
+}
+
+export function isForkManagedCheckout(root = ROOT) {
+  return FORK_CAREER_SURFACE_PATHS.every((path) => existsSync(repoPath(root, path)));
 }
 
 function compareVersions(a, b) {
@@ -731,6 +753,16 @@ async function check() {
 // ── APPLY ───────────────────────────────────────────────────────
 
 async function apply() {
+  if (isForkManagedCheckout()) {
+    console.error(
+      'This checkout contains the fork-owned Career gateway. '
+      + 'The upstream auto-updater cannot preserve that overlay, so no files were changed. '
+      + 'Absorb the upstream release on an isolated feature branch and merge it into fork/main through a reviewed PR.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const local = localVersion();
   const initialStatusPaths = new Set(gitStatusEntries().map(entry => entry.path));
   const isReexec = process.env.CAREER_OPS_UPDATE_REEXEC === '1';

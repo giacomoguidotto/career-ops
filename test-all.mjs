@@ -179,6 +179,7 @@ const scripts = [
   { name: 'validate-portals.mjs --file templates/portals.example.yml', expectExit: 0 },
   { name: 'validate-system-paths-coverage.mjs --self-test', expectExit: 0 },
   { name: 'validate-system-paths-coverage.mjs', expectExit: 0 },
+  { name: 'validate-career-system-source.mjs', expectExit: 0 },
   // Missing-file run: must exit 0 gracefully and hit no network. Do not use the
   // default portals.yml because end-user workspaces often have a real user-layer
   // portals file that would trigger a live remote sweep during tests.
@@ -655,6 +656,12 @@ const systemFiles = [
   '.qwen/skills/career-ops/SKILL.md',
   '.antigravitycli/skills/career-ops/SKILL.md',
   '.grok/skills/career-ops/SKILL.md',
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/setup-career-system/SKILL.md',
+  'skills/public/setup-career-system/scripts/setup-career-system.mjs',
+  'validate-career-system-source.mjs',
 ];
 
 for (const f of systemFiles) {
@@ -667,7 +674,7 @@ for (const f of systemFiles) {
 
 // Check user files are NOT tracked (gitignored)
 const userFiles = [
-  'config/profile.yml', 'modes/_profile.md', 'portals.yml',
+  'config/profile.yml', 'config/career-profile.json', 'modes/_profile.md', 'portals.yml',
 ];
 for (const f of userFiles) {
   const tracked = run('git', ['ls-files', f]);
