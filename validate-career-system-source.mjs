@@ -19,6 +19,7 @@ const FORBIDDEN_CONCEPTS = [
 const NATIVE_PREFIXES = [
   '.agents/',
   'batch/',
+  'dashboard/',
   'lib/',
   'modes/',
   'plugins/',
@@ -29,8 +30,25 @@ const NATIVE_PREFIXES = [
   'templates/',
 ];
 
-const SOURCE_EXTENSIONS = new Set(['.js', '.json', '.md', '.mjs', '.yaml', '.yml']);
+const SOURCE_EXTENSIONS = new Set([
+  '.css',
+  '.go',
+  '.html',
+  '.js',
+  '.json',
+  '.md',
+  '.mjs',
+  '.tex',
+  '.yaml',
+  '.yml',
+]);
 const VALIDATOR_PATH = 'validate-career-system-source.mjs';
+const USER_LAYER_PATHS = new Set([
+  'article-digest.md',
+  'cv.md',
+  'modes/_custom.md',
+  'modes/_profile.md',
+]);
 
 function walk(root, current = root) {
   const files = [];
@@ -55,6 +73,7 @@ function trackedFiles(root) {
 }
 
 function isNativeSource(path) {
+  if (USER_LAYER_PATHS.has(path)) return false;
   if (path === VALIDATOR_PATH || path.startsWith('tests/') || path.startsWith('test/')) return false;
   if (!SOURCE_EXTENSIONS.has(extname(path))) return false;
   if (!path.includes('/')) return true;
@@ -81,7 +100,8 @@ function validatePublicExports(root, errors) {
   }
 
   const skill = readFileSync(skillPath, 'utf8');
-  if (!/^---\n[\s\S]*?^name:\s*setup-career-system\s*$[\s\S]*?^---$/m.test(skill)) {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(skill);
+  if (!frontmatter || !/^name:[ \t]*setup-career-system[ \t]*\r?$/m.test(frontmatter[1])) {
     errors.push('setup-career-system SKILL.md must declare name: setup-career-system');
   }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'child_process';
-import { copyFileSync, existsSync } from 'fs';
+import { constants, copyFileSync, existsSync } from 'fs';
 import { isAbsolute, join, resolve } from 'path';
 
 const DEFAULT_CAPABILITIES = [
@@ -73,9 +73,12 @@ function reconcileSafeTemplates(root) {
   for (const [source, destination] of SAFE_TEMPLATE_COPIES) {
     const sourcePath = join(root, source);
     const destinationPath = join(root, destination);
-    if (!existsSync(destinationPath) && existsSync(sourcePath)) {
-      copyFileSync(sourcePath, destinationPath, 0);
+    if (!existsSync(sourcePath)) continue;
+    try {
+      copyFileSync(sourcePath, destinationPath, constants.COPYFILE_EXCL);
       changed.push(destination);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
     }
   }
   return changed;

@@ -222,6 +222,26 @@ try {
     fail(`source validator accepted forbidden coupling: ${JSON.stringify(boundaryErrors)}`);
   }
 
+  writeFileSync(join(boundaryRoot, 'cv.md'), 'Knowledge System is personal context.\n');
+  mkdirSync(join(boundaryRoot, 'modes'), { recursive: true });
+  writeFileSync(join(boundaryRoot, 'modes/_profile.md'), 'Mastery System is personal targeting context.\n');
+  const userLayerErrors = validateCareerSystemSource(boundaryRoot);
+  if (
+    !userLayerErrors.some((error) => error.startsWith('cv.md:') || error.startsWith('modes/_profile.md:'))
+  ) pass('source validator excludes Career user-layer content from policy checks');
+  else fail(`source validator inspected user-owned content: ${JSON.stringify(userLayerErrors)}`);
+
+  mkdirSync(join(boundaryRoot, 'dashboard'), { recursive: true });
+  mkdirSync(join(boundaryRoot, 'templates'), { recursive: true });
+  writeFileSync(join(boundaryRoot, 'dashboard/main.go'), 'package main // Knowledge System\n');
+  writeFileSync(join(boundaryRoot, 'templates/native.html'), '<p>Mastery System</p>\n');
+  const formatErrors = validateCareerSystemSource(boundaryRoot);
+  if (
+    formatErrors.some((error) => error.startsWith('dashboard/main.go:'))
+    && formatErrors.some((error) => error.startsWith('templates/native.html:'))
+  ) pass('source validator covers dashboard and template source formats');
+  else fail(`source validator skipped native source formats: ${JSON.stringify(formatErrors)}`);
+
   mkdirSync(join(boundaryRoot, 'skills/public/extra-export'));
   const allowlistErrors = validateCareerSystemSource(boundaryRoot);
   if (allowlistErrors.some((error) => /public Career exports must be exactly/.test(error))) {
