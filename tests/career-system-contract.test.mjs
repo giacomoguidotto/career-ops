@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, wri
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fail, pass, ROOT } from './helpers.mjs';
+import { isForkManagedCheckout } from '../update-system.mjs';
 import { validateCareerSystemSource } from '../validate-career-system-source.mjs';
 
 console.log('\nCareer System gateway and standalone setup');
@@ -209,6 +210,19 @@ try {
   const sourceErrors = validateCareerSystemSource(ROOT);
   if (sourceErrors.length === 0) pass('source validator accepts the canonical public export');
   else fail(`source validator rejected canonical source: ${sourceErrors.join('; ')}`);
+
+  if (isForkManagedCheckout(ROOT)) {
+    const updaterSource = readFileSync(join(ROOT, 'update-system.mjs'), 'utf8');
+    const guardIndex = updaterSource.indexOf('if (isForkManagedCheckout())');
+    const fetchIndex = updaterSource.indexOf("git('fetch', CANONICAL_REPO, 'main')");
+    if (guardIndex >= 0 && fetchIndex > guardIndex) {
+      pass('upstream auto-update blocks before mutation when the fork gateway is present');
+    } else {
+      fail('fork updater guard does not run before upstream fetch');
+    }
+  } else {
+    fail('fork-owned Career gateway surface is not detectable');
+  }
 
   const boundaryRoot = mkdtempSync(join(tmpdir(), 'career-system-boundary-'));
   mkdirSync(join(boundaryRoot, 'skills/public/setup-career-system'), { recursive: true });

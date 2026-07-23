@@ -164,6 +164,11 @@ node skills/public/setup-career-system/scripts/setup-career-system.mjs reconcile
 Reconcile seeds only missing customization templates. It reports missing CV,
 profile, or portal inputs without inventing personal data.
 
+This fork tracks upstream through reviewed merge/reconciliation branches into
+`fork/main`. The upstream auto-updater refuses before mutation when this
+fork-owned gateway is present because an upstream checkout cannot preserve the
+overlay.
+
 ## Quick Start
 
 **Fastest way — one command:**

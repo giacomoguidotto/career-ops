@@ -79,6 +79,11 @@ Parse the JSON output:
 - `{"status": "offline"}` → say nothing
 - `{"status": "no-remote-version"}` → say nothing (checker reached GitHub but neither VERSION nor the latest release tag parsed as semver — treat as a silent non-failure, same as offline)
 
+When the fork-owned Career gateway is present, do not run `apply`: the upstream
+auto-updater cannot preserve the fork overlay and refuses before mutation.
+Absorb upstream releases on an isolated feature branch, validate them, and merge
+them into `fork/main` through a reviewed PR.
+
 The user can also say "check for updates" or "update career-ops" at any time to force a check.
 To rollback: `node update-system.mjs rollback`
 
