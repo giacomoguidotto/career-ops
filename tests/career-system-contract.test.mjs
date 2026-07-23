@@ -154,13 +154,27 @@ function makeSetupFixture() {
   mkdirSync(join(root, '.agents/skills/career-ops'), { recursive: true });
   mkdirSync(join(root, 'modes'), { recursive: true });
   mkdirSync(join(root, 'config'), { recursive: true });
+  mkdirSync(join(root, 'templates'), { recursive: true });
   cpSync(join(ROOT, 'main.mjs'), join(root, 'main.mjs'));
   cpSync(join(ROOT, 'lib/career-opportunity-discovery.mjs'), join(root, 'lib/career-opportunity-discovery.mjs'));
+  cpSync(join(ROOT, 'lib/career-opportunity-pursuit.mjs'), join(root, 'lib/career-opportunity-pursuit.mjs'));
   cpSync(join(ROOT, 'lib/career-requisite-snapshot.mjs'), join(root, 'lib/career-requisite-snapshot.mjs'));
   cpSync(join(ROOT, 'lib/career-system-gateway.mjs'), join(root, 'lib/career-system-gateway.mjs'));
   cpSync(join(ROOT, 'lib/career-profile-reconciliation.mjs'), join(root, 'lib/career-profile-reconciliation.mjs'));
-  cpSync(join(ROOT, 'tracker-parse.mjs'), join(root, 'tracker-parse.mjs'));
-  cpSync(join(ROOT, 'tracker-aliases.json'), join(root, 'tracker-aliases.json'));
+  for (const file of [
+    'DATA_CONTRACT.md',
+    'opportunity-lifecycle.mjs',
+    'pdf-artifact.mjs',
+    'tracker-utils.mjs',
+    'tracker-parse.mjs',
+    'tracker-aliases.json',
+    'candidacy-select.mjs',
+    'followup-cadence.mjs',
+    'approach-attempts.mjs',
+    'approach-evidence.mjs',
+    'advance-stage.mjs',
+  ]) cpSync(join(ROOT, file), join(root, file));
+  cpSync(join(ROOT, 'templates/states.yml'), join(root, 'templates/states.yml'));
   cpSync(join(ROOT, 'upskill.mjs'), join(root, 'upskill.mjs'));
   symlinkSync(
     join(ROOT, 'node_modules'),
@@ -184,6 +198,9 @@ try {
     && names.includes('career.profile.check/v1')
     && names.includes('career.profile.reconcile/v1')
     && names.includes('career.opportunity.discover/v1')
+    && names.includes('career.opportunity.select-related/v1')
+    && names.includes('career.opportunity.advance/v1')
+    && names.includes('career.opportunity.review-waiting/v1')
     && names.includes('career.requisite.snapshot/v1')
     && names.every((name) => /\/v[1-9]\d*$/.test(name))
   ) pass('gateway advertises only versioned capabilities');
@@ -409,6 +426,163 @@ process.stdout.write(JSON.stringify({
     && readFileSync(join(requisiteRoot, 'data/applications.md'), 'utf8') === operationalBefore
   ) pass('requisite snapshots reject malformed policy-bearing input without mutation');
   else fail(`requisite snapshot accepted malformed input: ${JSON.stringify(malformedRequisite)}`);
+
+  const pursuitRoot = makeSetupFixture();
+  mkdirSync(join(pursuitRoot, 'data'), { recursive: true });
+  mkdirSync(join(pursuitRoot, 'reports'), { recursive: true });
+  mkdirSync(join(pursuitRoot, 'output/next-packs'), { recursive: true });
+  const pursuitTracker = [
+    '# Opportunities Tracker',
+    '',
+    '| Opportunity | Date | Company | Role | Score | Stage | PDF | Report | Notes |',
+    '|---|---|---|---|---|---|---|---|---|',
+    '| 1 | 2026-07-20 | Example | Platform Engineer | 4.5/5 | Evaluated | - | [Report](../reports/001-example.md) | |',
+    '| 2 | 2026-06-01 | Waiting Co | Staff Engineer | 4.2/5 | Approached | - | - | |',
+    '| 3 | 2026-07-21 | Ready Co | Principal Engineer | 4.0/5 | Approach Ready | - | - | |',
+    '',
+  ].join('\n');
+  writeFileSync(join(pursuitRoot, 'data/applications.md'), pursuitTracker);
+  writeFileSync(join(pursuitRoot, 'reports/001-example.md'), [
+    '## Machine Summary',
+    '```yaml',
+    'final_decision: APPLY',
+    '```',
+    '',
+  ].join('\n'));
+  writeFileSync(join(pursuitRoot, 'data/approach-attempts.md'), [
+    '# Approach Attempts',
+    '',
+    '| id | opportunity | occurredAt | type | channel | recipient | result | followUpTo | notes |',
+    '|---|---|---|---|---|---|---|---|---|',
+    '| A001 | 2 | 2026-06-01 | formal_application | portal | Hiring Team | sent | | |',
+    '',
+  ].join('\n'));
+  writeFileSync(join(pursuitRoot, 'data/follow-ups.md'), '# Follow-ups\n');
+  writeFileSync(join(pursuitRoot, 'data/candidacy-clusters.md'), '# Candidacy clusters\n');
+  writeFileSync(join(pursuitRoot, 'config/profile.yml'), 'followup_cadence: {}\n');
+
+  const pursuitFilesBefore = {
+    tracker: readFileSync(join(pursuitRoot, 'data/applications.md'), 'utf8'),
+    attempts: readFileSync(join(pursuitRoot, 'data/approach-attempts.md'), 'utf8'),
+    clusters: readFileSync(join(pursuitRoot, 'data/candidacy-clusters.md'), 'utf8'),
+  };
+  const pursuitReadiness = fixtureGateway(pursuitRoot, 'career-system.check/v1', {
+    capabilities: [
+      'career.opportunity.select-related/v1',
+      'career.opportunity.advance/v1',
+      'career.opportunity.review-waiting/v1',
+    ],
+  });
+  const setupPursuitReadiness = JSON.parse(execFileSync(
+    process.execPath,
+    [
+      join(ROOT, 'skills/public/setup-career-system/scripts/setup-career-system.mjs'),
+      'check',
+      '--root',
+      pursuitRoot,
+      '--capability',
+      'career.opportunity.select-related/v1',
+      '--capability',
+      'career.opportunity.advance/v1',
+      '--capability',
+      'career.opportunity.review-waiting/v1',
+    ],
+    { encoding: 'utf8' },
+  ));
+  const selected = fixtureGateway(pursuitRoot, 'career.opportunity.select-related/v1', {
+    schema: 'career.opportunity.select-related.request/v1',
+    personalization: { mode: 'generic-defaults' },
+    as_of: '2026-07-23',
+  });
+  const waiting = fixtureGateway(pursuitRoot, 'career.opportunity.review-waiting/v1', {
+    schema: 'career.opportunity.review-waiting.request/v1',
+    personalization: { mode: 'generic-defaults' },
+    as_of: '2026-07-23',
+  });
+  const validationPreserved = (
+    readFileSync(join(pursuitRoot, 'data/applications.md'), 'utf8') === pursuitFilesBefore.tracker
+    && readFileSync(join(pursuitRoot, 'data/approach-attempts.md'), 'utf8') === pursuitFilesBefore.attempts
+    && readFileSync(join(pursuitRoot, 'data/candidacy-clusters.md'), 'utf8') === pursuitFilesBefore.clusters
+    && !existsSync(join(pursuitRoot, '.career-ops-web'))
+  );
+  if (
+    pursuitReadiness.status === 'ready'
+    && pursuitReadiness.result.capabilities.every(({ status }) => status === 'ready')
+    && setupPursuitReadiness.gateway.status === 'ready'
+    && setupPursuitReadiness.changed.length === 0
+    && selected.status === 'ready'
+    && selected.result.status === 'completed'
+    && selected.result.personalization === 'generic-defaults'
+    && selected.result.selected.join(',') === 'career.opportunity/v1/1'
+    && selected.result.throughput.source === 'career-default'
+    && waiting.status === 'ready'
+    && waiting.result.status === 'completed'
+    && waiting.result.personalization === 'generic-defaults'
+    && waiting.result.recommendations[0]?.reference === 'career.opportunity/v1/2'
+    && waiting.result.recommendations[0]?.factual_stage_unchanged === true
+    && waiting.result.evidence_sufficiency.sufficient === false
+    && validationPreserved
+  ) pass('pursuit readiness, selection, and wait review are Career-native, generic-safe, and read-only');
+  else fail(`pursuit read contracts failed or mutated state: ${JSON.stringify({
+    pursuitReadiness,
+    setupPursuitReadiness,
+    selected,
+    waiting,
+    validationPreserved,
+  })}`);
+
+  const selectedWork = selected.result.opportunities[0];
+  const workRequest = {
+    schema: 'career.opportunity.advance.request/v1',
+    operation: 'request',
+    opportunity_ref: selectedWork.reference,
+    expected_stage: selectedWork.stage,
+    expected_revision: selectedWork.revision,
+  };
+  const requestedWork = fixtureGateway(pursuitRoot, 'career.opportunity.advance/v1', workRequest);
+  writeFileSync(join(pursuitRoot, 'output/next-packs/001-example.md'), [
+    '## Next: Example (#1)',
+    '',
+    '**Stage:** evaluated  ',
+    '**Owner:** agent  ',
+    '**Suggests:** generate_approach_plan  ',
+    '',
+    '## Communication Plan',
+    '',
+    'Draft only. No application or message was sent.',
+    '',
+  ].join('\n'));
+  const reconciledWork = fixtureGateway(pursuitRoot, 'career.opportunity.advance/v1', {
+    ...workRequest,
+    operation: 'reconcile',
+  });
+  const stageAfterReconcile = readFileSync(join(pursuitRoot, 'data/applications.md'), 'utf8');
+  const prohibitedAdvance = fixtureGateway(pursuitRoot, 'career.opportunity.advance/v1', {
+    ...workRequest,
+    operation: 'record-external-event',
+    message_sent: true,
+  });
+  if (
+    requestedWork.status === 'ready'
+    && requestedWork.result.status === 'completed'
+    && requestedWork.result.personalization === 'generic-defaults'
+    && requestedWork.result.outcome.code === 'work-requested'
+    && readFileSync(join(pursuitRoot, 'data/approach-attempts.md'), 'utf8') === pursuitFilesBefore.attempts
+    && reconciledWork.status === 'ready'
+    && reconciledWork.result.status === 'completed'
+    && reconciledWork.result.outcome.code === 'work-reconciled'
+    && reconciledWork.result.required_approvals[0]?.code === 'real-world-action'
+    && stageAfterReconcile.includes('| 4.5/5 | Approach Ready |')
+    && prohibitedAdvance.status === 'failed'
+    && prohibitedAdvance.result.reasons.includes('request-contains-unsupported-fields')
+    && !prohibitedAdvance.result.outcome
+    && readFileSync(join(pursuitRoot, 'data/approach-attempts.md'), 'utf8') === pursuitFilesBefore.attempts
+  ) pass('Agent-owned planning advances only the draft projection and rejects asserted external events');
+  else fail(`pursuit advancement crossed its evidence boundary: ${JSON.stringify({
+    requestedWork,
+    reconciledWork,
+    prohibitedAdvance,
+  })}`);
 
   const setupScript = join(ROOT, 'skills/public/setup-career-system/scripts/setup-career-system.mjs');
   const checkRoot = makeSetupFixture();

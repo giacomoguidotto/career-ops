@@ -207,6 +207,7 @@ const SYSTEM_PATHS = [
   'openrouter-runner.mjs',
   'main.mjs',
   'lib/career-opportunity-discovery.mjs',
+  'lib/career-opportunity-pursuit.mjs',
   'lib/career-requisite-snapshot.mjs',
   'lib/career-system-gateway.mjs',
   'lib/career-profile-reconciliation.mjs',
@@ -313,6 +314,7 @@ const BOOTSTRAP_PATHS = [
   '.agents/',
   'main.mjs',
   'lib/career-opportunity-discovery.mjs',
+  'lib/career-opportunity-pursuit.mjs',
   'lib/career-requisite-snapshot.mjs',
   'lib/career-system-gateway.mjs',
   'lib/career-profile-reconciliation.mjs',
@@ -350,6 +352,7 @@ const BOOTSTRAP_PATHS = [
 const FORK_CAREER_SURFACE_PATHS = [
   'main.mjs',
   'lib/career-opportunity-discovery.mjs',
+  'lib/career-opportunity-pursuit.mjs',
   'lib/career-requisite-snapshot.mjs',
   'lib/career-system-gateway.mjs',
   'lib/career-profile-reconciliation.mjs',

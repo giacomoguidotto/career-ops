@@ -178,6 +178,29 @@ tiers, and opaque evidence references are derived by Career's native gap method.
 Repeated reads do not modify reports, the application tracker, or other
 operational state.
 
+Native pursuit uses three gateway capabilities:
+
+```bash
+printf '{"schema":"career.opportunity.select-related.request/v1","personalization":{"mode":"generic-defaults"}}' \
+  | node main.mjs career.opportunity.select-related/v1 --input -
+printf '{"schema":"career.opportunity.review-waiting.request/v1","personalization":{"mode":"generic-defaults"}}' \
+  | node main.mjs career.opportunity.review-waiting/v1 --input -
+```
+
+Selection is read-only and preserves the exclusive eligible, suppressed, and
+research-blocked sets from native candidacy coordination. Missing optional
+personalization selects complete Career-owned generic defaults. Wait review
+derives attention only from confirmed Approach Attempts and cadence; it never
+records a recommendation as a sent message, application, reply, or factual Stage
+change.
+
+`career.opportunity.advance/v1` accepts only the `request` and `reconcile`
+operations. `request` reserves revision-checked Agent-owned planning.
+`reconcile` records only that a native draft artifact exists and advances to its
+paired Ready Stage. Neither operation accepts real-world event claims. Any
+application, outreach, message, follow-up, interview, or external outcome still
+requires the existing explicit user report and native evidence path.
+
 The standalone setup module is the only public export under `skills/public/`.
 It supports a read-only check and an idempotent reconcile:
 
