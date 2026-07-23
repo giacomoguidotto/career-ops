@@ -658,6 +658,7 @@ const systemFiles = [
   '.grok/skills/career-ops/SKILL.md',
   'main.mjs',
   'lib/career-opportunity-discovery.mjs',
+  'lib/career-requisite-snapshot.mjs',
   'lib/career-system-gateway.mjs',
   'lib/career-profile-reconciliation.mjs',
   'skills/public/setup-career-system/SKILL.md',

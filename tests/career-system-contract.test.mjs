@@ -1,5 +1,14 @@
 import { execFileSync, spawnSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fail, pass, ROOT } from './helpers.mjs';
@@ -55,8 +64,17 @@ function makeSetupFixture() {
   mkdirSync(join(root, 'config'), { recursive: true });
   cpSync(join(ROOT, 'main.mjs'), join(root, 'main.mjs'));
   cpSync(join(ROOT, 'lib/career-opportunity-discovery.mjs'), join(root, 'lib/career-opportunity-discovery.mjs'));
+  cpSync(join(ROOT, 'lib/career-requisite-snapshot.mjs'), join(root, 'lib/career-requisite-snapshot.mjs'));
   cpSync(join(ROOT, 'lib/career-system-gateway.mjs'), join(root, 'lib/career-system-gateway.mjs'));
   cpSync(join(ROOT, 'lib/career-profile-reconciliation.mjs'), join(root, 'lib/career-profile-reconciliation.mjs'));
+  cpSync(join(ROOT, 'tracker-parse.mjs'), join(root, 'tracker-parse.mjs'));
+  cpSync(join(ROOT, 'tracker-aliases.json'), join(root, 'tracker-aliases.json'));
+  cpSync(join(ROOT, 'upskill.mjs'), join(root, 'upskill.mjs'));
+  symlinkSync(
+    join(ROOT, 'node_modules'),
+    join(root, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   writeFileSync(join(root, '.agents/skills/career-ops/SKILL.md'), '# Career Ops\n');
   writeFileSync(join(root, 'modes/_profile.template.md'), '# Profile template\n');
   writeFileSync(join(root, 'modes/_custom.template.md'), '# Custom template\n');
@@ -74,6 +92,7 @@ try {
     && names.includes('career.profile.check/v1')
     && names.includes('career.profile.reconcile/v1')
     && names.includes('career.opportunity.discover/v1')
+    && names.includes('career.requisite.snapshot/v1')
     && names.every((name) => /\/v[1-9]\d*$/.test(name))
   ) pass('gateway advertises only versioned capabilities');
   else fail(`unexpected capability description: ${JSON.stringify(described)}`);
@@ -183,6 +202,121 @@ process.stdout.write(JSON.stringify({
     && statSync(pipelinePath).mtimeMs === pipelineMtime
   ) pass('discovery rejects malformed requests before native writes');
   else fail(`discovery accepted malformed input: ${JSON.stringify(malformedDiscovery)}`);
+
+  const emptyRequisiteRoot = makeSetupFixture();
+  const emptyRequisiteRequest = { schema: 'career.requisite.snapshot.request/v1' };
+  const emptyRequisite = fixtureGateway(
+    emptyRequisiteRoot,
+    'career.requisite.snapshot/v1',
+    emptyRequisiteRequest,
+  );
+  const repeatedEmptyRequisite = fixtureGateway(
+    emptyRequisiteRoot,
+    'career.requisite.snapshot/v1',
+    emptyRequisiteRequest,
+  );
+  if (
+    emptyRequisite.status === 'ready'
+    && emptyRequisite.result.schema === 'career.requisite.snapshot/v1'
+    && emptyRequisite.result.coverage.status === 'empty'
+    && emptyRequisite.result.requisites.length === 0
+    && JSON.stringify(emptyRequisite) === JSON.stringify(repeatedEmptyRequisite)
+  ) pass('requisite snapshots are stable when evaluated evidence is empty');
+  else fail(`empty requisite snapshot was unstable or malformed: ${JSON.stringify(emptyRequisite)}`);
+
+  const requisiteRoot = makeSetupFixture();
+  mkdirSync(join(requisiteRoot, 'data'), { recursive: true });
+  mkdirSync(join(requisiteRoot, 'reports'), { recursive: true });
+  writeFileSync(join(requisiteRoot, 'data/applications.md'), [
+    '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |',
+    '|---|---|---|---|---|---|---|---|---|',
+    '| 1 | 2026-07-20 | Example | Platform Engineer | 2.0/5 | Evaluated | - | [Report](../reports/001-example.md) | |',
+    '| 2 | 2026-07-21 | Other | Data Engineer | 3.0/5 | Evaluated | - | [Report](../reports/002-other.md) | |',
+    '| 3 | 2026-07-22 | Missing | ML Engineer | 3.5/5 | Evaluated | - | [Report](../reports/003-missing.md) | |',
+    '',
+  ].join('\n'));
+  writeFileSync(join(requisiteRoot, 'reports/001-example.md'), [
+    '## Machine Summary',
+    '```yaml',
+    'score: 2.0',
+    'hard_stops:',
+    '  - Kubernetes',
+    'soft_gaps:',
+    '  - Terraform',
+    '```',
+    '',
+  ].join('\n'));
+  writeFileSync(join(requisiteRoot, 'reports/002-other.md'), [
+    '| Gap | Severity | Evidence |',
+    '|---|---|---|',
+    '| Kubernetes | High | Required |',
+    '| Python | Medium | Preferred |',
+    '',
+  ].join('\n'));
+  const operationalBefore = readFileSync(join(requisiteRoot, 'data/applications.md'), 'utf8');
+  const firstRequisite = fixtureGateway(
+    requisiteRoot,
+    'career.requisite.snapshot/v1',
+    emptyRequisiteRequest,
+  );
+  const secondRequisite = fixtureGateway(
+    requisiteRoot,
+    'career.requisite.snapshot/v1',
+    emptyRequisiteRequest,
+  );
+  const kubernetes = firstRequisite.result.requisites.find(({ label }) => label === 'Kubernetes');
+  const serializedRequisites = JSON.stringify(firstRequisite.result.requisites);
+  if (
+    firstRequisite.status === 'incomplete'
+    && firstRequisite.result.coverage.status === 'partial'
+    && firstRequisite.result.coverage.reports_linked === 3
+    && firstRequisite.result.coverage.reports_read === 2
+    && firstRequisite.result.coverage.reports_scored === 2
+    && kubernetes?.opportunity_count === 2
+    && kubernetes?.low_fit_opportunity_count === 2
+    && kubernetes?.prevalence === 1
+    && kubernetes?.weighted_score === 5
+    && kubernetes?.career_tier === 'High'
+    && kubernetes?.source_references.every((reference) => /^career\.evidence\/v1\/[a-f0-9]{24}$/.test(reference))
+    && JSON.stringify(secondRequisite.result.requisites) === serializedRequisites
+    && secondRequisite.result.revision_token === firstRequisite.result.revision_token
+    && readFileSync(join(requisiteRoot, 'data/applications.md'), 'utf8') === operationalBefore
+  ) pass('requisite snapshot derives deterministic Career urgency with partial coverage and no operational writes');
+  else fail(`requisite snapshot did not preserve its contract: ${JSON.stringify(firstRequisite)}`);
+
+  writeFileSync(join(requisiteRoot, 'reports/002-other.md'), [
+    '| Gap | Severity | Evidence |',
+    '|---|---|---|',
+    '| Kubernetes | High | Required |',
+    '| Python | Medium | Preferred |',
+    '| Terraform | Medium | Preferred |',
+    '',
+  ].join('\n'));
+  const revisedRequisite = fixtureGateway(
+    requisiteRoot,
+    'career.requisite.snapshot/v1',
+    emptyRequisiteRequest,
+  );
+  const prohibitedFields = /capability|knowledge|upskill|agentic/i;
+  if (
+    revisedRequisite.result.revision_token !== firstRequisite.result.revision_token
+    && revisedRequisite.result.requisites.every((record) => (
+      Object.keys(record).every((key) => !prohibitedFields.test(key))
+    ))
+  ) pass('native evidence revisions change opaque tokens without cross-system policy fields');
+  else fail(`requisite revision or ownership boundary failed: ${JSON.stringify(revisedRequisite)}`);
+
+  const malformedRequisite = fixtureGateway(
+    requisiteRoot,
+    'career.requisite.snapshot/v1',
+    { schema: 'career.requisite.snapshot.request/v1', ranking_policy: 'external' },
+  );
+  if (
+    malformedRequisite.status === 'failed'
+    && malformedRequisite.result.reasons.includes('request-contains-unsupported-fields')
+    && readFileSync(join(requisiteRoot, 'data/applications.md'), 'utf8') === operationalBefore
+  ) pass('requisite snapshots reject malformed policy-bearing input without mutation');
+  else fail(`requisite snapshot accepted malformed input: ${JSON.stringify(malformedRequisite)}`);
 
   const setupScript = join(ROOT, 'skills/public/setup-career-system/scripts/setup-career-system.mjs');
   const checkRoot = makeSetupFixture();

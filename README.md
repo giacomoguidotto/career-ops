@@ -165,6 +165,19 @@ Career-owned identities, reports partial provider failures without discarding
 successful discoveries, and references native pipeline, history, and run
 artifacts. An optional `target.company` narrows the configured source.
 
+Evaluated opportunity evidence is available as a read-only Requisite snapshot:
+
+```bash
+printf '{"schema":"career.requisite.snapshot.request/v1"}' \
+  | node main.mjs career.requisite.snapshot/v1 --input -
+```
+
+The result uses `career.requisite.snapshot/v1`. Its opaque revision token,
+stable Requisite keys, coverage, counts, prevalence, weighted scores, Career
+tiers, and opaque evidence references are derived by Career's native gap method.
+Repeated reads do not modify reports, the application tracker, or other
+operational state.
+
 The standalone setup module is the only public export under `skills/public/`.
 It supports a read-only check and an idempotent reconcile:
 
