@@ -6253,7 +6253,7 @@ try {
     '1\thttps://example.com/one\tpaused_rate_limit\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t001\t-\tsession-limit; paused\t0',
     '2\thttps://example.com/two\tfailed\t2026-01-01T00:00:00Z\t2026-01-01T00:00:01Z\t002\t-\tworker-crash\t1',
   ].join('\n') + '\n');
-  const dry = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--resume-paused', '--dry-run'], {
+  const dry = run(getBash(), [toBashPath(join(batchDir, 'batch-runner.sh')), '--cli', 'claude', '--resume-paused', '--dry-run'], {
     cwd: tmp,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],

@@ -30,6 +30,10 @@ jobs:
         run: node --test tests/career-system-contract.test.mjs
       - name: Validate complete repository
         run: node test-all.mjs
+      - name: Configure release identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Derive fork version
         id: version
         run: bash scripts/bump-fork-version.sh
