@@ -68,6 +68,7 @@ writing-samples/*
 
 # User config and customization (never auto-updated)
 config/profile.yml
+config/career-profile.json
 config/cv-facts.json
 config/benchmarks.yml
 portals.yml

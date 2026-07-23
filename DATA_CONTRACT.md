@@ -10,6 +10,7 @@ These files contain your personal data, customizations, and work product. Update
 |------|---------|
 | `cv.md` | Your CV in markdown |
 | `config/profile.yml` | Your identity, targets, comp range |
+| `config/career-profile.json` | Managed native projection imported by the revision-checked Career profile gateway |
 | `config/cv-facts.json` | Your CV fact-check allowlist and forbidden phrases |
 | `config/benchmarks.yml` | Your market calibration benchmark overrides (optional; copy `templates/benchmarks.yml` here and edit — read by `funnel-velocity.mjs`) |
 | `modes/_profile.md` | Your archetypes, narrative, negotiation scripts |
@@ -88,6 +89,9 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `GEMINI.md` | Legacy no-op context guard (prevents Antigravity duplicate imports) |
 | `AGENTS.md` | Canonical agent instructions (imported by CLI-specific wrappers) |
 | `*.mjs` | Utility scripts |
+| `main.mjs` / `lib/career-system-gateway.mjs` / `lib/career-profile-reconciliation.mjs` | Canonical versioned Career capability gateway and native profile reconciler |
+| `skills/public/setup-career-system/` | The single public Career setup export |
+| `validate-career-system-source.mjs` | Public-export and native ownership boundary validator |
 | `plugins/` | Bundled plugins + the plugin engine (opt-in external integrations) |
 | `plugins.mjs` | Plugin CLI (list/run/available/add/new/enable/skill/trust/remove) |
 | `plugins-registry/` | Curated community plugins, one `<id>.json` per plugin (the trust root) |

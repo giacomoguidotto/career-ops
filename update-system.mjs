@@ -204,6 +204,11 @@ const SYSTEM_PATHS = [
   'eval-golden.mjs',
   'evals/',
   'openrouter-runner.mjs',
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/',
+  'validate-career-system-source.mjs',
   'test-all.mjs',
   'detect-reposts.test.mjs',
   'test-salary-filter.mjs',
@@ -303,6 +308,11 @@ const SYSTEM_PATHS = [
 
 const BOOTSTRAP_PATHS = [
   '.agents/',
+  'main.mjs',
+  'lib/career-system-gateway.mjs',
+  'lib/career-profile-reconciliation.mjs',
+  'skills/public/',
+  'validate-career-system-source.mjs',
   '.opencode/skills/',
   '.antigravitycli/skills/',
   '.grok/skills/',
@@ -336,6 +346,7 @@ const BOOTSTRAP_PATHS = [
 export const USER_PATHS = [
   'cv.md',
   'config/profile.yml',
+  'config/career-profile.json',
   'modes/_profile.md',
   'modes/_custom.md',
   'voice-dna.md',

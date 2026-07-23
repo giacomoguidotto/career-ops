@@ -121,6 +121,49 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **Pipeline Integrity**   | Automated merge, dedup, status normalization, health checks                                                                              |
 | **Beyond the CV**        | Company research ([`deep`](modes/deep.md)) surfaces AI strategy, recent moves, engineering culture, and the angle your profile should take. Contact discovery ([`contact`](modes/contact.md)) identifies the hiring manager, recruiter, or team peer worth reaching out to and drafts a ≤300-character LinkedIn message tuned to each contact type. Formal application email drafts ([`email`](modes/email.md)) turn an evaluated report or pasted JD into a subject line, body, and attachment checklist without sending, submitting, or clicking anything. Applications get you in the queue; research gets you a conversation. |
 
+## Standalone Career System interface
+
+This fork exposes one machine gateway for native, versioned capabilities:
+
+```bash
+printf '{}' | node main.mjs career-system.capabilities/v1 --input -
+printf '{"capabilities":["career-system.capabilities/v1"]}' \
+  | node main.mjs career-system.check/v1 --input -
+```
+
+Unversioned and unknown capabilities are rejected. Readiness checks return one
+result per requested capability, so an unavailable capability does not obscure
+healthy ones.
+
+Fresh profile snapshots use the same gateway. `check` validates the complete
+five-section snapshot and its expected source revision without writing;
+`reconcile` changes only the managed native projection and performs a fresh
+post-check:
+
+```bash
+printf '%s' "$PROFILE_SNAPSHOT_JSON" \
+  | node main.mjs career.profile.check/v1 --input -
+printf '%s' "$PROFILE_SNAPSHOT_JSON" \
+  | node main.mjs career.profile.reconcile/v1 --input -
+```
+
+Each field is explicitly `value`, `absent`, or `unresolved`. Identical input
+produces no write, and profile reconciliation cannot reach applications,
+reports, attempts, outcomes, follow-ups, offers, observations, or generated
+artifacts.
+
+The standalone setup module is the only public export under `skills/public/`.
+It supports a read-only check and an idempotent reconcile:
+
+```bash
+git switch fork/main
+node skills/public/setup-career-system/scripts/setup-career-system.mjs check --root "$PWD"
+node skills/public/setup-career-system/scripts/setup-career-system.mjs reconcile --root "$PWD"
+```
+
+Reconcile seeds only missing customization templates. It reports missing CV,
+profile, or portal inputs without inventing personal data.
+
 ## Quick Start
 
 **Fastest way — one command:**
