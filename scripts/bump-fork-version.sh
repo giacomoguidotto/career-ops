@@ -9,15 +9,25 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-latest_tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+tag_pattern='career-ops-v[0-9]*.[0-9]*.[0-9]*'
+head_tag=$(git tag --points-at HEAD --list "$tag_pattern" --sort=-v:refname | head -n1)
+if [[ -n "$head_tag" ]]; then
+  printf 'Release tag already points at HEAD: %s\n' "$head_tag"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf 'tag=%s\n' "$head_tag" >> "$GITHUB_OUTPUT"
+  fi
+  exit 0
+fi
+
+latest_tag=$(git tag --list "$tag_pattern" --sort=-v:refname | head -n1)
 if [[ -z "$latest_tag" ]]; then
-  latest_tag=v0.0.0
+  latest_tag=career-ops-v0.0.0
   range=HEAD
 else
   range="${latest_tag}..HEAD"
 fi
 
-IFS=. read -r major minor patch <<< "${latest_tag#v}"
+IFS=. read -r major minor patch <<< "${latest_tag#career-ops-v}"
 bump=
 breaking_subject='^[a-z]+(\([^)]*\))?!:'
 feature_subject='^feat(\([^)]*\))?:'
@@ -46,7 +56,7 @@ case "$bump" in
   patch) patch=$((patch + 1)) ;;
 esac
 
-next_tag="v${major}.${minor}.${patch}"
+next_tag="career-ops-v${major}.${minor}.${patch}"
 printf '%s fork release: %s -> %s\n' "$bump" "$latest_tag" "$next_tag"
 
 if [[ "$dry_run" == false ]]; then

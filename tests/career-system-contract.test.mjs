@@ -31,6 +31,7 @@ if (
   && forkReleaseWorkflow.includes('scripts/bump-fork-version.sh')
   && forkReleaseWorkflow.includes('gh release create')
   && forkReleaseWorkflow.includes('--verify-tag')
+  && forkReleaseWorkflow.includes('gh release view')
   && forkVersionSyntax.status === 0
 ) {
   pass('fork/main has an independent stable release path');

@@ -40,8 +40,13 @@ jobs:
         if: steps.version.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ steps.version.outputs.tag }}"
-          --verify-tag
-          --title "${{ steps.version.outputs.tag }}"
-          --generate-notes
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --verify-tag \
+            --title "$tag" \
+            --generate-notes
