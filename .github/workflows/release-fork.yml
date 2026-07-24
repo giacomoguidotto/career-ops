@@ -54,3 +54,57 @@ jobs:
             --verify-tag \
             --title "$tag" \
             --generate-notes
+      - name: Verify stable immutable release
+        id: source-release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          release=$(gh api "repos/${{ github.repository }}/releases/tags/$SOURCE_TAG")
+          jq -e \
+            --arg tag "$SOURCE_TAG" \
+            '.tag_name == $tag and .draft == false and .prerelease == false and .immutable == true' \
+            <<<"$release" >/dev/null
+          {
+            echo "release_id=$(jq -r '.id' <<<"$release")"
+            echo "tag=$(jq -r '.tag_name' <<<"$release")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Verify Trigger App configuration
+        if: steps.source-release.outputs.release_id != ''
+        env:
+          TRIGGER_APP_ID: ${{ vars.DISTRIBUTION_TRIGGER_APP_ID }}
+          TRIGGER_APP_PRIVATE_KEY: ${{ secrets.DISTRIBUTION_TRIGGER_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TRIGGER_APP_ID" ]; then
+            echo "::error::DISTRIBUTION_TRIGGER_APP_ID is not configured."
+            exit 1
+          fi
+          if [ -z "$TRIGGER_APP_PRIVATE_KEY" ]; then
+            echo "::error::DISTRIBUTION_TRIGGER_APP_PRIVATE_KEY is not configured."
+            exit 1
+          fi
+      - name: Mint target-scoped Trigger token
+        id: distribution-trigger
+        if: steps.source-release.outputs.release_id != ''
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ vars.DISTRIBUTION_TRIGGER_APP_ID }}
+          private-key: ${{ secrets.DISTRIBUTION_TRIGGER_APP_PRIVATE_KEY }}
+          owner: giacomoguidotto
+          repositories: skills
+          permission-actions: write
+      - name: Wake Distribution Bundle reconciliation
+        if: steps.source-release.outputs.release_id != ''
+        env:
+          GH_TOKEN: ${{ steps.distribution-trigger.outputs.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_RELEASE_ID: ${{ steps.source-release.outputs.release_id }}
+          SOURCE_TAG: ${{ steps.source-release.outputs.tag }}
+        run: |
+          gh api --method POST \
+            repos/giacomoguidotto/skills/actions/workflows/reconcile.yml/dispatches \
+            --raw-field ref=main \
+            --raw-field "inputs[source_repository]=$SOURCE_REPOSITORY" \
+            --raw-field "inputs[source_release_id]=$SOURCE_RELEASE_ID" \
+            --raw-field "inputs[source_tag]=$SOURCE_TAG"
