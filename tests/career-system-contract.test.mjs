@@ -32,6 +32,16 @@ if (
   && forkReleaseWorkflow.includes('gh release create')
   && forkReleaseWorkflow.includes('--verify-tag')
   && forkReleaseWorkflow.includes('gh release view')
+  && forkReleaseWorkflow.includes('.immutable == true')
+  && forkReleaseWorkflow.includes('Verify Trigger App configuration')
+  && forkReleaseWorkflow.includes('permission-actions: write')
+  && forkReleaseWorkflow.includes(
+    'repos/giacomoguidotto/skills/actions/workflows/reconcile.yml/dispatches',
+  )
+  && forkReleaseWorkflow.includes('inputs[source_repository]')
+  && forkReleaseWorkflow.includes('inputs[source_release_id]')
+  && forkReleaseWorkflow.includes('inputs[source_tag]')
+  && !forkReleaseWorkflow.includes('permission-contents: write')
   && forkVersionSyntax.status === 0
 ) {
   pass('fork/main has an independent stable release path');
